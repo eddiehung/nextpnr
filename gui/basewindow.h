@@ -48,6 +48,7 @@ class BaseMainWindow : public QMainWindow
 
   protected Q_SLOTS:
     void writeInfo(std::string text);
+    void closeTab(int index);
 
     virtual void new_proj() = 0;
     virtual void open_proj() = 0;
