@@ -54,8 +54,11 @@ class BaseMainWindow : public QMainWindow
     virtual void open_proj() = 0;
     virtual bool save_proj() = 0;
 
+    void new_doc();
+    void execute_doc();
   Q_SIGNALS:
     void contextChanged(Context *ctx);
+    void executePython(QString content);
 
   protected:
     Context *ctx;
@@ -65,6 +68,7 @@ class BaseMainWindow : public QMainWindow
 
     QMenuBar *menuBar;
     QToolBar *mainToolBar;
+    QToolBar *documentsToolBar;
     QStatusBar *statusBar;
     QAction *actionNew;
     QAction *actionOpen;
