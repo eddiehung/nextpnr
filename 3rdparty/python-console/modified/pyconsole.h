@@ -28,6 +28,7 @@ SOFTWARE.
 #include <QMimeData>
 #include "ParseHelper.h"
 #include "ParseListener.h"
+#include "pyredirector.h"
 
 class QWidget;
 class QKeyEvent;
@@ -75,6 +76,8 @@ class PythonConsole : public QTextEdit, ParseListener
     ParseHelper m_parseHelper;
     std::list<std::string> m_historyBuffer;
     std::list<std::string>::const_iterator m_historyIt;
+    stdout_write_type m_write;
+    QColor m_color;
 };
 
 #endif // PYCONSOLE_H

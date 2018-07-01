@@ -21,6 +21,15 @@ PythonConsole::PythonConsole( QWidget* parent ):
     font.setStyleHint(QFont::Monospace);
     setFont(font);
     m_parseHelper.subscribe( this );    
+    m_color = NORMAL_COLOR;
+    m_write = [this](std::string s) {        
+        moveCursorToEnd();
+        setTextColor(m_color);
+        QTextCursor cursor = textCursor();
+        cursor.insertText(s.c_str());
+        moveCursorToEnd();
+    };
+    set_stdout(m_write);
 }
 
 void PythonConsole::keyPressEvent( QKeyEvent* e )
@@ -95,25 +104,27 @@ void PythonConsole::parseEvent( const ParseMessage& message )
     }
 
     // interpret valid user input
-    int errorCode;
     std::string res;
-    if ( message.message.size() )
-        res = pyinterpreter_execute( message.message, &errorCode );
-    if ( errorCode )
-    {
-        setTextColor( ERROR_COLOR );
-    }
-    else
-    {
-        setTextColor( OUTPUT_COLOR );
-    }
-
-    if ( res.size( ) )
-    {
-        append(res.c_str());
-    }
-
     setTextColor( NORMAL_COLOR );
+    append("");
+    
+    color_output_type out = [this](int errorCode) {        
+        
+        if ( errorCode )
+        {
+            m_color = ERROR_COLOR;
+        }
+        else
+        {
+            m_color = OUTPUT_COLOR;
+        }
+    };
+
+    if ( message.message.size() ) {
+        pyinterpreter_execute( message.message, out );
+    }
+
+     setTextColor( NORMAL_COLOR );
 
     // set up the next line on the console
     append("");
@@ -203,8 +214,10 @@ void PythonConsole::autocomplete( )
         return;
 
     QString line = getLine( );
-    const std::list<std::string>& suggestions =
-        pyinterpreter_suggest( line.toStdString( ) );
+    
+    set_stdout(nullptr);
+    const std::list<std::string>& suggestions = pyinterpreter_suggest( line.toStdString( ) );
+    set_stdout(m_write);
     if (suggestions.size() == 1)
     {
         line = suggestions.back().c_str();

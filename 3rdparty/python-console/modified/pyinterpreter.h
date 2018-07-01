@@ -25,8 +25,11 @@ SOFTWARE.
 #define PYINTERPRETER_H
 #include <list>
 #include <string>
+#include <functional>
 
-std::string pyinterpreter_execute(const std::string &command, int *errorCode);
+typedef std::function<void(int)> color_output_type;
+
+void pyinterpreter_execute(const std::string &command, color_output_type color);
 const std::list<std::string> &pyinterpreter_suggest(const std::string &hint);
 void pyinterpreter_preinit();
 void pyinterpreter_initialize();

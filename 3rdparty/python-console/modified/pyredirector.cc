@@ -24,6 +24,8 @@ SOFTWARE.
 #include "pyredirector.h"
 #include <map>
 
+static stdout_write_type write_function = nullptr;
+
 static std::map<PyThreadState *, std::string> thread_strings;
 
 static std::string &redirector_string(PyThreadState *threadState)
@@ -57,11 +59,18 @@ static PyObject *redirector_write(PyObject *, PyObject *args)
     }
 
     std::string outputString(output);
+    if (write_function)
+        write_function(output);
     PyThreadState *currentThread = PyThreadState_Get();
     std::string &resultString = redirector_string(currentThread);
     resultString = resultString + outputString;
     Py_INCREF(Py_None);
     return Py_None;
+}
+
+void set_stdout(stdout_write_type write)
+{
+    write_function = write;
 }
 
 static PyMethodDef redirector_methods[] = {
