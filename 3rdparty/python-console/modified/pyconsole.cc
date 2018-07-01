@@ -104,7 +104,6 @@ void PythonConsole::parseEvent( const ParseMessage& message )
     }
 
     // interpret valid user input
-    std::string res;
     setTextColor( NORMAL_COLOR );
     append("");
     
@@ -332,4 +331,26 @@ void PythonConsole::insertFromMimeData(const QMimeData *src)
             moveCursorToEnd( );
         }
     }
+}
+
+
+void PythonConsole::execute(QString code)
+{
+    setTextColor( NORMAL_COLOR );
+    append("");
+    color_output_type out = [this](int errorCode) {        
+        
+        if ( errorCode )
+        {
+            m_color = ERROR_COLOR;
+        }
+        else
+        {
+            m_color = OUTPUT_COLOR;
+        }
+    };
+    pyinterpreter_execute_complete(code.toStdString(),out);
+    setTextColor( NORMAL_COLOR );
+    append("");
+    displayPrompt( );
 }

@@ -71,6 +71,18 @@ void pyinterpreter_execute(const std::string &command, color_output_type color)
     PyEval_ReleaseThread(m_threadState);
 }
 
+void pyinterpreter_execute_complete(const std::string &command, color_output_type color)
+{
+    PyEval_AcquireThread(m_threadState);
+    color(0);
+    int st = PyRun_SimpleString(command.c_str());
+    if (st) {
+        color(1);
+        PyErr_Print();
+    }
+    PyEval_ReleaseThread(m_threadState);
+}
+
 const std::list<std::string> &pyinterpreter_suggest(const std::string &hint)
 {
     PyEval_AcquireThread(m_threadState);

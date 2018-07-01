@@ -44,6 +44,7 @@ class PythonTab : public QWidget
     void clearBuffer();
   public Q_SLOTS:
     void newContext(Context *ctx);
+  Q_SIGNALS:    
     void execute(QString code);
 
   private:
