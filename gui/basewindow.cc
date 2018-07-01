@@ -29,9 +29,7 @@
 #include "mainwindow.h"
 #include "ScintillaEdit.h"
 #include "SciLexer.h"
-#ifndef NO_PYTHON
 #include "pythontab.h"
-#endif
 
 static void initBasenameResource() { Q_INIT_RESOURCE(base); }
 
@@ -79,6 +77,7 @@ BaseMainWindow::BaseMainWindow(QWidget *parent) : QMainWindow(parent), ctx(nullp
     tabWidget->addTab(pythontab, "Python");
     connect(this, SIGNAL(contextChanged(Context *)), pythontab, SLOT(newContext(Context *)));
     connect(this, SIGNAL(executePython(QString)), pythontab, SIGNAL(execute(QString)));
+    connect(this, SIGNAL(runPythonScript(QString)), pythontab, SIGNAL(runScript(QString)));
 #endif
     info = new InfoTab();
     tabWidget->addTab(info, "Info");
@@ -199,10 +198,21 @@ void BaseMainWindow::createMenusAndBars()
     actionDocExecute->setStatusTip("Execute document");    
     connect(actionDocExecute, SIGNAL(triggered()), this, SLOT(execute_doc()));
 
+    QAction *actionDocRun = new QAction("Execute", this);
+    QIcon iconDocRun;
+    iconDocRun.addFile(QStringLiteral(":/icons/resources/page_lightning.png"));
+    actionDocRun->setIcon(iconDocRun);
+    actionDocRun->setStatusTip("Run from file");    
+    connect(actionDocRun, SIGNAL(triggered()), this, SLOT(run_doc()));
+#ifdef NO_PYTHON
+    actionDocRun->setEnabled(false);
+#endif
+
     documentsToolBar->addAction(actionDocNew);
     documentsToolBar->addAction(actionDocOpen);
     documentsToolBar->addAction(actionDocSave);
     documentsToolBar->addAction(actionDocExecute);
+    documentsToolBar->addAction(actionDocRun);
 }
 
 void BaseMainWindow::new_doc()
@@ -239,6 +249,17 @@ void BaseMainWindow::execute_doc()
    ScintillaEdit* editor = static_cast<ScintillaEdit *>(centralTabWidget->currentWidget());
    QString data = QString(editor->get_doc()->get_char_range(0,editor->get_doc()->length()));
    Q_EMIT executePython(data);
+#endif   
+}
+
+void BaseMainWindow::run_doc()
+{
+#ifndef NO_PYTHON
+    QString fileName = QFileDialog::getOpenFileName(this, QString("Run Python"), QString(), QString("*.py"));
+    if (!fileName.isEmpty()) {
+        tabWidget->setCurrentIndex(0);
+        Q_EMIT runPythonScript(fileName);
+    }
 #endif   
 }
 NEXTPNR_NAMESPACE_END

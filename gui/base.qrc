@@ -9,5 +9,6 @@
         <file>resources/page_edit.png</file>
         <file>resources/page_save.png</file>
         <file>resources/page_go.png</file>
+        <file>resources/page_lightning.png</file>
     </qresource>
 </RCC>

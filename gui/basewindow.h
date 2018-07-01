@@ -56,9 +56,11 @@ class BaseMainWindow : public QMainWindow
 
     void new_doc();
     void execute_doc();
+    void run_doc();
   Q_SIGNALS:
     void contextChanged(Context *ctx);
     void executePython(QString content);
+    void runPythonScript(QString content);
 
   protected:
     Context *ctx;
