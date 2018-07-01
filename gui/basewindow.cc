@@ -28,7 +28,7 @@
 #include "log.h"
 #include "mainwindow.h"
 #include "ScintillaEdit.h"
-
+#include "SciLexer.h"
 #ifndef NO_PYTHON
 #include "pythontab.h"
 #endif
@@ -83,10 +83,36 @@ BaseMainWindow::BaseMainWindow(QWidget *parent) : QMainWindow(parent), ctx(nullp
     tabWidget->addTab(info, "Info");
 
     centralTabWidget = new QTabWidget();
+    centralTabWidget->setTabsClosable(true);
+
     FPGAViewWidget *fpgaView = new FPGAViewWidget();
     ScintillaEdit *editor = new ScintillaEdit();
+    editor->setLexer(SCLEX_PYTHON);
+    editor->styleClearAll();
+	editor->setMarginWidthN(0, 35);
+	editor->setScrollWidth(200);
+	editor->setScrollWidthTracking(1);
+
+    editor->styleSetFore(SCE_P_DEFAULT, 0x000000);
+    editor->styleSetFore(SCE_P_COMMENTLINE, 0x008000);
+    editor->styleSetFore(SCE_P_NUMBER, 0xFF0000);
+    editor->styleSetFore(SCE_P_STRING, 0x808080);
+    editor->styleSetFore(SCE_P_CHARACTER, 0x808080);
+    editor->styleSetFore(SCE_P_WORD, 0x0000FF);
+    editor->styleSetFore(SCE_P_TRIPLE, 0xFF8000);
+    editor->styleSetFore(SCE_P_TRIPLEDOUBLE, 0xFF8000);
+    editor->styleSetFore(SCE_P_CLASSNAME, 0x000000);
+    editor->styleSetFore(SCE_P_DEFNAME, 0xFF00FF);
+    editor->styleSetFore(SCE_P_OPERATOR, 0x000080);
+    editor->styleSetFore(SCE_P_IDENTIFIER, 0x000000);
+    editor->styleSetFore(SCE_P_COMMENTBLOCK, 0x008000);
+	editor->styleSetFore(SCE_P_DECORATOR, 0xFF8000);
+
+    connect(centralTabWidget, SIGNAL(tabCloseRequested(int)), this, SLOT(closeTab(int)));
+
     centralTabWidget->addTab(fpgaView, "Graphics");
     centralTabWidget->addTab(editor, "Edit");
+    centralTabWidget->tabBar()->tabButton(0, QTabBar::RightSide)->resize(0, 0);
 
     connect(this, SIGNAL(contextChanged(Context *)), fpgaView, SLOT(newContext(Context *)));
 
@@ -95,6 +121,11 @@ BaseMainWindow::BaseMainWindow(QWidget *parent) : QMainWindow(parent), ctx(nullp
 }
 
 BaseMainWindow::~BaseMainWindow() {}
+
+void BaseMainWindow::closeTab(int index)
+{
+    centralTabWidget->removeTab(index);
+}
 
 void BaseMainWindow::writeInfo(std::string text) { info->info(text); }
 
