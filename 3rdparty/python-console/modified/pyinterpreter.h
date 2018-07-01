@@ -31,6 +31,7 @@ typedef std::function<void(int)> color_output_type;
 
 void pyinterpreter_execute(const std::string &command, color_output_type color);
 void pyinterpreter_execute_complete(const std::string &command, color_output_type color);
+void pyinterpreter_run_file(const std::string &command, color_output_type color);
 const std::list<std::string> &pyinterpreter_suggest(const std::string &hint);
 void pyinterpreter_preinit();
 void pyinterpreter_initialize();

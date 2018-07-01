@@ -46,6 +46,7 @@ PythonTab::PythonTab(QWidget *parent) : QWidget(parent), initialized(false)
     setLayout(mainLayout);
 
     connect(this, SIGNAL(execute(QString)), console, SLOT(execute(QString)));
+    connect(this, SIGNAL(runScript(QString)), console, SLOT(runScript(QString)));
 }
 
 PythonTab::~PythonTab()

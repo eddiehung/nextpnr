@@ -80,6 +80,7 @@ class PythonConsole : public QTextEdit, ParseListener
     QColor m_color;
   public Q_SLOTS:
     void execute(QString code);    
+    void runScript(QString code); 
 };
 
 #endif // PYCONSOLE_H

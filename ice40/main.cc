@@ -141,6 +141,15 @@ int main(int argc, char *argv[])
             return 1;
         }
 
+#ifndef NO_GUI
+        if (vm.count("gui")) {
+            Application a(argc, argv);
+            MainWindow w;
+            w.show();
+
+            rc = a.exec();
+        }
+#endif
         if (vm.count("load")) {
             try {
                 pt::ptree root;
@@ -393,16 +402,6 @@ int main(int argc, char *argv[])
                 execute_python_file(filename.c_str());
 
             deinit_python();
-        }
-#endif
-
-#ifndef NO_GUI
-        if (vm.count("gui")) {
-            Application a(argc, argv);
-            MainWindow w;
-            w.show();
-
-            rc = a.exec();
         }
 #endif
         return rc;

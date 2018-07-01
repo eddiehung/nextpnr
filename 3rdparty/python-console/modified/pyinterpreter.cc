@@ -27,6 +27,7 @@ SOFTWARE.
 #include <map>
 #include <memory>
 #include "pyredirector.h"
+#include "pybindings.h"
 
 static PyThreadState *MainThreadState = NULL;
 
@@ -80,6 +81,28 @@ void pyinterpreter_execute_complete(const std::string &command, color_output_typ
         color(1);
         PyErr_Print();
     }
+    PyEval_ReleaseThread(m_threadState);
+}
+
+void pyinterpreter_run_file(const std::string &python_file, color_output_type color)
+{
+    PyEval_AcquireThread(m_threadState);
+    color(0);
+    try {
+        FILE *fp = fopen(python_file.c_str(), "r");
+        if (fp == NULL) {
+            fprintf(stderr, "Fatal error: file not found %s\n", python_file.c_str());
+            exit(1);
+        }
+        PyRun_SimpleFile(fp, python_file.c_str());
+        fclose(fp);
+    } catch (boost::python::error_already_set const &) {
+        // Parse and output the exception
+        //std::string perror_str = parse_python_exception();
+        //std::cout << "Error in Python: " << perror_str << std::endl;
+        std::cout << "Error in Python: ";
+    }
+
     PyEval_ReleaseThread(m_threadState);
 }
 

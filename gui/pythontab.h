@@ -46,6 +46,7 @@ class PythonTab : public QWidget
     void newContext(Context *ctx);
   Q_SIGNALS:    
     void execute(QString code);
+    void runScript(QString code);
 
   private:
     PythonConsole *console;

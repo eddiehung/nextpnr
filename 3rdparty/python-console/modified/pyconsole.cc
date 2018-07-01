@@ -354,3 +354,24 @@ void PythonConsole::execute(QString code)
     append("");
     displayPrompt( );
 }
+
+void PythonConsole::runScript(QString code)
+{
+    setTextColor( NORMAL_COLOR );
+    append("");
+    color_output_type out = [this](int errorCode) {        
+        
+        if ( errorCode )
+        {
+            m_color = ERROR_COLOR;
+        }
+        else
+        {
+            m_color = OUTPUT_COLOR;
+        }
+    };
+    pyinterpreter_run_file(code.toStdString(),out);
+    setTextColor( NORMAL_COLOR );
+    append("");
+    displayPrompt( );
+}
