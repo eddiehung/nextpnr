@@ -78,7 +78,7 @@ BaseMainWindow::BaseMainWindow(QWidget *parent) : QMainWindow(parent), ctx(nullp
     PythonTab *pythontab = new PythonTab();
     tabWidget->addTab(pythontab, "Python");
     connect(this, SIGNAL(contextChanged(Context *)), pythontab, SLOT(newContext(Context *)));
-    connect(this, SIGNAL(executePython(QString)), pythontab, SLOT(execute(QString)));
+    connect(this, SIGNAL(executePython(QString)), pythontab, SIGNAL(execute(QString)));
 #endif
     info = new InfoTab();
     tabWidget->addTab(info, "Info");

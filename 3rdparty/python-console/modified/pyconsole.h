@@ -78,6 +78,8 @@ class PythonConsole : public QTextEdit, ParseListener
     std::list<std::string>::const_iterator m_historyIt;
     stdout_write_type m_write;
     QColor m_color;
+  public Q_SLOTS:
+    void execute(QString code);    
 };
 
 #endif // PYCONSOLE_H

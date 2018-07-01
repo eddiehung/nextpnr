@@ -44,6 +44,8 @@ PythonTab::PythonTab(QWidget *parent) : QWidget(parent), initialized(false)
     QGridLayout *mainLayout = new QGridLayout();
     mainLayout->addWidget(console, 0, 0);
     setLayout(mainLayout);
+
+    connect(this, SIGNAL(execute(QString)), console, SLOT(execute(QString)));
 }
 
 PythonTab::~PythonTab()
@@ -80,13 +82,6 @@ void PythonTab::newContext(Context *ctx)
 void PythonTab::showContextMenu(const QPoint &pt) { contextMenu->exec(mapToGlobal(pt)); }
 
 void PythonTab::clearBuffer() { console->clear(); }
-
-void PythonTab::execute(QString code)
-{
-    //int error = 0;
-    //std::string result = pyinterpreter_execute(code.toStdString(),&error);
-    //console->displayString(QString(result.c_str()));
-}
 
 NEXTPNR_NAMESPACE_END
 
