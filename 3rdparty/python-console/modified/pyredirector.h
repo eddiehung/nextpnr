@@ -24,9 +24,12 @@ SOFTWARE.
 #ifndef PYREDIRECTOR_H
 #define PYREDIRECTOR_H
 #include <Python.h>
+#include <functional>
 #include <string>
 
 std::string redirector_take_output(PyThreadState *threadState);
 void inittab_redirector();
+typedef std::function<void(std::string)> stdout_write_type;
+void set_stdout(stdout_write_type write);
 
 #endif // PYREDIRECTOR_H

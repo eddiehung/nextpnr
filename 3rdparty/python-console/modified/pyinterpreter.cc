@@ -44,37 +44,31 @@ template <typename... Args> std::string string_format(const std::string &format,
     return std::string(buf.get(), buf.get() + size - 1); // We don't want the '\0' inside
 }
 
-std::string pyinterpreter_execute(const std::string &command, int *errorCode)
+void pyinterpreter_execute(const std::string &command, color_output_type color)
 {
     PyEval_AcquireThread(m_threadState);
-    *errorCode = 0;
+    color(0);
 
     PyObject *py_result;
     PyObject *dum;
-    std::string res;
     py_result = Py_CompileString(command.c_str(), "<stdin>", Py_single_input);
     if (py_result == 0) {
         if (PyErr_Occurred()) {
-            *errorCode = 1;
+            color(1);
             PyErr_Print();
-            res = redirector_take_output(m_threadState);
         }
 
         PyEval_ReleaseThread(m_threadState);
-        return res;
+        return;
     }
     dum = PyEval_EvalCode(py_result, glb, loc);
     Py_XDECREF(dum);
     Py_XDECREF(py_result);
     if (PyErr_Occurred()) {
-        *errorCode = 1;
+        color(1);
         PyErr_Print();
     }
-
-    res = redirector_take_output(m_threadState);
-
     PyEval_ReleaseThread(m_threadState);
-    return res;
 }
 
 const std::list<std::string> &pyinterpreter_suggest(const std::string &hint)
@@ -82,6 +76,7 @@ const std::list<std::string> &pyinterpreter_suggest(const std::string &hint)
     PyEval_AcquireThread(m_threadState);
     m_suggestions.clear();
     int i = 0;
+    redirector_take_output(m_threadState); // to clear any previous output
     std::string command = string_format("sys.completer.complete('%s', %d)\n", hint.c_str(), i);
     std::string res;
     do {
