@@ -27,6 +27,7 @@
 #include "jsonparse.h"
 #include "log.h"
 #include "mainwindow.h"
+#include "ScintillaEdit.h"
 
 #ifndef NO_PYTHON
 #include "pythontab.h"
@@ -83,7 +84,9 @@ BaseMainWindow::BaseMainWindow(QWidget *parent) : QMainWindow(parent), ctx(nullp
 
     centralTabWidget = new QTabWidget();
     FPGAViewWidget *fpgaView = new FPGAViewWidget();
+    ScintillaEdit *editor = new ScintillaEdit();
     centralTabWidget->addTab(fpgaView, "Graphics");
+    centralTabWidget->addTab(editor, "Edit");
 
     connect(this, SIGNAL(contextChanged(Context *)), fpgaView, SLOT(newContext(Context *)));
 

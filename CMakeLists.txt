@@ -53,6 +53,7 @@ endif()
 
 if (BUILD_GUI)
     add_subdirectory(3rdparty/QtPropertyBrowser generated/3rdparty/QtPropertyBrowser)
+    add_subdirectory(3rdparty/scintilla generated/3rdparty/ScintillaEdit)
 endif()
 
 add_definitions("-DGIT_COMMIT_HASH=${GIT_COMMIT_HASH}")

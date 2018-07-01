@@ -76,7 +76,7 @@ public:
 
     int get_character(int pos); // Calls GetCharacterAndWidth(pos, NULL)
 
-signals:
+Q_SIGNALS:
     void modify_attempt();
     void save_point(bool atSavePoint);
     void modified(int position, int modification_type, const QByteArray &text, int length,

@@ -23,11 +23,11 @@ set(_RESOURCES base.qrc ${family}/nextpnr.qrc)
   
 qt5_add_resources(GUI_RESOURCE_FILES ${_RESOURCES})
 
-set(GUI_LIBRARY_FILES_${ufamily} Qt5::Widgets Qt5::OpenGL ${OPENGL_LIBRARIES} QtPropertyBrowser PARENT_SCOPE)
+set(GUI_LIBRARY_FILES_${ufamily} Qt5::Widgets Qt5::OpenGL ${OPENGL_LIBRARIES} QtPropertyBrowser ScintillaEdit PARENT_SCOPE)
 
 add_library(gui_${family} STATIC ${GUI_SOURCE_FILES} ${PYTHON_CONSOLE_SRC} ${GUI_RESOURCE_FILES})
 
-target_include_directories(gui_${family} PRIVATE ../${family} ${family} ../3rdparty/QtPropertyBrowser/src)
+target_include_directories(gui_${family} PRIVATE ../${family} ${family} ../3rdparty/QtPropertyBrowser/src ../3rdparty/scintilla/qt/ScintillaEdit ../3rdparty/scintilla/qt/ScintillaEditBase ../3rdparty/scintilla/include)
 if (BUILD_PYTHON)
   target_include_directories(gui_${family} PRIVATE ../3rdparty/python-console ../3rdparty/python-console/modified)
 endif()
