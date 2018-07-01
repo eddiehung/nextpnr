@@ -78,6 +78,7 @@ BaseMainWindow::BaseMainWindow(QWidget *parent) : QMainWindow(parent), ctx(nullp
     PythonTab *pythontab = new PythonTab();
     tabWidget->addTab(pythontab, "Python");
     connect(this, SIGNAL(contextChanged(Context *)), pythontab, SLOT(newContext(Context *)));
+    connect(this, SIGNAL(executePython(QString)), pythontab, SLOT(execute(QString)));
 #endif
     info = new InfoTab();
     tabWidget->addTab(info, "Info");
@@ -86,32 +87,10 @@ BaseMainWindow::BaseMainWindow(QWidget *parent) : QMainWindow(parent), ctx(nullp
     centralTabWidget->setTabsClosable(true);
 
     FPGAViewWidget *fpgaView = new FPGAViewWidget();
-    ScintillaEdit *editor = new ScintillaEdit();
-    editor->setLexer(SCLEX_PYTHON);
-    editor->styleClearAll();
-	editor->setMarginWidthN(0, 35);
-	editor->setScrollWidth(200);
-	editor->setScrollWidthTracking(1);
-
-    editor->styleSetFore(SCE_P_DEFAULT, 0x000000);
-    editor->styleSetFore(SCE_P_COMMENTLINE, 0x008000);
-    editor->styleSetFore(SCE_P_NUMBER, 0xFF0000);
-    editor->styleSetFore(SCE_P_STRING, 0x808080);
-    editor->styleSetFore(SCE_P_CHARACTER, 0x808080);
-    editor->styleSetFore(SCE_P_WORD, 0x0000FF);
-    editor->styleSetFore(SCE_P_TRIPLE, 0xFF8000);
-    editor->styleSetFore(SCE_P_TRIPLEDOUBLE, 0xFF8000);
-    editor->styleSetFore(SCE_P_CLASSNAME, 0x000000);
-    editor->styleSetFore(SCE_P_DEFNAME, 0xFF00FF);
-    editor->styleSetFore(SCE_P_OPERATOR, 0x000080);
-    editor->styleSetFore(SCE_P_IDENTIFIER, 0x000000);
-    editor->styleSetFore(SCE_P_COMMENTBLOCK, 0x008000);
-	editor->styleSetFore(SCE_P_DECORATOR, 0xFF8000);
 
     connect(centralTabWidget, SIGNAL(tabCloseRequested(int)), this, SLOT(closeTab(int)));
 
     centralTabWidget->addTab(fpgaView, "Graphics");
-    centralTabWidget->addTab(editor, "Edit");
     centralTabWidget->tabBar()->tabButton(0, QTabBar::RightSide)->resize(0, 0);
 
     connect(this, SIGNAL(contextChanged(Context *)), fpgaView, SLOT(newContext(Context *)));
@@ -177,6 +156,9 @@ void BaseMainWindow::createMenusAndBars()
     mainToolBar = new QToolBar();
     addToolBar(Qt::TopToolBarArea, mainToolBar);
 
+    documentsToolBar = new QToolBar();
+    addToolBar(Qt::TopToolBarArea, documentsToolBar);
+
     statusBar = new QStatusBar();
     setStatusBar(statusBar);
 
@@ -190,6 +172,73 @@ void BaseMainWindow::createMenusAndBars()
     mainToolBar->addAction(actionNew);
     mainToolBar->addAction(actionOpen);
     mainToolBar->addAction(actionSave);
+
+    QAction *actionDocNew = new QAction("New Document", this);
+    QIcon iconDocNew;
+    iconDocNew.addFile(QStringLiteral(":/icons/resources/page.png"));
+    actionDocNew->setIcon(iconDocNew);
+    actionDocNew->setStatusTip("New document");
+    connect(actionDocNew, SIGNAL(triggered()), this, SLOT(new_doc()));
+
+    QAction *actionDocOpen = new QAction("Open Document", this);
+    QIcon iconDocOpen;
+    iconDocOpen.addFile(QStringLiteral(":/icons/resources/page_edit.png"));
+    actionDocOpen->setIcon(iconDocOpen);
+    actionDocOpen->setStatusTip("Open document");
+
+    QAction *actionDocSave = new QAction("Open Document", this);
+    QIcon iconDocSave;
+    iconDocSave.addFile(QStringLiteral(":/icons/resources/page_save.png"));
+    actionDocSave->setIcon(iconDocSave);
+    actionDocSave->setStatusTip("Save document");
+
+    QAction *actionDocExecute = new QAction("Execute", this);
+    QIcon iconDocExecute;
+    iconDocExecute.addFile(QStringLiteral(":/icons/resources/page_go.png"));
+    actionDocExecute->setIcon(iconDocExecute);
+    actionDocExecute->setStatusTip("Execute document");    
+    connect(actionDocExecute, SIGNAL(triggered()), this, SLOT(execute_doc()));
+
+    documentsToolBar->addAction(actionDocNew);
+    documentsToolBar->addAction(actionDocOpen);
+    documentsToolBar->addAction(actionDocSave);
+    documentsToolBar->addAction(actionDocExecute);
 }
 
+void BaseMainWindow::new_doc()
+{
+    ScintillaEdit *editor = new ScintillaEdit();
+    editor->setLexer(SCLEX_PYTHON);
+    editor->styleClearAll();
+	editor->setMarginWidthN(0, 35);
+	editor->setScrollWidth(200);
+	editor->setScrollWidthTracking(1);
+
+    editor->styleSetFore(SCE_P_DEFAULT, 0x000000);
+    editor->styleSetFore(SCE_P_COMMENTLINE, 0x008000);
+    editor->styleSetFore(SCE_P_NUMBER, 0xFF0000);
+    editor->styleSetFore(SCE_P_STRING, 0x808080);
+    editor->styleSetFore(SCE_P_CHARACTER, 0x808080);
+    editor->styleSetFore(SCE_P_WORD, 0x0000FF);
+    editor->styleSetFore(SCE_P_TRIPLE, 0xFF8000);
+    editor->styleSetFore(SCE_P_TRIPLEDOUBLE, 0xFF8000);
+    editor->styleSetFore(SCE_P_CLASSNAME, 0x000000);
+    editor->styleSetFore(SCE_P_DEFNAME, 0xFF00FF);
+    editor->styleSetFore(SCE_P_OPERATOR, 0x000080);
+    editor->styleSetFore(SCE_P_IDENTIFIER, 0x000000);
+    editor->styleSetFore(SCE_P_COMMENTBLOCK, 0x008000);
+	editor->styleSetFore(SCE_P_DECORATOR, 0xFF8000);
+    
+    centralTabWidget->addTab(editor, "New");
+    centralTabWidget->setCurrentIndex(centralTabWidget->count()-1);
+}
+
+void BaseMainWindow::execute_doc()
+{
+#ifndef NO_PYTHON
+   ScintillaEdit* editor = static_cast<ScintillaEdit *>(centralTabWidget->currentWidget());
+   QString data = QString(editor->get_doc()->get_char_range(0,editor->get_doc()->length()));
+   Q_EMIT executePython(data);
+#endif   
+}
 NEXTPNR_NAMESPACE_END

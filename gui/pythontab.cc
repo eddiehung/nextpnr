@@ -81,6 +81,13 @@ void PythonTab::showContextMenu(const QPoint &pt) { contextMenu->exec(mapToGloba
 
 void PythonTab::clearBuffer() { console->clear(); }
 
+void PythonTab::execute(QString code)
+{
+    int error = 0;
+    std::string result = pyinterpreter_execute(code.toStdString(),&error);
+    console->displayString(QString(result.c_str()));
+}
+
 NEXTPNR_NAMESPACE_END
 
 #endif
