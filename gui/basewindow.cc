@@ -22,13 +22,13 @@
 #include <QGridLayout>
 #include <QIcon>
 #include <QSplitter>
+#include "SciLexer.h"
+#include "ScintillaEdit.h"
 #include "designwidget.h"
 #include "fpgaviewwidget.h"
 #include "jsonparse.h"
 #include "log.h"
 #include "mainwindow.h"
-#include "ScintillaEdit.h"
-#include "SciLexer.h"
 #include "pythontab.h"
 
 static void initBasenameResource() { Q_INIT_RESOURCE(base); }
@@ -100,10 +100,7 @@ BaseMainWindow::BaseMainWindow(QWidget *parent) : QMainWindow(parent), ctx(nullp
 
 BaseMainWindow::~BaseMainWindow() {}
 
-void BaseMainWindow::closeTab(int index)
-{
-    centralTabWidget->removeTab(index);
-}
+void BaseMainWindow::closeTab(int index) { centralTabWidget->removeTab(index); }
 
 void BaseMainWindow::writeInfo(std::string text) { info->info(text); }
 
@@ -195,14 +192,14 @@ void BaseMainWindow::createMenusAndBars()
     QIcon iconDocExecute;
     iconDocExecute.addFile(QStringLiteral(":/icons/resources/page_go.png"));
     actionDocExecute->setIcon(iconDocExecute);
-    actionDocExecute->setStatusTip("Execute document");    
+    actionDocExecute->setStatusTip("Execute document");
     connect(actionDocExecute, SIGNAL(triggered()), this, SLOT(execute_doc()));
 
     QAction *actionDocRun = new QAction("Execute", this);
     QIcon iconDocRun;
     iconDocRun.addFile(QStringLiteral(":/icons/resources/page_lightning.png"));
     actionDocRun->setIcon(iconDocRun);
-    actionDocRun->setStatusTip("Run from file");    
+    actionDocRun->setStatusTip("Run from file");
     connect(actionDocRun, SIGNAL(triggered()), this, SLOT(run_doc()));
 #ifdef NO_PYTHON
     actionDocRun->setEnabled(false);
@@ -220,9 +217,9 @@ void BaseMainWindow::new_doc()
     ScintillaEdit *editor = new ScintillaEdit();
     editor->setLexer(SCLEX_PYTHON);
     editor->styleClearAll();
-	editor->setMarginWidthN(0, 35);
-	editor->setScrollWidth(200);
-	editor->setScrollWidthTracking(1);
+    editor->setMarginWidthN(0, 35);
+    editor->setScrollWidth(200);
+    editor->setScrollWidthTracking(1);
 
     editor->styleSetFore(SCE_P_DEFAULT, 0x000000);
     editor->styleSetFore(SCE_P_COMMENTLINE, 0x008000);
@@ -237,19 +234,19 @@ void BaseMainWindow::new_doc()
     editor->styleSetFore(SCE_P_OPERATOR, 0x000080);
     editor->styleSetFore(SCE_P_IDENTIFIER, 0x000000);
     editor->styleSetFore(SCE_P_COMMENTBLOCK, 0x008000);
-	editor->styleSetFore(SCE_P_DECORATOR, 0xFF8000);
-    
+    editor->styleSetFore(SCE_P_DECORATOR, 0xFF8000);
+
     centralTabWidget->addTab(editor, "New");
-    centralTabWidget->setCurrentIndex(centralTabWidget->count()-1);
+    centralTabWidget->setCurrentIndex(centralTabWidget->count() - 1);
 }
 
 void BaseMainWindow::execute_doc()
 {
 #ifndef NO_PYTHON
-   ScintillaEdit* editor = static_cast<ScintillaEdit *>(centralTabWidget->currentWidget());
-   QString data = QString(editor->get_doc()->get_char_range(0,editor->get_doc()->length()));
-   Q_EMIT executePython(data);
-#endif   
+    ScintillaEdit *editor = static_cast<ScintillaEdit *>(centralTabWidget->currentWidget());
+    QString data = QString(editor->get_doc()->get_char_range(0, editor->get_doc()->length()));
+    Q_EMIT executePython(data);
+#endif
 }
 
 void BaseMainWindow::run_doc()
@@ -260,6 +257,6 @@ void BaseMainWindow::run_doc()
         tabWidget->setCurrentIndex(0);
         Q_EMIT runPythonScript(fileName);
     }
-#endif   
+#endif
 }
 NEXTPNR_NAMESPACE_END
