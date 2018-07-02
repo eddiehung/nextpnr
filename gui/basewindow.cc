@@ -181,12 +181,14 @@ void BaseMainWindow::createMenusAndBars()
     iconDocOpen.addFile(QStringLiteral(":/icons/resources/page_edit.png"));
     actionDocOpen->setIcon(iconDocOpen);
     actionDocOpen->setStatusTip("Open document");
+    connect(actionDocOpen, SIGNAL(triggered()), this, SLOT(open_doc()));
 
     QAction *actionDocSave = new QAction("Open Document", this);
     QIcon iconDocSave;
     iconDocSave.addFile(QStringLiteral(":/icons/resources/page_save.png"));
     actionDocSave->setIcon(iconDocSave);
     actionDocSave->setStatusTip("Save document");
+    connect(actionDocSave, SIGNAL(triggered()), this, SLOT(save_doc()));
 
     QAction *actionDocExecute = new QAction("Execute", this);
     QIcon iconDocExecute;
@@ -252,11 +254,56 @@ void BaseMainWindow::execute_doc()
 void BaseMainWindow::run_doc()
 {
 #ifndef NO_PYTHON
-    QString fileName = QFileDialog::getOpenFileName(this, QString("Run Python"), QString(), QString("*.py"));
+    QString fileName = QFileDialog::getOpenFileName(this, QString("Run Python"), QString(), QString("Python files (*.py)"));
     if (!fileName.isEmpty()) {
         tabWidget->setCurrentIndex(0);
         Q_EMIT runPythonScript(fileName);
     }
 #endif
+}
+
+void BaseMainWindow::open_doc()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, QString("Open document"), QString(), QString("Python files (*.py);;Verilog files (*.v);;Text files (*.txt)"));
+    if (!fileName.isEmpty()) {
+        ScintillaEdit *editor = new ScintillaEdit();
+        editor->styleClearAll();
+        editor->setMarginWidthN(0, 35);
+        editor->setScrollWidth(200);
+        editor->setScrollWidthTracking(1);
+
+        editor->styleSetFore(SCE_P_DEFAULT, 0x000000);
+        editor->styleSetFore(SCE_P_COMMENTLINE, 0x008000);
+        editor->styleSetFore(SCE_P_NUMBER, 0xFF0000);
+        editor->styleSetFore(SCE_P_STRING, 0x808080);
+        editor->styleSetFore(SCE_P_CHARACTER, 0x808080);
+        editor->styleSetFore(SCE_P_WORD, 0x0000FF);
+        editor->styleSetFore(SCE_P_TRIPLE, 0xFF8000);
+        editor->styleSetFore(SCE_P_TRIPLEDOUBLE, 0xFF8000);
+        editor->styleSetFore(SCE_P_CLASSNAME, 0x000000);
+        editor->styleSetFore(SCE_P_DEFNAME, 0xFF00FF);
+        editor->styleSetFore(SCE_P_OPERATOR, 0x000080);
+        editor->styleSetFore(SCE_P_IDENTIFIER, 0x000000);
+        editor->styleSetFore(SCE_P_COMMENTBLOCK, 0x008000);
+        editor->styleSetFore(SCE_P_DECORATOR, 0xFF8000);
+
+        QFileInfo finfo(fileName);
+        if (finfo.suffix()=="py")
+            editor->setLexer(SCLEX_PYTHON);
+
+        centralTabWidget->addTab(editor, finfo.fileName());
+        centralTabWidget->setCurrentIndex(centralTabWidget->count() - 1);
+
+        QFile file(fileName);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            QByteArray contents = file.readAll();
+            editor->get_doc()->insert_string(0,contents);
+        }
+    }
+}
+
+void BaseMainWindow::save_doc()
+{
 }
 NEXTPNR_NAMESPACE_END
