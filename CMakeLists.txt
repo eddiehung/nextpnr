@@ -59,6 +59,7 @@ endif()
 
 if (BUILD_GUI)
     add_subdirectory(3rdparty/QtPropertyBrowser ${CMAKE_CURRENT_BINARY_DIR}/generated/3rdparty/QtPropertyBrowser)
+    add_subdirectory(3rdparty/scintilla ${CMAKE_CURRENT_BINARY_DIR}/generated/3rdparty/ScintillaEdit)
 endif()
 
 add_definitions("-DGIT_COMMIT_HASH=${GIT_COMMIT_HASH}")
