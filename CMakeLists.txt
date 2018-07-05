@@ -7,7 +7,7 @@ option(BUILD_PYTHON "Build Python Integration" ON)
 option(BUILD_TESTS "Build GUI" OFF)
 
 # List of families to build
-set(FAMILIES generic ice40)
+set(FAMILIES generic ice40 ecp5)
 set(CMAKE_CXX_STANDARD 11)
 if (MSVC)
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "" FORCE)
