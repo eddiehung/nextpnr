@@ -538,4 +538,9 @@ bool Arch::isGlobalNet(const NetInfo *net) const
     return net->driver.cell != nullptr && net->driver.port == id_glb_buf_out;
 }
 
+bool Arch::isIO(const CellInfo* cell) const
+{
+    return cell->type == id("SB_IO");
+}
+
 NEXTPNR_NAMESPACE_END

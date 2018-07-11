@@ -462,6 +462,11 @@ class VPRPlacer
 //                    place_ctx.block_locs[blk_id].is_fixed = true;
 //     			}
 
+                if (ctx->isIO(cell)) {
+                    ctx->unbindBel(bel);
+                    ctx->bindBel(bel, cell->name, STRENGTH_LOCKED);
+                }
+
 //    			/* Ensure randomizer doesn't pick this location again, since it's occupied. Could shift all the
 //    			* legal positions in legal_pos to remove the entry (choice) we just used, but faster to
 //    			* just move the last entry in legal_pos to the spot we just used and decrement the

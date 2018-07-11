@@ -169,6 +169,8 @@ struct Arch : BaseCtx
     bool getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort, delay_t &delay) const;
     IdString getPortClock(const CellInfo *cell, IdString port) const;
     bool isClockPort(const CellInfo *cell, IdString port) const;
+    // Return true if cell is a IO
+    bool isIO(const CellInfo* cell) const;
 
     bool isValidBelForCell(CellInfo *cell, BelId bel) const;
     bool isBelLocationValid(BelId bel) const;

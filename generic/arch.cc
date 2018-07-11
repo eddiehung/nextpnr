@@ -328,6 +328,7 @@ bool Arch::getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort
 IdString Arch::getPortClock(const CellInfo *cell, IdString port) const { return IdString(); }
 
 bool Arch::isClockPort(const CellInfo *cell, IdString port) const { return false; }
+bool Arch::isIO(const CellInfo *cell) const { return false; }
 
 bool Arch::isValidBelForCell(CellInfo *cell, BelId bel) const { return true; }
 bool Arch::isBelLocationValid(BelId bel) const { return true; }
