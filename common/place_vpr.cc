@@ -463,6 +463,7 @@ class VPRPlacer
 //     			}
 
                 if (ctx->isIO(cell)) {
+                    // TODO: Add method to change bind strength without unbinding and re-binding
                     ctx->unbindBel(bel);
                     ctx->bindBel(bel, cell->name, STRENGTH_LOCKED);
                 }
