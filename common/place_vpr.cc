@@ -125,10 +125,20 @@ class VPRPlacer
         std::sort(autoplaced.begin(), autoplaced.end(), [](CellInfo *a, CellInfo *b) { return a->name < b->name; });
         ctx->shuffle(autoplaced);
 
+        // Remove locked_bels from free_locations
+        // TODO Make this more efficient
+        for (auto& i : free_locations)
+            for (auto j = i.begin(); j != i.end(); ) {
+                if (locked_bels.count(*j))
+                    j = i.erase(j);
+                else
+                    ++j;
+            }
+
         // Place cells randomly initially
         log_info("Creating initial placement for remaining %d cells.\n", int(autoplaced.size()));
 
-        vpr_initial_placement(autoplaced);
+        vpr_initial_placement(autoplaced, placed_cells, constr_placed_cells);
 #if 0
         for (auto cell : autoplaced) {
             place_initial(cell);
@@ -316,7 +326,7 @@ class VPRPlacer
     }
 #endif
 
-    void vpr_initial_placement(const std::vector<CellInfo *>& autoplaced) {
+    void vpr_initial_placement(const std::vector<CellInfo *>& autoplaced, size_t& placed_cells, int constr_placed_cells) {
     
     	/* Randomly places the blocks to create an initial placement. We rely on
     	 * the legal_pos array already being loaded.  That legal_pos[itype] is an
@@ -385,7 +395,7 @@ class VPRPlacer
 //    		}
 //    	} // Finish updating the legal_pos[][] and free_locations[] array
     
-    	vpr_initial_placement_blocks(autoplaced);
+    	vpr_initial_placement_blocks(autoplaced, placed_cells, constr_placed_cells);
     
 //    	if (pad_loc_type == USER) {
 //    		read_user_pad_loc(pad_loc_file);
@@ -405,7 +415,7 @@ class VPRPlacer
 
     /* Place blocks that are NOT a part of any macro.
     * We'll randomly place each block in the clustered netlist, one by one. */
-    void vpr_initial_placement_blocks(const std::vector<CellInfo *>& autoplaced) {
+    void vpr_initial_placement_blocks(const std::vector<CellInfo *>& autoplaced, size_t &placed_cells, const int constr_placed_cells) {
 //    	int itype, ipos, x, y, z;
 //        auto& cluster_ctx = g_vpr_ctx.clustering();
 //        auto& place_ctx = g_vpr_ctx.mutable_placement();
@@ -462,7 +472,15 @@ class VPRPlacer
                 free_locations[itype].pop_back();
 
 //    		}
+
+            ++placed_cells;
+            if ((placed_cells - constr_placed_cells) % 500 == 0)
+                log_info("  initial placement placed %d/%d cells\n", int(placed_cells - constr_placed_cells),
+                         int(autoplaced.size()));
     	}
+        if ((placed_cells - constr_placed_cells) % 500 != 0)
+            log_info("  initial placement placed %d/%d cells\n", int(placed_cells - constr_placed_cells),
+                     int(autoplaced.size()));
     }
 
     void vpr_initial_placement_location(CellInfo *cell, size_t& itype, BelId& bel) {
