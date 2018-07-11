@@ -176,6 +176,8 @@ class VPRPlacer
     	num_swap_rejected = 0;
     	num_swap_accepted = 0;
 //    	num_swap_aborted = 0;
+
+        cost = curr_wirelength;
     
         move_lim = int(inner_num * pow(autoplaced.size(), 1.3333));
     
@@ -843,8 +845,8 @@ class VPRPlacer
     
     		if (keep_switch) {
     			cost += delta_c;
-    			bb_cost += bb_delta_c;
-    
+//    			bb_cost += bb_delta_c;
+//    
 //    			if (place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
 //    				/*update the point_to_point_timing_cost and point_to_point_delay_cost
 //    				 * values from the temporary values */
@@ -991,7 +993,7 @@ class VPRPlacer
         return autoplaced.at(ctx->rng(int(autoplaced.size())));
     }
 
-    bool vpr_find_to(CellInfo* cell, BelId& bel) {
+    bool vpr_find_to(CellInfo* cell_from, BelId& bel_to) {
     
     	/* Returns the point to which I want to swap, properly range limited.
     	 * rlim must always be between 1 and device_ctx.grid.width() - 2 (inclusive) for this routine
@@ -1016,7 +1018,7 @@ class VPRPlacer
 
         int x_from, y_from;
         bool gb;
-        ctx->estimatePosition(cell->bel, x_from, y_from, gb);
+        ctx->estimatePosition(cell_from->bel, x_from, y_from, gb);
     
     	min_x = std::max<float>(0, x_from - rlx);
     	max_x = std::min<float>(this->max_x, x_from + rlx);
@@ -1032,7 +1034,7 @@ class VPRPlacer
     
     	num_tries = 0;
 //    	itype = type->index;
-        auto type = ctx->belTypeFromId(cell->type);
+        auto type = ctx->belTypeFromId(cell_from->type);
     	auto itype = bel_types.at(type);
     
         int px_to, py_to;
@@ -1048,16 +1050,43 @@ class VPRPlacer
     			num_tries++;
     		}
     
-    		vpr_find_to_location(cell, bel);
-            ctx->estimatePosition(bel, px_to, py_to, gb);
+    		vpr_find_to_location(cell_from, bel_to);
+            ctx->estimatePosition(bel_to, px_to, py_to, gb);
 
     		if((x_from == px_to) && (y_from == py_to)) {
     			is_legal = false;
     		} else if(px_to > max_x || px_to < min_x || py_to > max_y || py_to < min_y) {
     			is_legal = false;
-    		} else if(type != ctx->getBelType(bel)) {
+    		} else if(type != ctx->getBelType(bel_to)) {
     			is_legal = false;
     		} else {
+                auto bel_from = cell_from->bel;
+                IdString other = ctx->getBoundBelCell(bel_to);
+                if (other != IdString()) {
+                    auto cell_to = ctx->cells[other].get();
+                    if (cell_to->belStrength > STRENGTH_WEAK)
+                        is_legal = false;
+                }
+
+                if (is_legal) {
+                    ctx->unbindBel(bel_from);
+                    if (other != IdString())
+                        ctx->unbindBel(bel_to);
+                    ctx->bindBel(bel_to, cell_from->name, STRENGTH_WEAK);
+                    if (other != IdString()) 
+                        ctx->bindBel(bel_from, other, STRENGTH_WEAK);
+                    if (!ctx->isBelLocationValid(bel_to) || ((other != IdString() && !ctx->isBelLocationValid(bel_from)))) {
+                        is_legal = false;
+                    }
+                    ctx->unbindBel(bel_to);
+                    if (other != IdString())
+                        ctx->unbindBel(bel_from);
+                    ctx->bindBel(bel_from, cell_from->name, STRENGTH_WEAK);
+                    if (other != IdString()) {
+                        ctx->bindBel(bel_to, other, STRENGTH_WEAK);
+                    }
+                }
+
 //    			/* Find z_to and test to validate that the "to" block is *not* fixed */
 //    			*pz_to = 0;
 //    			if (grid[*px_to][*py_to].type->capacity > 1) {
@@ -1077,7 +1106,7 @@ class VPRPlacer
     		log_error("in routine find_to: (x_to,y_to) = (%d,%d)\n", px_to, py_to);
     	}
     
-    	NPNR_ASSERT(type == ctx->getBelType(bel));
+    	NPNR_ASSERT(type == ctx->getBelType(bel_to));
     	return true;
     }
 
@@ -1426,7 +1455,7 @@ class VPRPlacer
     const float inner_num = 1.0;
     int move_lim, tot_iter;
     float rlim;
-    float cost, bb_cost;
+    float cost /*, bb_cost*/;
     float delta_c, bb_delta_c;
     float success_sum;
     float success_rat;
