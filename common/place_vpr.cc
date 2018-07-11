@@ -326,7 +326,7 @@ class VPRPlacer
     }
 #endif
 
-    void vpr_initial_placement(const std::vector<CellInfo *>& autoplaced, size_t& placed_cells, int constr_placed_cells) {
+    void vpr_initial_placement(std::vector<CellInfo *> autoplaced, size_t& placed_cells, int constr_placed_cells) {
     
     	/* Randomly places the blocks to create an initial placement. We rely on
     	 * the legal_pos array already being loaded.  That legal_pos[itype] is an
@@ -387,21 +387,21 @@ class VPRPlacer
 
     /* Place blocks that are NOT a part of any macro.
     * We'll randomly place each block in the clustered netlist, one by one. */
-    void vpr_initial_placement_blocks(const std::vector<CellInfo *>& autoplaced, size_t &placed_cells, const int constr_placed_cells) {
-//    	int itype, ipos, x, y, z;
+    void vpr_initial_placement_blocks(std::vector<CellInfo *> autoplaced, size_t &placed_cells, const int constr_placed_cells) {
+//        int itype, ipos, x, y, z;
 //        auto& cluster_ctx = g_vpr_ctx.clustering();
 //        auto& place_ctx = g_vpr_ctx.mutable_placement();
 //        auto& device_ctx = g_vpr_ctx.device();
+        
+        size_t itype;
+        BelId bel;
     
-    size_t itype;
-    BelId bel;
-
-    // Shuffle all free locations once here, rather than picking a block at random
-    for (auto& free_locations_type : free_locations) {
-        ctx->shuffle(free_locations_type);
-    }
-
-    for (auto cell : autoplaced) {
+        // Shuffle all free locations once here, rather than picking a block at random
+        for (auto& free_locations_type : free_locations) {
+            ctx->shuffle(free_locations_type);
+        }
+    
+        for (auto& cell : autoplaced) {
 //    		if (place_ctx.block_locs[blk_id].x != -1) { // -1 is a sentinel for an empty block
 //    			// block placed.
 //    			continue;
@@ -422,7 +422,7 @@ class VPRPlacer
 //    						"Initial placement failed.\n"
 //    						"Could not place block %s (#%zu); no free locations of type %s (#%d).\n",
 //    						cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id), device_ctx.block_types[itype].name, itype);
-//    			}
+//    		    }
 
     			vpr_initial_placement_location(cell, itype, bel);
 
@@ -438,6 +438,7 @@ class VPRPlacer
                     // TODO: Add method to change bind strength without unbinding and re-binding
                     ctx->unbindBel(bel);
                     ctx->bindBel(bel, cell->name, STRENGTH_LOCKED);
+                    cell = nullptr;
                 }
 
 //    			/* Ensure randomizer doesn't pick this location again, since it's occupied. Could shift all the
@@ -459,6 +460,9 @@ class VPRPlacer
         if ((placed_cells - constr_placed_cells) % 500 != 0)
             log_info("  initial placement placed %d/%d cells\n", int(placed_cells - constr_placed_cells),
                      int(autoplaced.size()));
+
+        // Linear complexity removal of all IOs cells that were set to nullptr
+        autoplaced.erase(std::remove(autoplaced.begin(), autoplaced.end(), nullptr), autoplaced.end());
     }
 
     void vpr_initial_placement_location(CellInfo *cell, size_t& itype, BelId& bel) {
