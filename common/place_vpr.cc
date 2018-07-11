@@ -342,37 +342,9 @@ class VPRPlacer
 //        auto& device_ctx = g_vpr_ctx.device();
 //        auto& cluster_ctx = g_vpr_ctx.clustering();
 //        auto& place_ctx = g_vpr_ctx.mutable_placement();
-//    
 
         // free_locations is populated in constructor
 
-//    	free_locations = (int *) vtr::malloc(device_ctx.num_block_types * sizeof(int));
-//    	for (itype = 0; itype < device_ctx.num_block_types; itype++) {
-//    		free_locations[itype] = num_legal_pos[itype];
-//    	}
-//    
-//    	/* We'll use the grid to record where everything goes. Initialize to the grid has no
-//    	 * blocks placed anywhere.
-//    	 */
-//    	for (size_t i = 0; i < device_ctx.grid.width(); i++) {
-//    		for (size_t j = 0; j < device_ctx.grid.height(); j++) {
-//    			place_ctx.grid_blocks[i][j].usage = 0;
-//    			itype = device_ctx.grid[i][j].type->index;
-//    			for (int k = 0; k < device_ctx.block_types[itype].capacity; k++) {
-//    				if (place_ctx.grid_blocks[i][j].blocks[k] != INVALID_BLOCK_ID) {
-//    					place_ctx.grid_blocks[i][j].blocks[k] = EMPTY_BLOCK_ID;
-//    				}
-//    			}
-//    		}
-//    	}
-//    
-//    	/* Similarly, mark all blocks as not being placed yet. */
-//    	for (auto blk_id : cluster_ctx.clb_nlist.blocks()) {
-//    		place_ctx.block_locs[blk_id].x = OPEN;
-//    		place_ctx.block_locs[blk_id].y = OPEN;
-//    		place_ctx.block_locs[blk_id].z = OPEN;
-//    	}
-//    
 //    	initial_placement_pl_macros(MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY, free_locations);
 //    
 //    	// All the macros are placed, update the legal_pos[][] array
