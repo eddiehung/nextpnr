@@ -43,6 +43,7 @@
 #include "pcf.h"
 #include "place_legaliser.h"
 #include "place_sa.h"
+#include "place_vpr.h"
 #include "route.h"
 #include "timing.h"
 #include "version.h"
@@ -369,7 +370,7 @@ int main(int argc, char *argv[])
             if (vm.count("no-tmdriv"))
                 ctx.timing_driven = false;
             if (!vm.count("pack-only")) {
-                if (!place_design_sa(&ctx) && !ctx.force)
+                if (!place_design_vpr(&ctx) && !ctx.force)
                     log_error("Placing design failed.\n");
                 ctx.check();
                 if (!route_design(&ctx) && !ctx.force)
