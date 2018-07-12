@@ -670,6 +670,7 @@ class VPRPlacer
 
         for (auto it = free_locations_front[itype]; it != free_locations[itype].end(); ++it) {
             bel_to = *it;
+#if 0 // TODO: Check that placement is indeed valid
             ctx->bindBel(bel_to, cell_from->name, STRENGTH_WEAK);
             if (!ctx->isBelLocationValid(bel_to)) {
                 ctx->unbindBel(bel_to);
@@ -677,6 +678,7 @@ class VPRPlacer
             }
             ctx->unbindBel(bel_to);
             std::iter_swap(it, free_locations_front[itype]);
+#endif
             return;
         }
         log_error("  initial placement failed; unable to find location for '%s'\n", cell_from->name.c_str(ctx));
