@@ -69,7 +69,7 @@ class VPRPlacer
 {
   private:
     std::vector<std::vector<BelId>> free_locations;
-    std::vector<std::vector<BelId>::const_iterator> free_locations_back;
+    std::vector<std::vector<BelId>::iterator> free_locations_front;
 
   public:
     VPRPlacer(Context *ctx) : ctx(ctx)
@@ -591,10 +591,10 @@ class VPRPlacer
         BelId bel;
     
         // Shuffle all free locations once here, rather than picking a block at random
-        free_locations_back.reserve(free_locations.size());
+        free_locations_front.reserve(free_locations.size());
         for (auto& free_locations_type : free_locations) {
             ctx->shuffle(free_locations_type);
-            free_locations_back.push_back(free_locations_type.cbegin());
+            free_locations_front.push_back(free_locations_type.begin());
         }
 
         for (auto& cell : autoplaced) {
@@ -644,7 +644,7 @@ class VPRPlacer
 //    			legal_pos[itype][ipos] = legal_pos[itype][free_locations[itype] - 1]; /* overwrite used block position */
 //    			free_locations[itype]--;
 
-                ++free_locations_back[itype];
+                ++free_locations_front[itype];
 
 //    		}
 
@@ -661,13 +661,25 @@ class VPRPlacer
             log_info("  initial placement finished with %d unconstrained cells\n", int(autoplaced.size()));
 
     } 
-    void vpr_initial_placement_location(CellInfo *cell, size_t& itype, BelId& bel) {
+
+    void vpr_initial_placement_location(CellInfo *cell_from, size_t& itype, BelId& bel_to) {
 //        auto& cluster_ctx = g_vpr_ctx.clustering();
 //    
-        auto type = ctx->belTypeFromId(cell->type);
+        auto type = ctx->belTypeFromId(cell_from->type);
     	itype = bel_types.at(type);
 
-        bel = *free_locations_back[itype];
+        for (auto it = free_locations_front[itype]; it != free_locations[itype].end(); ++it) {
+            bel_to = *it;
+            ctx->bindBel(bel_to, cell_from->name, STRENGTH_WEAK);
+            if (!ctx->isBelLocationValid(bel_to)) {
+                ctx->unbindBel(bel_to);
+                continue;
+            }
+            ctx->unbindBel(bel_to);
+            std::iter_swap(it, free_locations_front[itype]);
+            return;
+        }
+        log_error("  initial placement failed; unable to find location for '%s'\n", cell_from->name.c_str(ctx));
     }
 
     float vpr_starting_t(int max_moves) {
