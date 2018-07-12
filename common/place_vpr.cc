@@ -41,6 +41,12 @@
 #include "place_legaliser.h"
 #include "timing.h"
 #include "util.h"
+
+namespace vpr {
+    using namespace NEXTPNR_NAMESPACE;
+    #include "place_vpr.inc"
+}
+
 NEXTPNR_NAMESPACE_BEGIN
 
 static double get_std_dev(int n, double sum_x_squared, double av_x) {
@@ -107,6 +113,8 @@ class VPRPlacer
     {
         log_break();
 
+        vpr::initial_placement(ctx, bel_types);
+
         size_t placed_cells = 0;
         // Initial constraints placer
         for (auto &cell_entry : ctx->cells) {
@@ -115,54 +123,55 @@ class VPRPlacer
             if (loc != cell->attrs.end()) {
                 std::string loc_name = loc->second;
                 BelId bel = ctx->getBelByName(ctx->id(loc_name));
-                if (bel == BelId()) {
-                    log_error("No Bel named \'%s\' located for "
-                              "this chip (processing BEL attribute on \'%s\')\n",
-                              loc_name.c_str(), cell->name.c_str(ctx));
-                }
+                //if (bel == BelId()) {
+                //    log_error("No Bel named \'%s\' located for "
+                //              "this chip (processing BEL attribute on \'%s\')\n",
+                //              loc_name.c_str(), cell->name.c_str(ctx));
+                //}
 
-                BelType bel_type = ctx->getBelType(bel);
-                if (bel_type != ctx->belTypeFromId(cell->type)) {
-                    log_error("Bel \'%s\' of type \'%s\' does not match cell "
-                              "\'%s\' of type \'%s\'",
-                              loc_name.c_str(), ctx->belTypeToId(bel_type).c_str(ctx), cell->name.c_str(ctx),
-                              cell->type.c_str(ctx));
-                }
+                //BelType bel_type = ctx->getBelType(bel);
+                //if (bel_type != ctx->belTypeFromId(cell->type)) {
+                //    log_error("Bel \'%s\' of type \'%s\' does not match cell "
+                //              "\'%s\' of type \'%s\'",
+                //              loc_name.c_str(), ctx->belTypeToId(bel_type).c_str(ctx), cell->name.c_str(ctx),
+                //              cell->type.c_str(ctx));
+                //}
 
-                ctx->bindBel(bel, cell->name, STRENGTH_USER);
+                //ctx->bindBel(bel, cell->name, STRENGTH_USER);
                 locked_bels.insert(bel);
                 placed_cells++;
             }
         }
-        int constr_placed_cells = placed_cells;
+        //int constr_placed_cells = placed_cells;
         log_info("Placed %d cells based on constraints.\n", int(placed_cells));
 
         // Sort to-place cells for deterministic initial placement
+        std::vector<CellInfo *> autoplaced;
         for (auto &cell : ctx->cells) {
             CellInfo *ci = cell.second.get();
-            if (ci->bel == BelId()) {
+//            if (ci->bel == BelId()) {
+            if (ci->belStrength == STRENGTH_WEAK) {
                 autoplaced.push_back(cell.second.get());
             }
         }
         std::sort(autoplaced.begin(), autoplaced.end(), [](CellInfo *a, CellInfo *b) { return a->name < b->name; });
         ctx->shuffle(autoplaced);
 
-        // Remove locked_bels from free_locations
-        // TODO Make this more efficient
-        for (auto& i : free_locations)
-            for (auto j = i.begin(); j != i.end(); ) {
-                if (locked_bels.count(*j))
-                    j = i.erase(j);
-                else
-                    ++j;
-            }
+//        // Place cells randomly initially
+//        log_info("Creating initial placement for remaining %d cells.\n", int(autoplaced.size()));
+//
+//        for (auto cell : autoplaced) {
+//            place_initial(cell);
+//            placed_cells++;
+//            if ((placed_cells - constr_placed_cells) % 500 == 0)
+//                log_info("  initial placement placed %d/%d cells\n", int(placed_cells - constr_placed_cells),
+//                         int(autoplaced.size()));
+//        }
+//        if ((placed_cells - constr_placed_cells) % 500 != 0)
+//            log_info("  initial placement placed %d/%d cells\n", int(placed_cells - constr_placed_cells),
+//                     int(autoplaced.size()));
 
-        // Place cells randomly initially
-        log_info("Creating initial placement for remaining %d cells.\n", int(autoplaced.size()));
-
-        vpr_initial_placement(placed_cells, constr_placed_cells);
-
-        log_info("Running simulated annealing placer.\n");
+        log_info("Running simulated annealing placer on %d cells.\n", int(autoplaced.size()));
 
         // Calculate wirelength after initial placement
         curr_wirelength = 0;
@@ -173,35 +182,9 @@ class VPRPlacer
             curr_wirelength += wl;
         }
 
-    	num_swap_rejected = 0;
-    	num_swap_accepted = 0;
-//    	num_swap_aborted = 0;
-
-        cost = curr_wirelength;
-    
-        move_lim = int(inner_num * pow(autoplaced.size(), 1.3333));
-    
-    	/* Sometimes I want to run the router with a random placement.  Avoid *
-    	 * using 0 moves to stop division by 0 and 0 length vector problems,  *
-    	 * by setting move_lim to 1 (which is still too small to do any       *
-    	 * significant optimization).                                         */
-    	if (move_lim <= 0)
-    		move_lim = 1;
-    
-    	rlim = float(std::max(max_x, max_y));
-    
-    	//first_rlim = rlim; /*used in timing-driven placement for exponent computation */
-    	//final_rlim = 1;
-    	//inverse_delta_rlim = 1 / (first_rlim - final_rlim);
-    
-    	t = vpr_starting_t(move_lim /*, rlim,
-    			placer_opts.place_algorithm, placer_opts.timing_tradeoff,
-    			inverse_prev_bb_cost, inverse_prev_timing_cost, &delay_cost*/);
-
-#if 1
         int n_no_progress = 0;
         double avg_wirelength = curr_wirelength;
-//        t = 10000;
+        temp = 10000;
 
         // Main simulated annealing loop
         for (int iter = 1;; iter++) {
@@ -211,7 +194,7 @@ class VPRPlacer
             if (iter % 5 == 0 || iter == 1)
                 log_info("  at iteration #%d: temp = %f, wire length = "
                          "%.0f, est tns = %.02fns\n",
-                         iter, t, double(curr_wirelength), curr_tns);
+                         iter, temp, double(curr_wirelength), curr_tns);
 
             for (int m = 0; m < 15; ++m) {
                 // Loop through all automatically placed cells
@@ -230,9 +213,9 @@ class VPRPlacer
             else
                 n_no_progress++;
 
-            if (t <= 1e-3 && n_no_progress >= 5) {
+            if (temp <= 1e-3 && n_no_progress >= 5) {
                 if (iter % 5 != 0)
-                    log_info("  at iteration #%d: temp = %f, wire length = %f\n", iter, t, double(curr_wirelength));
+                    log_info("  at iteration #%d: temp = %f, wire length = %f\n", iter, temp, double(curr_wirelength));
                 break;
             }
 
@@ -246,25 +229,25 @@ class VPRPlacer
                 avg_wirelength = 0.8 * avg_wirelength + 0.2 * curr_wirelength;
             } else {
                 if (Raccept >= 0.8) {
-                    t *= 0.7;
+                    temp *= 0.7;
                 } else if (Raccept > upper) {
                     if (diameter < M)
                         diameter++;
                     else
-                        t *= 0.9;
+                        temp *= 0.9;
                 } else if (Raccept > lower) {
-                    t *= 0.95;
+                    temp *= 0.95;
                 } else {
                     // Raccept < 0.3
                     if (diameter > 1)
                         diameter--;
                     else
-                        t *= 0.8;
+                        temp *= 0.8;
                 }
             }
             // Once cooled below legalise threshold, run legalisation and start requiring
             // legal moves only
-            if (t < legalise_temp && !require_legal) {
+            if (temp < legalise_temp && !require_legal) {
                 legalise_design(ctx);
                 require_legal = true;
                 autoplaced.clear();
@@ -272,7 +255,7 @@ class VPRPlacer
                     if (cell.second->belStrength < STRENGTH_STRONG)
                         autoplaced.push_back(cell.second);
                 }
-                t = post_legalise_temp;
+                temp = post_legalise_temp;
                 diameter *= post_legalise_dia_scale;
                 ctx->shuffle(autoplaced);
                 assign_budget(ctx);
@@ -288,164 +271,6 @@ class VPRPlacer
                 curr_wirelength += wl;
             }
         }
-#else
-	tot_iter = 0;
-	//moves_since_cost_recompute = 0;
-
-	/* Outer loop of the simmulated annealing begins */
-	while (!vpr_exit_crit(temp, wirelength)) {
-
-//		if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//			cost = 1;
-//		}
-
-//		outer_loop_recompute_criticalities(placer_opts, num_connections,
-//			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
-//			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost,
-//            netlist_pin_lookup,
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//            slacks,
-//            timing_inf,
-//#endif
-//            *timing_info);
-
-		placement_inner_loop(t, rlim, placer_opts, inverse_prev_bb_cost, inverse_prev_timing_cost,
-			move_lim, crit_exponent, inner_recompute_limit, &stats,
-			&cost, &bb_cost, &timing_cost, &delay_cost,
-#ifdef ENABLE_CLASSIC_VPR_STA
-            slacks,
-            timing_inf,
-#endif
-            netlist_pin_lookup,
-            *timing_info);
-
-//		/* Lines below prevent too much round-off error from accumulating *
-//		 * in the cost over many iterations.  This round-off can lead to  *
-//		 * error checks failing because the cost is different from what   *
-//		 * you get when you recompute from scratch.                       */
-//
-//		moves_since_cost_recompute += move_lim;
-//		if (moves_since_cost_recompute > MAX_MOVES_BEFORE_RECOMPUTE) {
-//			new_bb_cost = recompute_bb_cost();
-//			if (fabs(new_bb_cost - bb_cost) > bb_cost * ERROR_TOL) {
-//				vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//						"in try_place: new_bb_cost = %g, old bb_cost = %g\n",
-//						new_bb_cost, bb_cost);
-//			}
-//			bb_cost = new_bb_cost;
-//
-//			if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//				comp_td_costs(&new_timing_cost, &new_delay_cost);
-//				if (fabs(new_timing_cost - timing_cost) > timing_cost * ERROR_TOL) {
-//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//							"in try_place: new_timing_cost = %g, old timing_cost = %g, ERROR_TOL = %g\n",
-//							new_timing_cost, timing_cost, ERROR_TOL);
-//				}
-//				if (fabs(new_delay_cost - delay_cost) > delay_cost * ERROR_TOL) {
-//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//							"in try_place: new_delay_cost = %g, old delay_cost = %g, ERROR_TOL = %g\n",
-//							new_delay_cost, delay_cost, ERROR_TOL);
-//				}
-//				timing_cost = new_timing_cost;
-//			}
-//
-//			if (placer_opts.place_algorithm == BOUNDING_BOX_PLACE) {
-//				cost = new_bb_cost;
-//			}
-//			moves_since_cost_recompute = 0;
-//		}
-//
-		tot_iter += move_lim;
-		success_rat = ((float) stats.success_sum) / move_lim;
-//		if (stats.success_sum == 0) {
-//			stats.av_cost = cost;
-//			stats.av_bb_cost = bb_cost;
-//			stats.av_timing_cost = timing_cost;
-//			stats.av_delay_cost = delay_cost;
-//		} else {
-//			stats.av_cost /= stats.success_sum;
-//			stats.av_bb_cost /= stats.success_sum;
-//			stats.av_timing_cost /= stats.success_sum;
-//			stats.av_delay_cost /= stats.success_sum;
-//		}
-//		std_dev = get_std_dev(stats.success_sum, stats.sum_of_squares, stats.av_cost);
-
-//		oldt = t; /* for finding and printing alpha. */
-		vpr_update_t();
-
-//        if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//            critical_path = timing_info->least_slack_critical_path();
-//            sTNS = timing_info->setup_total_negative_slack();
-//            sWNS = timing_info->setup_worst_negative_slack();
-//        }
-//
-//        vtr::printf_info("%7.3f "
-//                         "%7.4f %10.4f %-10.5g %-10.5g "
-//                         "%-10.5g %7.3f % 10.3g % 8.3f "
-//                         "%7.4f %7.4f %7.4f %6.3f"
-//                         "%9d %6.3f\n",
-//                         oldt,
-//                         stats.av_cost, stats.av_bb_cost, stats.av_timing_cost, stats.av_delay_cost,
-//                         place_delay_value, 1e9*critical_path.delay(), 1e9*sTNS, 1e9*sWNS,
-//                         success_rat, std_dev, rlim, crit_exponent,
-//                         tot_iter, t / oldt);
-//
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//        if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//            float cpd_diff_ns = std::abs(get_critical_path_delay() - 1e9*critical_path.delay());
-//            if(cpd_diff_ns > ERROR_TOL) {
-//                print_classic_cpds();
-//                print_tatum_cpds(timing_info->critical_paths());
-//
-//                vpr_throw(VPR_ERROR_TIMING, __FILE__, __LINE__, "Classic VPR and Tatum critical paths do not match (%g and %g respectively)", get_critical_path_delay(), 1e9*critical_path.delay());
-//            }
-//        }
-//#endif
-
-		sprintf(msg, "Cost: %g  BB Cost %g  TD Cost %g  Temperature: %g",
-				cost, bb_cost, timing_cost, t);
-//		update_screen(ScreenUpdatePriority::MINOR, msg, PLACEMENT, timing_info);
-		update_rlim(&rlim, success_rat, device_ctx.grid);
-
-//		if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//			crit_exponent = (1 - (rlim - final_rlim) * inverse_delta_rlim)
-//					* (placer_opts.td_place_exp_last - placer_opts.td_place_exp_first)
-//					+ placer_opts.td_place_exp_first;
-//		}
-//#ifdef VERBOSE
-//		if (getEchoEnabled()) {
-//			print_clb_placement("first_iteration_clb_placement.echo");
-//		}
-//#endif
-	}
-	/* Outer loop of the simmulated annealing ends */
-
-
-	outer_loop_recompute_criticalities(placer_opts, num_connections,
-			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
-			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost,
-            netlist_pin_lookup,
-#ifdef ENABLE_CLASSIC_VPR_STA
-            slacks,
-            timing_inf,
-#endif
-            *timing_info);
-
-	t = 0; /* freeze out */
-
-	/* Run inner loop again with temperature = 0 so as to accept only swaps
-	 * which reduce the cost of the placement */
-	placement_inner_loop(t, rlim, placer_opts, inverse_prev_bb_cost, inverse_prev_timing_cost,
-			move_lim, crit_exponent, inner_recompute_limit, &stats,
-			&cost, &bb_cost, &timing_cost, &delay_cost,
-#ifdef ENABLE_CLASSIC_VPR_STA
-            slacks,
-            timing_inf,
-#endif
-            netlist_pin_lookup,
-            *timing_info);
-#endif
-
         // Final post-pacement validitiy check
         for (auto bel : ctx->getBels()) {
             IdString cell = ctx->getBoundBelCell(bel);
@@ -670,7 +495,6 @@ class VPRPlacer
 
         for (auto it = free_locations_front[itype]; it != free_locations[itype].end(); ++it) {
             bel_to = *it;
-#if 0 // TODO: Check that placement is indeed valid
             ctx->bindBel(bel_to, cell_from->name, STRENGTH_WEAK);
             if (!ctx->isBelLocationValid(bel_to)) {
                 ctx->unbindBel(bel_to);
@@ -678,7 +502,6 @@ class VPRPlacer
             }
             ctx->unbindBel(bel_to);
             std::iter_swap(it, free_locations_front[itype]);
-#endif
             return;
         }
         log_error("  initial placement failed; unable to find location for '%s'\n", cell_from->name.c_str(ctx));
@@ -1400,7 +1223,7 @@ class VPRPlacer
         delta = new_wirelength - curr_wirelength;
         n_move++;
         // SA acceptance criterea
-        if (delta < 0 || (t > 1e-6 && (ctx->rng() / float(0x3fffffff)) <= std::exp(-delta / t))) {
+        if (delta < 0 || (temp > 1e-6 && (ctx->rng() / float(0x3fffffff)) <= std::exp(-delta / temp))) {
             n_accept++;
             if (delta < 2)
                 improved = true;
@@ -1453,7 +1276,7 @@ class VPRPlacer
     std::unordered_map<IdString, wirelen_t> wirelengths;
     wirelen_t curr_wirelength = std::numeric_limits<wirelen_t>::max();
     float curr_tns = 0;
-    float t = 1000;
+    float temp = 1000;
     bool improved = false;
     int n_move, n_accept;
     int diameter = 35, max_x = 1, max_y = 1;
@@ -1466,6 +1289,7 @@ class VPRPlacer
     const float post_legalise_dia_scale = 2;
     std::vector<CellInfo *> autoplaced;
 
+    float t = 1000;
     const float inner_num = 1.0;
     int move_lim, tot_iter;
     float rlim;
