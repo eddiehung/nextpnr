@@ -24,3 +24,4 @@ build/
 /Testing/*
 CTestTestfile.cmake
 install_manifest.txt
+*.gdb_history
