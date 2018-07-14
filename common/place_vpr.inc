@@ -345,7 +345,9 @@ void try_place(/*t_placer_opts placer_opts,
 #endif
         t_direct_inf *directs, int num_directs*/
         Context *ctx,
-        const std::unordered_map<BelType, int> &bel_types) {
+        const std::unordered_map<BelType, int> &bel_types,
+        const int grid_width,
+        const int grid_height) {
 
 //	/* Does almost all the work of placing a circuit.  Width_fac gives the   *
 //	 * width of the widest channel.  Place_cost_exp says what exponent the   *
@@ -568,7 +570,7 @@ void try_place(/*t_placer_opts placer_opts,
 //		inner_recompute_limit = move_lim + 1;
 //    }
 
-	rlim = (float) std::max(ctx->chip_info->width, ctx->chip_info->height);
+	rlim = (float) std::max(grid_width, grid_height);
 
 	first_rlim = rlim; /*used in timing-driven placement for exponent computation */
 	final_rlim = 1;
