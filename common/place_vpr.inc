@@ -239,8 +239,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 		float rlim,
         /*enum e_place_algorithm place_algorithm, float timing_tradeoff,*/
 		float inverse_prev_bb_cost, float inverse_prev_timing_cost,
-		float *delay_cost,
-        const int grid_width, const int grid_height);
+		float *delay_cost);
 
 static /*ClusterBlockId*/ CellInfo* pick_from_block();
 
@@ -253,8 +252,7 @@ static float starting_t(float *cost_ptr, float *bb_cost_ptr,
 		/*t_annealing_sched annealing_sched,*/ int max_moves, float rlim,
 		/*enum e_place_algorithm place_algorithm, float timing_tradeoff,*/
 		float inverse_prev_bb_cost, float inverse_prev_timing_cost,
-		float *delay_cost_ptr,
-        const int grid_width, const int grid_height);
+		float *delay_cost_ptr);
 
 //static void update_t(float *t, float rlim, float success_rat,
 //		t_annealing_sched annealing_sched);
@@ -285,8 +283,7 @@ static double get_std_dev(int n, double sum_x_squared, double av_x);
 static bool find_to(/*t_type_ptr type,*/ float rlim,
 		int x_from, int y_from,
 		/*int *px_to, int *py_to, int *pz_to*/
-        CellInfo* cell_from, BelId& bel_to,
-        const int grid_width, const int grid_height);
+        CellInfo* cell_from, BelId& bel_to);
 static void find_to_location(/*t_type_ptr type,*/ float rlim,
 		int x_from, int y_from/*,
 		int *px_to, int *py_to, int *pz_to*/);
@@ -338,6 +335,8 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 //    SetupTimingInfo& timing_info);
 
 static Context* npnr_ctx = NULL;
+static int grid_width = 0;
+static int grid_height = 0;
 #define VTR_ASSERT NPNR_ASSERT
 #define VTR_ASSERT_SAFE NPNR_ASSERT
 #define vpr_throw(__a, __b, __c, ...) log_error(__VA_ARGS__)
@@ -356,10 +355,10 @@ void try_place(/*t_placer_opts placer_opts,
 		t_timing_inf timing_inf,
 #endif
         t_direct_inf *directs, int num_directs*/
-        Context *ctx,
+        Context *npnr_ctx_,
         const std::unordered_map<BelType, int> &bel_types,
-        const int grid_width,
-        const int grid_height) {
+        const int grid_width_,
+        const int grid_height_) {
 
 //	/* Does almost all the work of placing a circuit.  Width_fac gives the   *
 //	 * width of the widest channel.  Place_cost_exp says what exponent the   *
@@ -400,7 +399,9 @@ void try_place(/*t_placer_opts placer_opts,
 	num_swap_aborted = 0;
 	num_ts_called = 0;
 
-    npnr_ctx = ctx;
+    npnr_ctx = npnr_ctx_;
+    grid_width = grid_width_;
+    grid_height = grid_height_;
 
 //	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
 //			|| placer_opts.enable_timing_computations) {
@@ -420,7 +421,6 @@ void try_place(/*t_placer_opts placer_opts,
 //			directs, num_directs);
 
 	initial_placement(bel_types);
-    return;
 
 //	init_draw_coords((float) width_fac);
 //
@@ -595,8 +595,7 @@ void try_place(/*t_placer_opts placer_opts,
 	t = starting_t(&cost, &bb_cost, &timing_cost,
 			/*annealing_sched,*/ move_lim, rlim,
 			/*placer_opts.place_algorithm, placer_opts.timing_tradeoff,*/
-			inverse_prev_bb_cost, inverse_prev_timing_cost, &delay_cost,
-            grid_width, grid_height);
+			inverse_prev_bb_cost, inverse_prev_timing_cost, &delay_cost);
 
 //	tot_iter = 0;
 //	moves_since_cost_recompute = 0;
@@ -1143,8 +1142,7 @@ static float starting_t(float *cost_ptr, float *bb_cost_ptr,
 		/*t_annealing_sched annealing_sched,*/ int max_moves, float rlim,
 		/*enum e_place_algorithm place_algorithm, float timing_tradeoff,*/
 		float inverse_prev_bb_cost, float inverse_prev_timing_cost,
-		float *delay_cost_ptr,
-        const int grid_width, const int grid_height) {
+		float *delay_cost_ptr) {
 
 	/* Finds the starting temperature (hot condition).              */
 
@@ -1167,8 +1165,7 @@ static float starting_t(float *cost_ptr, float *bb_cost_ptr,
 	for (i = 0; i < move_lim; i++) {
 		e_swap_result swap_result = try_swap(std::numeric_limits<float>::max(), cost_ptr, bb_cost_ptr, timing_cost_ptr, rlim,
 				/*place_algorithm, timing_tradeoff,*/
-				inverse_prev_bb_cost, inverse_prev_timing_cost, delay_cost_ptr,
-                grid_width, grid_height);
+				inverse_prev_bb_cost, inverse_prev_timing_cost, delay_cost_ptr);
 
 		if (swap_result == ACCEPTED) {
 			num_accepted++;
@@ -1367,8 +1364,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 		float rlim,
 		/*enum e_place_algorithm place_algorithm, float timing_tradeoff,*/
 		float inverse_prev_bb_cost, float inverse_prev_timing_cost,
-		float *delay_cost,
-        const int grid_width, const int grid_height) {
+		float *delay_cost) {
 
 	/* Picks some block and moves it to another spot.  If this spot is   *
 	 * occupied, switch the blocks.  Assess the change in cost function. *
@@ -1412,7 +1408,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 
     BelId bel_to;
 	if (!find_to(/*cluster_ctx.clb_nlist.block_type(b_from),*/ rlim, x_from, y_from, /*&x_to, &y_to, &z_to*/
-                 b_from, bel_to, grid_width, grid_height))
+                 b_from, bel_to))
 		return REJECTED;
 
 #if 0
@@ -1732,8 +1728,7 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 static bool find_to(/*t_type_ptr type,*/ float rlim,
 		int x_from, int y_from,
 		/*int *px_to, int *py_to, int *pz_to*/
-        CellInfo* cell_from, BelId& bel_to,
-        const int grid_width, const int grid_height) {
+        CellInfo* cell_from, BelId& bel_to) {
 
 	/* Returns the point to which I want to swap, properly range limited.
 	 * rlim must always be between 1 and device_ctx.grid.width() - 2 (inclusive) for this routine
