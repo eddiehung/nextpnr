@@ -113,7 +113,7 @@ class VPRPlacer
     {
         log_break();
 
-        vpr::try_place(ctx, bel_types, max_x + 1, max_y + 1);
+        vpr::try_place(ctx, max_x + 1, max_y + 1);
 
         size_t placed_cells = 0;
         // Initial constraints placer
