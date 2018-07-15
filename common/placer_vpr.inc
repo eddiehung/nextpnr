@@ -1574,6 +1574,11 @@ static /*ClusterBlockId*/ CellInfo* pick_from_block() {
 
         //Pick a block at random
         //ClusterBlockId b_from = ClusterBlockId(vtr::irand((int) cluster_ctx.clb_nlist.blocks().size() - 1));
+
+        // Since npnr->cells is an unordered_map with ForwardIterators,
+        //   it is inefficient to sample randomly from that container.
+        //   Instead, I've created a (global) randomly-accessible container 
+        //   called npnr_cells that contains the same contents
         auto b_from = npnr_cells.at(npnr_ctx->rng(npnr_cells.size()));
 
         //Record it as tried
