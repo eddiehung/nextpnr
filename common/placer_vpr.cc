@@ -21,7 +21,7 @@
  *
  */
 
-#include "place_vpr.h"
+#include "placer_vpr.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -74,7 +74,7 @@ namespace vpr {
         }
     }
 
-    #include "place_vpr.inc"
+    #include "placer_vpr.inc"
 }
 
 NEXTPNR_NAMESPACE_BEGIN
@@ -140,7 +140,7 @@ class VPRPlacer
     Context *ctx;
 };
 
-bool place_design_vpr(Context *ctx)
+bool placer_vpr(Context *ctx)
 {
     try {
         VPRPlacer placer(ctx);

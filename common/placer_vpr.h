@@ -16,15 +16,15 @@
  *  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  */
-#ifndef PLACE_VPR_H
-#define PLACE_VPR_H
+#ifndef PLACER_VPR_H
+#define PLACER_VPR_H
 
 #include "nextpnr.h"
 
 NEXTPNR_NAMESPACE_BEGIN
 
-extern bool place_design_vpr(Context *ctx);
+extern bool placer_vpr(Context *ctx);
 
 NEXTPNR_NAMESPACE_END
 
-#endif // PLACE_VPR_H
+#endif // PLACER_VPR_H

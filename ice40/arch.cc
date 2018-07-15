@@ -26,7 +26,7 @@
 #include "router1.h"
 #include "util.h"
 #include "cells.h"
-#include "place_vpr.h"
+#include "placer_vpr.h"
 
 NEXTPNR_NAMESPACE_BEGIN
 
@@ -466,10 +466,10 @@ bool Arch::place_vpr()
     auto ctx = getCtx();
 
     // VPR's initial placement is greedy and will place each cell
-    //   into a randomly selected bel. However, the ice40's GBs
-    //   have restrictions on which are not amenable to this greedy
-    //   approach. Work around this my placing those restrictive
-    //   GBs first.
+    //   into a randomly selected bel of the same type. 
+    //   However, the ice40's GBs have restrictions on which are 
+    //   not amenable to this greedy approach. 
+    //   Work around this my placing those restrictive GBs upfront.
     std::vector<BelId> gb_reset;
     std::vector<BelId> gb_cen;
     for (auto bel : ctx->getBels()) {
@@ -506,7 +506,7 @@ bool Arch::place_vpr()
         }
     }
 
-    return place_design_vpr(ctx); 
+    return placer_vpr(ctx); 
 }
 
 bool Arch::route() { return router1(getCtx()); }
