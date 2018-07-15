@@ -1617,7 +1617,7 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
             VTR_ASSERT_SAFE_MSG(net_id, "Only valid nets should be found in compressed netlist block pins");
 
 
-            if (!npnr_ctx->isGlobalNet(net_id))
+            if (npnr_ctx->isGlobalNet(net_id))
                 continue; //Global nets are assumed to span the whole chip, and do not effect costs
 
             //Record effected nets
@@ -2991,7 +2991,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 //			continue;
 //		}
 
-        if (cell->belStrength == STRENGTH_USER)
+        if (cell->bel != BelId())
             continue;
 
 //		/* Don't do IOs if the user specifies IOs; we'll read those locations later. */
@@ -3148,14 +3148,10 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
     for (auto it = free_locations.begin(); it != free_locations.end(); it++) {
         for (auto ipos = it->second.begin(); ipos != it->second.end(); ) {
             auto cell_name = npnr_ctx->getBoundBelCell(*ipos);
-            if (cell_name != IdString()) {
-                auto cell = npnr_ctx->cells[cell_name].get();
-                if (cell->belStrength == STRENGTH_USER) {
-                    ipos = it->second.erase(ipos);
-                    continue;
-                }
-            }
-            ipos++;
+            if (cell_name != IdString())
+                ipos = it->second.erase(ipos);
+            else
+                ipos++;
         }
     }
 
