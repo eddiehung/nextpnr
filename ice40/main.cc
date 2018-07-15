@@ -42,6 +42,7 @@
 #include "pack.h"
 #include "pcf.h"
 #include "place_legaliser.h"
+#include "place_sa.h"
 #include "place_vpr.h"
 #include "place.h"
 #include "route.h"
@@ -110,6 +111,7 @@ int main(int argc, char *argv[])
         options.add_options()("package", po::value<std::string>(), "set device package");
         options.add_options()("save", po::value<std::string>(), "project file to write");
         options.add_options()("load", po::value<std::string>(), "project file to read");
+        options.add_options()("vpr_place", "use VPR placer");
 
         po::variables_map vm;
         try {
@@ -370,9 +372,15 @@ int main(int argc, char *argv[])
             if (vm.count("no-tmdriv"))
                 ctx.timing_driven = false;
             if (!vm.count("pack-only")) {
-                place_gbs(&ctx);
-                if (!place_design_vpr(&ctx) && !ctx.force)
-                    log_error("Placing design failed.\n");
+                if (vm.count("vpr_place")) {
+                    place_gbs(&ctx);
+                    if (!place_design_vpr(&ctx) && !ctx.force)
+                        log_error("Placing design failed.\n");
+                }
+                else {
+                    if (!place_design_sa(&ctx) && !ctx.force)
+                        log_error("Placing design failed.\n");
+                }
                 ctx.check();
                 if (!route_design(&ctx) && !ctx.force)
                     log_error("Routing design failed.\n");
