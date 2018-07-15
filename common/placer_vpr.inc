@@ -1473,6 +1473,9 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 			}
 
 
+            // No need to update anything, as we've already done the swap
+            //   in setup_blocks_affected
+
 //			/* Update clb data structures since we kept the move. */
 //			/* Swap physical location */
 //            for (int iblk = 0; iblk < blocks_affected.num_moved_blocks; iblk++) {
@@ -1508,6 +1511,9 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 			}
 
 //			/* Restore the place_ctx.block_locs data structures to their state before the move. */
+
+            // Since we already swapped in setup_blocks_affected(), unswap here;
+            //   to prevent npnr assertions firing, unplace all bels first
             for (const auto &b : blocks_affected) {
                 auto blk = b.first;
                 npnr_ctx->unbindBel(blk->bel);
