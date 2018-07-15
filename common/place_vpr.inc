@@ -94,7 +94,6 @@ struct t_placer_statistics {
 /* Cost of a net, and a temporary cost of a net used during move assessment. */
 static std::unordered_map<NetInfo*, float> net_cost, temp_net_cost;
 
-//static t_legal_pos **legal_pos = nullptr; /* [0..device_ctx.num_block_types-1][0..type_tsize - 1] */
 static std::unordered_map<IdString, std::vector<BelId>> legal_pos;
 //static int *num_legal_pos = nullptr; /* [0..num_legal_pos-1] */
 
@@ -1617,8 +1616,9 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
             if (!net_id) continue;
             VTR_ASSERT_SAFE_MSG(net_id, "Only valid nets should be found in compressed netlist block pins");
 
-//			if (cluster_ctx.clb_nlist.net_is_global(net_id))
-//				continue; //Global nets are assumed to span the whole chip, and do not effect costs
+
+            if (!npnr_ctx->isGlobalNet(net_id))
+                continue; //Global nets are assumed to span the whole chip, and do not effect costs
 
             //Record effected nets
             record_affected_net(net_id, num_affected_nets);
@@ -1919,10 +1919,10 @@ static float recompute_bb_cost() {
 
 	for (auto& n : npnr_ctx->nets) { /* for each net ... */
         auto net_id = n.second.get();
-//		if (!cluster_ctx.clb_nlist.net_is_global(net_id)) { /* Do only if not global. */
+        if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
 			/* Bounding boxes don't have to be recomputed; they're correct. */
 			cost += net_cost[net_id];
-//		}
+		}
 	}
 
 	return (cost);
@@ -2087,7 +2087,7 @@ static float comp_bb_cost(/*e_cost_methods method*/) {
 
 	for (auto& n : npnr_ctx->nets) { /* for each net ... */
         auto net_id = n.second.get();
-//		if (!cluster_ctx.clb_nlist.net_is_global(net_id)) { /* Do only if not global. */
+        if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
 			/* Small nets don't use incremental updating on their bounding boxes, *
 			 * so they can use a fast bounding box calculator.                    */
 			if (net_id->users.size() >= SMALL_NET /*&& method == NORMAL*/) {
@@ -2102,7 +2102,7 @@ static float comp_bb_cost(/*e_cost_methods method*/) {
 			cost += net_cost[net_id];
 //			if (method == CHECK)
 //				expected_wirelength += get_net_wirelength_estimate(net_id, &bb_coords[net_id]);
-//		}
+		}
 	}
 
 //	if (method == CHECK) {
