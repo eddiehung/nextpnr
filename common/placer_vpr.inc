@@ -1879,8 +1879,8 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 		int ipos = npnr_ctx->rng(legal_pos[type].size());
         bel_to = legal_pos[type][ipos];
 	} else {
-		int x_rel = npnr_ctx->rng(std::max(0, max_x - min_x));
-		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y));
+		int x_rel = npnr_ctx->rng(std::max(0, max_x - min_x)+1); // +1 because rng() uses %
+		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y)+1); // +1 because rng() uses %
 		int px_to = min_x + x_rel;
 		int py_to = min_y + y_rel;
         if (!grid[px_to][py_to].empty()) {
