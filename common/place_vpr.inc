@@ -332,33 +332,6 @@ static void placement_inner_loop(float t, float rlim, /*t_placer_opts placer_opt
     const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
     SetupTimingInfo& timing_info*/);
 
-static Context* npnr_ctx = NULL;
-static struct {
-    inline int width() { return w; }
-    inline int height() { return h; }
-    int w, h;
-} grid;
-static struct {
-    const float inner_num = 10;
-} annealing_sched;
-
-#define VTR_ASSERT NPNR_ASSERT
-#define VTR_ASSERT_SAFE NPNR_ASSERT
-#define VTR_ASSERT_SAFE_MSG NPNR_ASSERT_MSG
-#define vpr_throw(__a, __b, __c, ...) log_error(__VA_ARGS__)
-namespace vtr {
-    constexpr size_t bufsize = 32768;
-    template <typename ...Args>
-	inline void printf_warning(const char*, unsigned, const char* fmt, Args... args) {
-        log_warning(fmt, std::forward<Args>(args)...);
-    }
-    template <typename ...Args>
-    inline void printf_info(const char* fmt, Args... args) {
-        log_info(fmt, std::forward<Args>(args)...);
-    }
-}
-
-
 /*****************************************************************************/
 void try_place(/*t_placer_opts placer_opts,
 		t_annealing_sched annealing_sched,
