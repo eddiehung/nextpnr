@@ -55,13 +55,13 @@
 // * random location before trying exhaustive placement - find the fist     *
 // * legal position and place it during initial placement.                  */
 //#define MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY 4
-//
-///* Flags for the states of the bounding box.                              *
-// * Stored as char for memory efficiency.                                  */
-//#define NOT_UPDATED_YET 'N'
-//#define UPDATED_ONCE 'U'
-//#define GOT_FROM_SCRATCH 'S'
-//
+
+/* Flags for the states of the bounding box.                              *
+ * Stored as char for memory efficiency.                                  */
+#define NOT_UPDATED_YET 'N'
+#define UPDATED_ONCE 'U'
+#define GOT_FROM_SCRATCH 'S'
+
 ///* For comp_cost.  NORMAL means use the method that generates updateable  *
 // * bounding boxes for speed.  CHECK means compute all bounding boxes from *
 // * scratch using a very simple routine to allow checks of the other       *
@@ -97,21 +97,21 @@ static std::unordered_map<NetInfo*, float> net_cost, temp_net_cost;
 //static t_legal_pos **legal_pos = nullptr; /* [0..device_ctx.num_block_types-1][0..type_tsize - 1] */
 static std::unordered_map<IdString, std::vector<BelId>> legal_pos;
 //static int *num_legal_pos = nullptr; /* [0..num_legal_pos-1] */
-//
-///* [0...cluster_ctx.clb_nlist.nets().size()-1]                                               *
-// * A flag array to indicate whether the specific bounding box has been updated   *
-// * in this particular swap or not. If it has been updated before, the code       *
-// * must use the updated data, instead of the out-of-date data passed into the    *
-// * subroutine, particularly used in try_swap(). The value NOT_UPDATED_YET        *
-// * indicates that the net has not been updated before, UPDATED_ONCE indicated    *
-// * that the net has been updated once, if it is going to be updated again, the   *
-// * values from the previous update must be used. GOT_FROM_SCRATCH is only        *
-// * applicable for nets larger than SMALL_NETS and it indicates that the          *
-// * particular bounding box cannot be updated incrementally before, hence the     *
-// * bounding box is got from scratch, so the bounding box would definitely be     *
-// * right, DO NOT update again.                                                   */
-//static vtr::vector<ClusterNetId, char> bb_updated_before;
-//
+
+/* [0...cluster_ctx.clb_nlist.nets().size()-1]                                               *
+ * A flag array to indicate whether the specific bounding box has been updated   *
+ * in this particular swap or not. If it has been updated before, the code       *
+ * must use the updated data, instead of the out-of-date data passed into the    *
+ * subroutine, particularly used in try_swap(). The value NOT_UPDATED_YET        *
+ * indicates that the net has not been updated before, UPDATED_ONCE indicated    *
+ * that the net has been updated once, if it is going to be updated again, the   *
+ * values from the previous update must be used. GOT_FROM_SCRATCH is only        *
+ * applicable for nets larger than SMALL_NETS and it indicates that the          *
+ * particular bounding box cannot be updated incrementally before, hence the     *
+ * bounding box is got from scratch, so the bounding box would definitely be     *
+ * right, DO NOT update again.                                                   */
+static std::unordered_map<NetInfo*, char> bb_updated_before;
+
 ///* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]. What is the value of the timing   */
 ///* driven portion of the cost function. These arrays will be set to  */
 ///* (criticality * delay) for each point to point connection. */
@@ -288,14 +288,15 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 
 static void get_non_updateable_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new);
 
-//static void update_bb(ClusterNetId net_id, t_bb *bb_coord_new,
-//		t_bb *bb_edge_new, int xold, int yold, int xnew, int ynew);
-//
+static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
+		t_bb *bb_edge_new, int xold, int yold, int xnew, int ynew);
+
 static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorithm,*/ float& bb_delta_c, float& timing_delta_c, float& delay_delta_c);
 
 static void record_affected_net(/*const ClusterNetId*/ NetInfo *net, int& num_affected_nets);
 
-//static void update_net_bb(const ClusterNetId net, int iblk, const ClusterBlockId blk, const ClusterPinId blk_pin);
+static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const ClusterBlockId blk, const ClusterPinId blk_pin*/
+        CellInfo* blk, BelId bel_from);
 //static void update_td_delta_costs(const ClusterNetId net, const ClusterPinId pin, float& delta_timing_cost, float& delta_delay_cost);
 
 static float get_net_cost(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_ptr);
@@ -705,7 +706,7 @@ void try_place(/*t_placer_opts placer_opts,
                          "%9d %6.3f\n",
                          oldt,
                          stats.av_cost, stats.av_bb_cost, stats.av_timing_cost, stats.av_delay_cost,
-                         place_delay_value, /*1e9*critical_path.delay()*/ -1, /*1e9*sTNS*/ -1, /*1e9*sWNS*/ -1,
+                         place_delay_value, /*1e9*critical_path.delay()*/ 0., /*1e9*sTNS*/ 0., /*1e9*sWNS*/ 0.,
                          success_rat, std_dev, rlim, crit_exponent,
                          tot_iter, t / oldt);
 
@@ -738,8 +739,8 @@ void try_place(/*t_placer_opts placer_opts,
 #endif
 	}
 	/* Outer loop of the simmulated annealing ends */
-//
-//
+
+
 //	outer_loop_recompute_criticalities(placer_opts, num_connections,
 //			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
 //			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost,
@@ -749,70 +750,70 @@ void try_place(/*t_placer_opts placer_opts,
 //            timing_inf,
 //#endif
 //            *timing_info);
-//
-//	t = 0; /* freeze out */
-//
-//	/* Run inner loop again with temperature = 0 so as to accept only swaps
-//	 * which reduce the cost of the placement */
-//	placement_inner_loop(t, rlim, placer_opts, inverse_prev_bb_cost, inverse_prev_timing_cost,
-//			move_lim, crit_exponent, inner_recompute_limit, &stats,
-//			&cost, &bb_cost, &timing_cost, &delay_cost,
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//            slacks,
-//            timing_inf,
-//#endif
-//            netlist_pin_lookup,
-//            *timing_info);
-//
-//	tot_iter += move_lim;
-//	success_rat = ((float) stats.success_sum) / move_lim;
-//	if (stats.success_sum == 0) {
-//		stats.av_cost = cost;
-//		stats.av_bb_cost = bb_cost;
-//		stats.av_delay_cost = delay_cost;
-//		stats.av_timing_cost = timing_cost;
-//	} else {
-//		stats.av_cost /= stats.success_sum;
-//		stats.av_bb_cost /= stats.success_sum;
-//		stats.av_delay_cost /= stats.success_sum;
-//		stats.av_timing_cost /= stats.success_sum;
-//	}
-//
-//	std_dev = get_std_dev(stats.success_sum, stats.sum_of_squares, stats.av_cost);
-//
+
+	t = 0; /* freeze out */
+
+	/* Run inner loop again with temperature = 0 so as to accept only swaps
+	 * which reduce the cost of the placement */
+	placement_inner_loop(t, rlim, /*placer_opts,*/ inverse_prev_bb_cost, inverse_prev_timing_cost,
+			move_lim, crit_exponent, inner_recompute_limit, &stats,
+			&cost, &bb_cost, &timing_cost, &delay_cost/*,
+#ifdef ENABLE_CLASSIC_VPR_STA
+            slacks,
+            timing_inf,
+#endif
+            netlist_pin_lookup,
+            *timing_info*/);
+
+	tot_iter += move_lim;
+	success_rat = ((float) stats.success_sum) / move_lim;
+	if (stats.success_sum == 0) {
+		stats.av_cost = cost;
+		stats.av_bb_cost = bb_cost;
+		stats.av_delay_cost = delay_cost;
+		stats.av_timing_cost = timing_cost;
+	} else {
+		stats.av_cost /= stats.success_sum;
+		stats.av_bb_cost /= stats.success_sum;
+		stats.av_delay_cost /= stats.success_sum;
+		stats.av_timing_cost /= stats.success_sum;
+	}
+
+	std_dev = get_std_dev(stats.success_sum, stats.sum_of_squares, stats.av_cost);
+
 //	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
 //        critical_path = timing_info->least_slack_critical_path();
 //        sTNS = timing_info->setup_total_negative_slack();
 //        sWNS = timing_info->setup_worst_negative_slack();
 //    }
-//
-//    vtr::printf_info("%7.3f "
-//                     "%7.4f %10.4f %-10.5g %-10.5g "
-//                     "%-10.5g %7.3f % 10.3g % 8.3f "
-//                     "%7.4f %7.4f %7.4f %6.3f"
-//                     "%9d %6.3f\n",
-//                      t,
-//                      stats.av_cost, stats.av_bb_cost, stats.av_timing_cost, stats.av_delay_cost,
-//                      place_delay_value, 1e9*critical_path.delay(), 1e9*sTNS, 1e9*sWNS,
-//                      success_rat, std_dev, rlim, crit_exponent,
-//                      tot_iter, 0.);
-//
-//	// TODO:
-//	// 1. print a message about number of aborted moves.
-//	// 2. add some subroutine hierarchy!  Too big!
-//
-//#ifdef VERBOSE
-//	if (getEchoEnabled() && isEchoFileEnabled(E_ECHO_END_CLB_PLACEMENT)) {
-//		print_clb_placement(getEchoFileName(E_ECHO_END_CLB_PLACEMENT));
-//	}
-//#endif
-//
+
+    vtr::printf_info("%7.3f "
+                     "%7.4f %10.4f %-10.5g %-10.5g "
+                     "%-10.5g %7.3f % 10.3g % 8.3f "
+                     "%7.4f %7.4f %7.4f %6.3f"
+                     "%9d %6.3f\n",
+                      t,
+                      stats.av_cost, stats.av_bb_cost, stats.av_timing_cost, stats.av_delay_cost,
+                      place_delay_value, /*1e9*critical_path.delay()*/0., /*1e9*sTNS*/0., /*1e9*sWNS*/0.,
+                      success_rat, std_dev, rlim, crit_exponent,
+                      tot_iter, 0.);
+
+	// TODO:
+	// 1. print a message about number of aborted moves.
+	// 2. add some subroutine hierarchy!  Too big!
+
+#ifdef VERBOSE
+	if (getEchoEnabled() && isEchoFileEnabled(E_ECHO_END_CLB_PLACEMENT)) {
+		print_clb_placement(getEchoFileName(E_ECHO_END_CLB_PLACEMENT));
+	}
+#endif
+
 //	check_place(bb_cost, timing_cost, placer_opts.place_algorithm, delay_cost);
-//
-//    //Some stats
-//    vtr::printf_info("\n");
-//    vtr::printf_info("Swaps called: %d\n", num_ts_called);
-//
+
+    //Some stats
+    vtr::printf_info("\n");
+    vtr::printf_info("Swaps called: %d\n", num_ts_called);
+
 //	if (placer_opts.enable_timing_computations
 //			&& placer_opts.place_algorithm == BOUNDING_BOX_PLACE) {
 //		/*need this done since the timing data has not been kept up to date*
@@ -874,26 +875,26 @@ void try_place(/*t_placer_opts placer_opts,
 //        }
 //#endif
 //	}
-//
-//	sprintf(msg, "Placement. Cost: %g  bb_cost: %g td_cost: %g Channel Factor: %d",
-//			cost, bb_cost, timing_cost, width_fac);
-//	vtr::printf_info("Placement cost: %g, bb_cost: %g, td_cost: %g, delay_cost: %g\n",
-//			cost, bb_cost, timing_cost, delay_cost);
+
+	sprintf(msg, "Placement. Cost: %g  bb_cost: %g td_cost: %g Channel Factor: %d",
+			cost, bb_cost, timing_cost, /*width_fac*/ -1);
+	vtr::printf_info("Placement cost: %g, bb_cost: %g, td_cost: %g, delay_cost: %g\n",
+			cost, bb_cost, timing_cost, delay_cost);
 //	update_screen(ScreenUpdatePriority::MAJOR, msg, PLACEMENT, timing_info);
-//
-//	// Print out swap statistics
-//	size_t total_swap_attempts = num_swap_rejected + num_swap_accepted + num_swap_aborted;
-//    VTR_ASSERT(total_swap_attempts > 0);
-//
-//    size_t num_swap_print_digits = ceil(log10(total_swap_attempts));
-//	float reject_rate = (float) num_swap_rejected / total_swap_attempts;
-//	float accept_rate = (float) num_swap_accepted / total_swap_attempts;
-//	float abort_rate = (float) num_swap_aborted / total_swap_attempts;
-//	vtr::printf_info("Placement total # of swap attempts: %*d\n", num_swap_print_digits, total_swap_attempts);
-//	vtr::printf_info("\tSwaps accepted: %*d (%4.1f %%)\n", num_swap_print_digits, num_swap_accepted, 100*accept_rate);
-//	vtr::printf_info("\tSwaps rejected: %*d (%4.1f %%)\n", num_swap_print_digits, num_swap_rejected, 100*reject_rate);
-//	vtr::printf_info("\tSwaps aborted : %*d (%4.1f %%)\n", num_swap_print_digits, num_swap_aborted, 100*abort_rate);
-//
+
+	// Print out swap statistics
+	size_t total_swap_attempts = num_swap_rejected + num_swap_accepted + num_swap_aborted;
+    VTR_ASSERT(total_swap_attempts > 0);
+
+    size_t num_swap_print_digits = ceil(log10(total_swap_attempts));
+	float reject_rate = (float) num_swap_rejected / total_swap_attempts;
+	float accept_rate = (float) num_swap_accepted / total_swap_attempts;
+	float abort_rate = (float) num_swap_aborted / total_swap_attempts;
+	vtr::printf_info("Placement total # of swap attempts: %*d\n", num_swap_print_digits, total_swap_attempts);
+	vtr::printf_info("\tSwaps accepted: %*d (%4.1f %%)\n", num_swap_print_digits, num_swap_accepted, 100*accept_rate);
+	vtr::printf_info("\tSwaps rejected: %*d (%4.1f %%)\n", num_swap_print_digits, num_swap_rejected, 100*reject_rate);
+	vtr::printf_info("\tSwaps aborted : %*d (%4.1f %%)\n", num_swap_print_digits, num_swap_aborted, 100*abort_rate);
+
 //	free_placement_structs(placer_opts);
 //	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
 //			|| placer_opts.enable_timing_computations) {
@@ -1239,6 +1240,7 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to
 //		place_ctx.block_locs[b_from].y = y_to;
 //		place_ctx.block_locs[b_from].z = z_to;
 
+        npnr_ctx->unbindBel(bel_from);
         npnr_ctx->bindBel(bel_to, b_from->name, STRENGTH_WEAK);
 
 //		// Sets up the blocks moved
@@ -1479,7 +1481,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 		if (keep_switch == ACCEPTED) {
 			*cost = *cost + delta_c;
 			*bb_cost = *bb_cost + bb_delta_c;
-//
+
 //			if (place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
 //				/*update the point_to_point_timing_cost and point_to_point_delay_cost
 //				 * values from the temporary values */
@@ -1499,7 +1501,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 
 				/* negative temp_net_cost value is acting as a flag. */
 				temp_net_cost[net_id] =	-1;
-//				bb_updated_before[net_id] = NOT_UPDATED_YET;
+				bb_updated_before[net_id] = NOT_UPDATED_YET;
 			}
 
 
@@ -1534,7 +1536,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 			/* Reset the net cost function flags first. */
             for (auto net_id : ts_nets_to_update) {
 				temp_net_cost[net_id] = -1;
-//				bb_updated_before[net_id] = NOT_UPDATED_YET;
+				bb_updated_before[net_id] = NOT_UPDATED_YET;
 			}
 
 //			/* Restore the place_ctx.block_locs data structures to their state before the move. */
@@ -1636,25 +1638,26 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 	//Go through all the blocks moved
     for (const auto &b : blocks_affected) {
         auto blk = b.first;
+        auto bel = b.second;
 
 		//Go through all the pins in the moved block
         for (const auto &port : blk->ports) {
-            if (port.second.net == nullptr) continue;
-            auto net = port.second.net;
-            VTR_ASSERT_SAFE_MSG(net, "Only valid nets should be found in compressed netlist block pins");
+            auto net_id = port.second.net;
+            if (!net_id) continue;
+            VTR_ASSERT_SAFE_MSG(net_id, "Only valid nets should be found in compressed netlist block pins");
 
 //			if (cluster_ctx.clb_nlist.net_is_global(net_id))
 //				continue; //Global nets are assumed to span the whole chip, and do not effect costs
 
             //Record effected nets
-            record_affected_net(net, num_affected_nets);
+            record_affected_net(net_id, num_affected_nets);
 
-//            //Update the net bounding boxes
-//            //
-//            //Do not update the net cost here since it should only be updated
-//            //once per net, not once per pin.
-//            update_net_bb(net_id, iblk, blk, blk_pin);
-//
+            //Update the net bounding boxes
+            //
+            //Do not update the net cost here since it should only be updated
+            //once per net, not once per pin.
+            update_net_bb(net_id, /*iblk, blk, blk_pin,*/ blk, bel);
+
 //            if (place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
 //                //Determine the change in timing costs if required
 //                update_td_delta_costs(net_id, blk_pin, timing_delta_c, delay_delta_c);
@@ -1675,7 +1678,7 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 
 static void record_affected_net(/*const ClusterNetId*/ NetInfo *net, int& num_affected_nets) {
     //Record effected nets
-    if (!temp_net_cost.count(net) || temp_net_cost[net] < 0.) {
+    if (temp_net_cost[net] < 0.) {
         //Net not marked yet.
         ts_nets_to_update.push_back(net);
         num_affected_nets++;
@@ -1685,34 +1688,41 @@ static void record_affected_net(/*const ClusterNetId*/ NetInfo *net, int& num_af
     }
 }
 
-//static void update_net_bb(const ClusterNetId net, int iblk, const ClusterBlockId blk, const ClusterPinId blk_pin) {
+static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const ClusterBlockId blk, const ClusterPinId blk_pin*/
+        CellInfo* blk, BelId bel_from) {
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
-//
-//    if (cluster_ctx.clb_nlist.net_sinks(net).size() < SMALL_NET) {
-//        //For small nets brute-force bounding box update is faster
-//
-//        if(bb_updated_before[net] == NOT_UPDATED_YET) { //Only once per-net
-//            get_non_updateable_bb(net, &ts_bb_coord_new[net]);
-//        }
-//    } else {
-//        //For large nets, update bounding box incrementally
+
+    if (net->users.size() < SMALL_NET) {
+        //For small nets brute-force bounding box update is faster
+
+        if(bb_updated_before[net] == NOT_UPDATED_YET) { //Only once per-net
+            get_non_updateable_bb(net, &ts_bb_coord_new[net]);
+        }
+    } else {
+        //For large nets, update bounding box incrementally
 //        int iblk_pin = cluster_ctx.clb_nlist.pin_physical_index(blk_pin);
 //
 //        t_type_ptr blk_type = cluster_ctx.clb_nlist.block_type(blk);
 //        int pin_width_offset = blk_type->pin_width_offset[iblk_pin];
 //        int pin_height_offset = blk_type->pin_height_offset[iblk_pin];
-//
-//        //Incremental bounding box update
-//        update_bb(net, &ts_bb_coord_new[net],
-//                &ts_bb_edge_new[net],
-//                blocks_affected.moved_blocks[iblk].xold + pin_width_offset,
-//                blocks_affected.moved_blocks[iblk].yold + pin_height_offset,
-//                blocks_affected.moved_blocks[iblk].xnew + pin_width_offset,
-//                blocks_affected.moved_blocks[iblk].ynew + pin_height_offset);
-//    }
-//
-//}
-//
+
+        int xold, yold;
+        int xnew, ynew;
+        bool gb;
+        npnr_ctx->estimatePosition(bel_from, xold, yold, gb);
+        npnr_ctx->estimatePosition(blk->bel, xnew, ynew, gb);
+
+        //Incremental bounding box update
+        update_bb(net, &ts_bb_coord_new[net],
+                &ts_bb_edge_new[net],
+                /*blocks_affected.moved_blocks[iblk].xold + pin_width_offset*/ xold,
+                /*blocks_affected.moved_blocks[iblk].yold + pin_height_offset*/ yold,
+                /*blocks_affected.moved_blocks[iblk].xnew + pin_width_offset*/ xnew,
+                /*blocks_affected.moved_blocks[iblk].ynew + pin_height_offset*/ ynew);
+    }
+
+}
+
 //static void update_td_delta_costs(const ClusterNetId net, const ClusterPinId pin, float& delta_timing_cost, float& delta_delay_cost) {
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //
@@ -2235,9 +2245,14 @@ static void alloc_and_load_placement_structs(
 //			}
 //		}
 //	}
-//
-//    net_cost.resize(num_nets, -1.);
-//    temp_net_cost.resize(num_nets, -1.);
+
+    for (auto& n : npnr_ctx->nets) {
+        auto net_id = n.second.get();
+        net_cost.emplace(net_id, -1);
+        temp_net_cost.emplace(net_id, -1);
+        bb_updated_before.emplace(net_id, NOT_UPDATED_YET);
+    }
+
 //    bb_coords.resize(num_nets, t_bb());
 //    bb_num_on_edges.resize(num_nets, t_bb());
 //
@@ -2534,198 +2549,198 @@ static void get_non_updateable_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coo
 	bb_coord_new->ymax = std::max(std::min<int>(ymax, grid.height() - 2), 1); //-2 for no perim channels
 }
 
-//static void update_bb(ClusterNetId net_id, t_bb *bb_coord_new,
-//		t_bb *bb_edge_new, int xold, int yold, int xnew, int ynew) {
-//
-//	/* Updates the bounding box of a net by storing its coordinates in    *
-//	 * the bb_coord_new data structure and the number of blocks on each   *
-//	 * edge in the bb_edge_new data structure.  This routine should only  *
-//	 * be called for large nets, since it has some overhead relative to   *
-//	 * just doing a brute force bounding box calculation.  The bounding   *
-//	 * box coordinate and edge information for inet must be valid before  *
-//	 * this routine is called.                                            *
-//	 * Currently assumes channels on both sides of the CLBs forming the   *
-//	 * edges of the bounding box can be used.  Essentially, I am assuming *
-//	 * the pins always lie on the outside of the bounding box.            *
-//	 * The x and y coordinates are the pin's x and y coordinates.         */
-//	/* IO blocks are considered to be one cell in for simplicity.         */
-//    //TODO: account for multiple physical pin instances per logical pin
-//
-//	t_bb *curr_bb_edge, *curr_bb_coord;
-//
+static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
+		t_bb *bb_edge_new, int xold, int yold, int xnew, int ynew) {
+
+	/* Updates the bounding box of a net by storing its coordinates in    *
+	 * the bb_coord_new data structure and the number of blocks on each   *
+	 * edge in the bb_edge_new data structure.  This routine should only  *
+	 * be called for large nets, since it has some overhead relative to   *
+	 * just doing a brute force bounding box calculation.  The bounding   *
+	 * box coordinate and edge information for inet must be valid before  *
+	 * this routine is called.                                            *
+	 * Currently assumes channels on both sides of the CLBs forming the   *
+	 * edges of the bounding box can be used.  Essentially, I am assuming *
+	 * the pins always lie on the outside of the bounding box.            *
+	 * The x and y coordinates are the pin's x and y coordinates.         */
+	/* IO blocks are considered to be one cell in for simplicity.         */
+    //TODO: account for multiple physical pin instances per logical pin
+
+	t_bb *curr_bb_edge, *curr_bb_coord;
+
 //    auto& device_ctx = g_vpr_ctx.device();
-//
-//	xnew = max(min<int>(xnew, device_ctx.grid.width() - 2), 1); //-2 for no perim channels
-//	ynew = max(min<int>(ynew, device_ctx.grid.height() - 2), 1); //-2 for no perim channels
-//	xold = max(min<int>(xold, device_ctx.grid.width() - 2), 1); //-2 for no perim channels
-//	yold = max(min<int>(yold, device_ctx.grid.height() - 2), 1); //-2 for no perim channels
-//
-//	/* Check if the net had been updated before. */
-//	if (bb_updated_before[net_id] == GOT_FROM_SCRATCH) {
-//        /* The net had been updated from scratch, DO NOT update again! */
-//		return;
-//	} else if (bb_updated_before[net_id] == NOT_UPDATED_YET) {
-//        /* The net had NOT been updated before, could use the old values */
-//		curr_bb_coord = &bb_coords[net_id];
-//		curr_bb_edge = &bb_num_on_edges[net_id];
-//		bb_updated_before[net_id] = UPDATED_ONCE;
-//	} else {
-//        /* The net had been updated before, must use the new values */
-//		curr_bb_coord = bb_coord_new;
-//		curr_bb_edge = bb_edge_new;
-//	}
-//
-//	/* Check if I can update the bounding box incrementally. */
-//
-//	if (xnew < xold) { /* Move to left. */
-//
-//		/* Update the xmax fields for coordinates and number of edges first. */
-//
-//		if (xold == curr_bb_coord->xmax) { /* Old position at xmax. */
-//			if (curr_bb_edge->xmax == 1) {
-//				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-//				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
-//				return;
-//			} else {
-//				bb_edge_new->xmax = curr_bb_edge->xmax - 1;
-//				bb_coord_new->xmax = curr_bb_coord->xmax;
-//			}
-//		} else { /* Move to left, old postion was not at xmax. */
-//			bb_coord_new->xmax = curr_bb_coord->xmax;
-//			bb_edge_new->xmax = curr_bb_edge->xmax;
-//		}
-//
-//		/* Now do the xmin fields for coordinates and number of edges. */
-//
-//		if (xnew < curr_bb_coord->xmin) { /* Moved past xmin */
-//			bb_coord_new->xmin = xnew;
-//			bb_edge_new->xmin = 1;
-//		} else if (xnew == curr_bb_coord->xmin) { /* Moved to xmin */
-//			bb_coord_new->xmin = xnew;
-//			bb_edge_new->xmin = curr_bb_edge->xmin + 1;
-//		} else { /* Xmin unchanged. */
-//			bb_coord_new->xmin = curr_bb_coord->xmin;
-//			bb_edge_new->xmin = curr_bb_edge->xmin;
-//		}
-//        /* End of move to left case. */
-//
-//	} else if (xnew > xold) { /* Move to right. */
-//
-//		/* Update the xmin fields for coordinates and number of edges first. */
-//
-//		if (xold == curr_bb_coord->xmin) { /* Old position at xmin. */
-//			if (curr_bb_edge->xmin == 1) {
-//				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-//				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
-//				return;
-//			} else {
-//				bb_edge_new->xmin = curr_bb_edge->xmin - 1;
-//				bb_coord_new->xmin = curr_bb_coord->xmin;
-//			}
-//		} else { /* Move to right, old position was not at xmin. */
-//			bb_coord_new->xmin = curr_bb_coord->xmin;
-//			bb_edge_new->xmin = curr_bb_edge->xmin;
-//		}
-//
-//		/* Now do the xmax fields for coordinates and number of edges. */
-//
-//		if (xnew > curr_bb_coord->xmax) { /* Moved past xmax. */
-//			bb_coord_new->xmax = xnew;
-//			bb_edge_new->xmax = 1;
-//		} else if (xnew == curr_bb_coord->xmax) { /* Moved to xmax */
-//			bb_coord_new->xmax = xnew;
-//			bb_edge_new->xmax = curr_bb_edge->xmax + 1;
-//		} else { /* Xmax unchanged. */
-//			bb_coord_new->xmax = curr_bb_coord->xmax;
-//			bb_edge_new->xmax = curr_bb_edge->xmax;
-//		}
-//        /* End of move to right case. */
-//
-//	} else { /* xnew == xold -- no x motion. */
-//		bb_coord_new->xmin = curr_bb_coord->xmin;
-//		bb_coord_new->xmax = curr_bb_coord->xmax;
-//		bb_edge_new->xmin = curr_bb_edge->xmin;
-//		bb_edge_new->xmax = curr_bb_edge->xmax;
-//	}
-//
-//	/* Now account for the y-direction motion. */
-//
-//	if (ynew < yold) { /* Move down. */
-//
-//		/* Update the ymax fields for coordinates and number of edges first. */
-//
-//		if (yold == curr_bb_coord->ymax) { /* Old position at ymax. */
-//			if (curr_bb_edge->ymax == 1) {
-//				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-//				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
-//				return;
-//			} else {
-//				bb_edge_new->ymax = curr_bb_edge->ymax - 1;
-//				bb_coord_new->ymax = curr_bb_coord->ymax;
-//			}
-//		} else { /* Move down, old postion was not at ymax. */
-//			bb_coord_new->ymax = curr_bb_coord->ymax;
-//			bb_edge_new->ymax = curr_bb_edge->ymax;
-//		}
-//
-//		/* Now do the ymin fields for coordinates and number of edges. */
-//
-//		if (ynew < curr_bb_coord->ymin) { /* Moved past ymin */
-//			bb_coord_new->ymin = ynew;
-//			bb_edge_new->ymin = 1;
-//		} else if (ynew == curr_bb_coord->ymin) { /* Moved to ymin */
-//			bb_coord_new->ymin = ynew;
-//			bb_edge_new->ymin = curr_bb_edge->ymin + 1;
-//		} else { /* ymin unchanged. */
-//			bb_coord_new->ymin = curr_bb_coord->ymin;
-//			bb_edge_new->ymin = curr_bb_edge->ymin;
-//		}
-//        /* End of move down case. */
-//
-//	} else if (ynew > yold) { /* Moved up. */
-//
-//		/* Update the ymin fields for coordinates and number of edges first. */
-//
-//		if (yold == curr_bb_coord->ymin) { /* Old position at ymin. */
-//			if (curr_bb_edge->ymin == 1) {
-//				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-//				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
-//				return;
-//			} else {
-//				bb_edge_new->ymin = curr_bb_edge->ymin - 1;
-//				bb_coord_new->ymin = curr_bb_coord->ymin;
-//			}
-//		} else { /* Moved up, old position was not at ymin. */
-//			bb_coord_new->ymin = curr_bb_coord->ymin;
-//			bb_edge_new->ymin = curr_bb_edge->ymin;
-//		}
-//
-//		/* Now do the ymax fields for coordinates and number of edges. */
-//
-//		if (ynew > curr_bb_coord->ymax) { /* Moved past ymax. */
-//			bb_coord_new->ymax = ynew;
-//			bb_edge_new->ymax = 1;
-//		} else if (ynew == curr_bb_coord->ymax) { /* Moved to ymax */
-//			bb_coord_new->ymax = ynew;
-//			bb_edge_new->ymax = curr_bb_edge->ymax + 1;
-//		} else { /* ymax unchanged. */
-//			bb_coord_new->ymax = curr_bb_coord->ymax;
-//			bb_edge_new->ymax = curr_bb_edge->ymax;
-//		}
-//        /* End of move up case. */
-//
-//	} else { /* ynew == yold -- no y motion. */
-//		bb_coord_new->ymin = curr_bb_coord->ymin;
-//		bb_coord_new->ymax = curr_bb_coord->ymax;
-//		bb_edge_new->ymin = curr_bb_edge->ymin;
-//		bb_edge_new->ymax = curr_bb_edge->ymax;
-//	}
-//
-//	if (bb_updated_before[net_id] == NOT_UPDATED_YET) {
-//		bb_updated_before[net_id] = UPDATED_ONCE;
-//    }
-//}
-//
+
+	xnew = std::max(std::min<int>(xnew, /*device_ctx.*/grid.width() - 2), 1); //-2 for no perim channels
+	ynew = std::max(std::min<int>(ynew, /*device_ctx.*/grid.height() - 2), 1); //-2 for no perim channels
+	xold = std::max(std::min<int>(xold, /*device_ctx.*/grid.width() - 2), 1); //-2 for no perim channels
+	yold = std::max(std::min<int>(yold, /*device_ctx.*/grid.height() - 2), 1); //-2 for no perim channels
+
+	/* Check if the net had been updated before. */
+	if (bb_updated_before[net_id] == GOT_FROM_SCRATCH) {
+        /* The net had been updated from scratch, DO NOT update again! */
+		return;
+	} else if (bb_updated_before[net_id] == NOT_UPDATED_YET) {
+        /* The net had NOT been updated before, could use the old values */
+		curr_bb_coord = &bb_coords[net_id];
+		curr_bb_edge = &bb_num_on_edges[net_id];
+		bb_updated_before[net_id] = UPDATED_ONCE;
+	} else {
+        /* The net had been updated before, must use the new values */
+		curr_bb_coord = bb_coord_new;
+		curr_bb_edge = bb_edge_new;
+	}
+
+	/* Check if I can update the bounding box incrementally. */
+
+	if (xnew < xold) { /* Move to left. */
+
+		/* Update the xmax fields for coordinates and number of edges first. */
+
+		if (xold == curr_bb_coord->xmax) { /* Old position at xmax. */
+			if (curr_bb_edge->xmax == 1) {
+				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
+				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
+				return;
+			} else {
+				bb_edge_new->xmax = curr_bb_edge->xmax - 1;
+				bb_coord_new->xmax = curr_bb_coord->xmax;
+			}
+		} else { /* Move to left, old postion was not at xmax. */
+			bb_coord_new->xmax = curr_bb_coord->xmax;
+			bb_edge_new->xmax = curr_bb_edge->xmax;
+		}
+
+		/* Now do the xmin fields for coordinates and number of edges. */
+
+		if (xnew < curr_bb_coord->xmin) { /* Moved past xmin */
+			bb_coord_new->xmin = xnew;
+			bb_edge_new->xmin = 1;
+		} else if (xnew == curr_bb_coord->xmin) { /* Moved to xmin */
+			bb_coord_new->xmin = xnew;
+			bb_edge_new->xmin = curr_bb_edge->xmin + 1;
+		} else { /* Xmin unchanged. */
+			bb_coord_new->xmin = curr_bb_coord->xmin;
+			bb_edge_new->xmin = curr_bb_edge->xmin;
+		}
+        /* End of move to left case. */
+
+	} else if (xnew > xold) { /* Move to right. */
+
+		/* Update the xmin fields for coordinates and number of edges first. */
+
+		if (xold == curr_bb_coord->xmin) { /* Old position at xmin. */
+			if (curr_bb_edge->xmin == 1) {
+				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
+				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
+				return;
+			} else {
+				bb_edge_new->xmin = curr_bb_edge->xmin - 1;
+				bb_coord_new->xmin = curr_bb_coord->xmin;
+			}
+		} else { /* Move to right, old position was not at xmin. */
+			bb_coord_new->xmin = curr_bb_coord->xmin;
+			bb_edge_new->xmin = curr_bb_edge->xmin;
+		}
+
+		/* Now do the xmax fields for coordinates and number of edges. */
+
+		if (xnew > curr_bb_coord->xmax) { /* Moved past xmax. */
+			bb_coord_new->xmax = xnew;
+			bb_edge_new->xmax = 1;
+		} else if (xnew == curr_bb_coord->xmax) { /* Moved to xmax */
+			bb_coord_new->xmax = xnew;
+			bb_edge_new->xmax = curr_bb_edge->xmax + 1;
+		} else { /* Xmax unchanged. */
+			bb_coord_new->xmax = curr_bb_coord->xmax;
+			bb_edge_new->xmax = curr_bb_edge->xmax;
+		}
+        /* End of move to right case. */
+
+	} else { /* xnew == xold -- no x motion. */
+		bb_coord_new->xmin = curr_bb_coord->xmin;
+		bb_coord_new->xmax = curr_bb_coord->xmax;
+		bb_edge_new->xmin = curr_bb_edge->xmin;
+		bb_edge_new->xmax = curr_bb_edge->xmax;
+	}
+
+	/* Now account for the y-direction motion. */
+
+	if (ynew < yold) { /* Move down. */
+
+		/* Update the ymax fields for coordinates and number of edges first. */
+
+		if (yold == curr_bb_coord->ymax) { /* Old position at ymax. */
+			if (curr_bb_edge->ymax == 1) {
+				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
+				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
+				return;
+			} else {
+				bb_edge_new->ymax = curr_bb_edge->ymax - 1;
+				bb_coord_new->ymax = curr_bb_coord->ymax;
+			}
+		} else { /* Move down, old postion was not at ymax. */
+			bb_coord_new->ymax = curr_bb_coord->ymax;
+			bb_edge_new->ymax = curr_bb_edge->ymax;
+		}
+
+		/* Now do the ymin fields for coordinates and number of edges. */
+
+		if (ynew < curr_bb_coord->ymin) { /* Moved past ymin */
+			bb_coord_new->ymin = ynew;
+			bb_edge_new->ymin = 1;
+		} else if (ynew == curr_bb_coord->ymin) { /* Moved to ymin */
+			bb_coord_new->ymin = ynew;
+			bb_edge_new->ymin = curr_bb_edge->ymin + 1;
+		} else { /* ymin unchanged. */
+			bb_coord_new->ymin = curr_bb_coord->ymin;
+			bb_edge_new->ymin = curr_bb_edge->ymin;
+		}
+        /* End of move down case. */
+
+	} else if (ynew > yold) { /* Moved up. */
+
+		/* Update the ymin fields for coordinates and number of edges first. */
+
+		if (yold == curr_bb_coord->ymin) { /* Old position at ymin. */
+			if (curr_bb_edge->ymin == 1) {
+				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
+				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
+				return;
+			} else {
+				bb_edge_new->ymin = curr_bb_edge->ymin - 1;
+				bb_coord_new->ymin = curr_bb_coord->ymin;
+			}
+		} else { /* Moved up, old position was not at ymin. */
+			bb_coord_new->ymin = curr_bb_coord->ymin;
+			bb_edge_new->ymin = curr_bb_edge->ymin;
+		}
+
+		/* Now do the ymax fields for coordinates and number of edges. */
+
+		if (ynew > curr_bb_coord->ymax) { /* Moved past ymax. */
+			bb_coord_new->ymax = ynew;
+			bb_edge_new->ymax = 1;
+		} else if (ynew == curr_bb_coord->ymax) { /* Moved to ymax */
+			bb_coord_new->ymax = ynew;
+			bb_edge_new->ymax = curr_bb_edge->ymax + 1;
+		} else { /* ymax unchanged. */
+			bb_coord_new->ymax = curr_bb_coord->ymax;
+			bb_edge_new->ymax = curr_bb_edge->ymax;
+		}
+        /* End of move up case. */
+
+	} else { /* ynew == yold -- no y motion. */
+		bb_coord_new->ymin = curr_bb_coord->ymin;
+		bb_coord_new->ymax = curr_bb_coord->ymax;
+		bb_edge_new->ymin = curr_bb_edge->ymin;
+		bb_edge_new->ymax = curr_bb_edge->ymax;
+	}
+
+	if (bb_updated_before[net_id] == NOT_UPDATED_YET) {
+		bb_updated_before[net_id] = UPDATED_ONCE;
+    }
+}
+
 //static void alloc_legal_placements() {
 //    auto& device_ctx = g_vpr_ctx.device();
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
