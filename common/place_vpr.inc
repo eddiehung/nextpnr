@@ -1787,6 +1787,11 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 				px_to, py_to, pz_to*/,
                 bel_to);
 
+        if (bel_to == BelId()) {
+            is_legal = false;
+            continue;
+        }
+
         bool gb;
         npnr_ctx->estimatePosition(bel_to, px_to, py_to, gb);
 
@@ -1853,18 +1858,13 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 //	*pz_to = 0;
 	if (int(grid.width() / 4) < rlx || int(grid.height() / 4) < rly || legal_pos[type].size() < active_area) {
 		int ipos = npnr_ctx->rng(legal_pos[type].size());
-//		*px_to = legal_pos[itype][ipos].x;
-//		*py_to = legal_pos[itype][ipos].y;
-//		*pz_to = legal_pos[itype][ipos].z;
         bel_to = legal_pos[type][ipos];
 	} else {
 		int x_rel = npnr_ctx->rng(std::max(0, max_x - min_x));
 		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y));
 		int px_to = min_x + x_rel;
 		int py_to = min_y + y_rel;
-//		*px_to = (*px_to) - grid[*px_to][*py_to].width_offset; /* align it */
-//		*py_to = (*py_to) - grid[*px_to][*py_to].height_offset; /* align it */
-        throw;
+        bel_to = grid[px_to][py_to];
 	}
 }
 

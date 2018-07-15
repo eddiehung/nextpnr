@@ -49,7 +49,9 @@ namespace vpr {
     static struct {
         inline int width() { return _width; }
         inline int height() { return _height; }
+        inline const std::vector<BelId>& operator[](size_t x) { return _bels.at(x); }
         int _width, _height;
+        std::vector<std::vector<BelId>> _bels;
     } grid;
     static struct {
         const float inner_num = 10;
@@ -75,28 +77,6 @@ namespace vpr {
 }
 
 NEXTPNR_NAMESPACE_BEGIN
-
-static double get_std_dev(int n, double sum_x_squared, double av_x) {
-
-	/* Returns the standard deviation of data set x.  There are n sample points, *
-	 * sum_x_squared is the summation over n of x^2 and av_x is the average x.   *
-	 * All operations are done in double precision, since round off error can be *
-	 * a problem in the initial temp. std_dev calculation for big circuits.      */
-
-	double std_dev;
-
-	if (n <= 1)
-		std_dev = 0.;
-	else
-		std_dev = (sum_x_squared - n * av_x * av_x) / (double) (n - 1);
-
-	if (std_dev > 0.) /* Very small variances sometimes round negative */
-		std_dev = sqrt(std_dev);
-	else
-		std_dev = 0.;
-
-	return (std_dev);
-}
 
 class VPRPlacer
 {
@@ -143,6 +123,15 @@ class VPRPlacer
         vpr::npnr_ctx = ctx;
         vpr::grid._width = max_x + 1;
         vpr::grid._height = max_y + 1;
+        vpr::grid._bels.resize(vpr::grid._width);
+        for (auto& r : vpr::grid._bels)
+            r.resize(vpr::grid._height, BelId());
+        for (auto bel : ctx->getBels()) {
+            int x, y;
+            bool gb;
+            ctx->estimatePosition(bel, x, y, gb);
+            vpr::grid._bels[x][y] = bel;
+        }
         vpr::try_place();
 
         size_t placed_cells = 0;
