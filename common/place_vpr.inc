@@ -340,10 +340,7 @@ void try_place(/*t_placer_opts placer_opts,
 #ifdef ENABLE_CLASSIC_VPR_STA
 		t_timing_inf timing_inf,
 #endif
-        t_direct_inf *directs, int num_directs*/
-        Context *npnr_ctx_,
-        const int grid_width,
-        const int grid_height) {
+        t_direct_inf *directs, int num_directs*/) {
 
 //	/* Does almost all the work of placing a circuit.  Width_fac gives the   *
 //	 * width of the widest channel.  Place_cost_exp says what exponent the   *
@@ -383,10 +380,6 @@ void try_place(/*t_placer_opts placer_opts,
 	num_swap_accepted = 0;
 	num_swap_aborted = 0;
 	num_ts_called = 0;
-
-    npnr_ctx = npnr_ctx_;
-    grid.w = grid_width;
-    grid.h = grid_height;
 
 //	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
 //			|| placer_opts.enable_timing_computations) {

@@ -47,9 +47,9 @@ namespace vpr {
 
     static Context* npnr_ctx = NULL;
     static struct {
-        inline int width() { return w; }
-        inline int height() { return h; }
-        int w, h;
+        inline int width() { return _width; }
+        inline int height() { return _height; }
+        int _width, _height;
     } grid;
     static struct {
         const float inner_num = 10;
@@ -140,7 +140,10 @@ class VPRPlacer
     {
         log_break();
 
-        vpr::try_place(ctx, max_x + 1, max_y + 1);
+        vpr::npnr_ctx = ctx;
+        vpr::grid._width = max_x + 1;
+        vpr::grid._height = max_y + 1;
+        vpr::try_place();
 
         size_t placed_cells = 0;
         // Initial constraints placer
