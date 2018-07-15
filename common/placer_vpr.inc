@@ -1872,7 +1872,12 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y));
 		int px_to = min_x + x_rel;
 		int py_to = min_y + y_rel;
-        bel_to = grid[px_to][py_to];
+        if (!grid[px_to][py_to].empty()) {
+            int pz_to = npnr_ctx->rng(grid[px_to][py_to].size());
+            bel_to = grid[px_to][py_to][pz_to];
+        }
+        else
+            bel_to = BelId();
 	}
 }
 

@@ -51,8 +51,8 @@ namespace vpr {
     static struct {
         inline int width() { return _bels.size(); }
         inline int height() { return _bels.front().size(); }
-        inline const std::vector<BelId>& operator[](size_t x) { return _bels.at(x); }
-        std::vector<std::vector<BelId>> _bels;
+        inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
+        std::vector<std::vector<std::vector<BelId>>> _bels;
     } grid;
     static struct {
         const float inner_num = 10;
@@ -67,6 +67,9 @@ namespace vpr {
         template <typename ...Args>
     	inline void printf_warning(const char*, unsigned, const char* fmt, Args... args) {
             log_warning(fmt, std::forward<Args>(args)...);
+        }
+        inline void printf_info(const char* fmt) {
+            log_info(fmt);
         }
         template <typename ...Args>
         inline void printf_info(const char* fmt, Args... args) {
@@ -92,14 +95,13 @@ class VPRPlacer
             ctx->estimatePosition(bel, x, y, gb);
             if (x >= int(vpr::grid._bels.size()))
                 vpr::grid._bels.resize(x+1);
-            if (y >= int(vpr::grid._bels[x].size())) {
-                vpr::grid._bels[x].resize(y+1,BelId());
-                max_y = std::max(y, max_y);
-            }
-            vpr::grid._bels[x][y] = bel;
+            max_y = std::max(y, max_y);
+            if (max_y >= int(vpr::grid._bels[x].size()))
+                vpr::grid._bels[x].resize(max_y+1);
+            vpr::grid._bels[x][y].push_back(bel);
         }
         for (auto& c : vpr::grid._bels)
-            c.resize(max_y+1, BelId());
+            c.resize(max_y+1);
 
         for (auto &cell : ctx->cells) {
             CellInfo *ci = cell.second.get();
