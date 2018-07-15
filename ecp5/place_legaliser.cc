@@ -1,7 +1,6 @@
 /*
  *  nextpnr -- Next Generation Place and Route
  *
- *  Copyright (C) 2018  Clifford Wolf <clifford@symbioticeda.com>
  *  Copyright (C) 2018  David Shah <david@symbioticeda.com>
  *
  *  Permission to use, copy, modify, and/or distribute this software for any
@@ -18,15 +17,10 @@
  *
  */
 
-#ifndef PACK_H
-#define PACK_H
-
-#include "nextpnr.h"
+#include "place_legaliser.h"
 
 NEXTPNR_NAMESPACE_BEGIN
 
-bool pack_design(Context *ctx);
+bool legalise_design(Context *ctx) { return true; }
 
 NEXTPNR_NAMESPACE_END
-
-#endif // PACK_H
