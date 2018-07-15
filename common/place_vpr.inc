@@ -1574,9 +1574,7 @@ static /*ClusterBlockId*/ CellInfo* pick_from_block() {
 
         //Pick a block at random
         //ClusterBlockId b_from = ClusterBlockId(vtr::irand((int) cluster_ctx.clb_nlist.blocks().size() - 1));
-        auto it = npnr_ctx->cells.cbegin();
-        std::advance(it, npnr_ctx->rng(npnr_ctx->cells.size()));
-        auto b_from = it->second.get();
+        auto b_from = npnr_cells.at(npnr_ctx->rng(npnr_cells.size()));
 
         //Record it as tried
         tried_from_blocks.insert(b_from);

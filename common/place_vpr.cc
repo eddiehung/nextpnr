@@ -46,6 +46,8 @@ namespace vpr {
     using namespace NEXTPNR_NAMESPACE;
 
     static Context* npnr_ctx = NULL;
+    std::vector<CellInfo *> npnr_cells;
+
     static struct {
         inline int width() { return _bels.size(); }
         inline int height() { return _bels.front().size(); }
@@ -98,6 +100,13 @@ class VPRPlacer
         }
         for (auto& c : vpr::grid._bels)
             c.resize(max_y+1, BelId());
+
+        for (auto &cell : ctx->cells) {
+            CellInfo *ci = cell.second.get();
+            if (ci->bel == BelId()) {
+                vpr::npnr_cells.push_back(cell.second.get());
+            }
+        }
     }
 
     bool place()
