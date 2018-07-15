@@ -219,7 +219,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 
 static void initial_placement_location(/*int * free_locations, ClusterBlockId blk_id,
 		int *pipos, int *px, int *py, int *pz*/
-        const std::unordered_map<IdString, std::vector<BelId>> &free_locations,
+        std::unordered_map<IdString, std::vector<BelId>> &free_locations,
         CellInfo *cell,
         BelId& bel);
 
@@ -1208,6 +1208,7 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to
 
         npnr_ctx->unbindBel(bel_from);
         npnr_ctx->bindBel(bel_to, b_from->name, STRENGTH_WEAK);
+        //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel_to));
 
 //		// Sets up the blocks moved
 //		imoved_blk = blocks_affected.num_moved_blocks;
@@ -1246,6 +1247,8 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to
         npnr_ctx->unbindBel(bel_from);
         npnr_ctx->bindBel(bel_to, b_from->name, STRENGTH_WEAK);
         npnr_ctx->bindBel(bel_from, b_to->name, STRENGTH_WEAK);
+        //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel_to));
+        //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel_from));
 
 //		// Sets up the blocks moved
 //		imoved_blk = blocks_affected.num_moved_blocks;
@@ -1521,6 +1524,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 //				place_ctx.block_locs[b_from].z = blocks_affected.moved_blocks[iblk].zold;
                 
                 npnr_ctx->bindBel(bel, blk->name, STRENGTH_WEAK);
+                //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel));
 			}
 		}
 
@@ -1812,14 +1816,20 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 			//	is_legal = false;
 			//}
 
-            if (!npnr_ctx->isValidBelForCell(cell_from, bel_to))
+            if (!npnr_ctx->isValidBelForCell(cell_from, bel_to)) {
                 is_legal = false;
-
-            auto cell_name = npnr_ctx->getBoundBelCell(bel_to);
-            if (cell_name != IdString()) {
-                auto cell = npnr_ctx->cells[cell_name].get();
-                if (cell->belStrength > STRENGTH_WEAK)
-			        is_legal = false;
+            }
+            else {
+                auto cell_name = npnr_ctx->getBoundBelCell(bel_to);
+                if (cell_name != IdString()) {
+                    auto cell_to = npnr_ctx->cells[cell_name].get();
+                    if (cell_to->belStrength > STRENGTH_WEAK) {
+			            is_legal = false;
+                    }
+                    else if (!npnr_ctx->isValidBelForCell(cell_to, cell_from->bel)) {
+                        is_legal = false;
+                    }
+                }
             }
 		}
 
@@ -2882,6 +2892,7 @@ static int try_place_macro(/*int itype, int ipos, int imacro*/
     }
 
     npnr_ctx->bindBel(bel, cell->name, STRENGTH_USER);
+    //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel));
 
     return true;
 }
@@ -3023,6 +3034,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
                 npnr_ctx->bindBel(bel, cell->name, /*STRENGTH_LOCKED*/STRENGTH_STRONG);
             else
                 npnr_ctx->bindBel(bel, cell->name, STRENGTH_WEAK);
+            //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel));
 
 //			/* Ensure randomizer doesn't pick this location again, since it's occupied. Could shift all the
 //			* legal positions in legal_pos to remove the entry (choice) we just used, but faster to
@@ -3031,7 +3043,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 //			legal_pos[itype][ipos] = legal_pos[itype][free_locations[itype] - 1]; /* overwrite used block position */
 //			free_locations[itype]--;
 
-            free_locations[cell->type].pop_back();
+            free_locations.at(cell->type).pop_back();
 
 //		}
 	}
@@ -3039,7 +3051,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 
 static void initial_placement_location(/*int * free_locations, ClusterBlockId blk_id,
 		int *pipos, int *px, int *py, int *pz*/
-        const std::unordered_map<IdString, std::vector<BelId>> &free_locations,
+        std::unordered_map<IdString, std::vector<BelId>> &free_locations,
         CellInfo *cell,
         BelId &bel) {
 
@@ -3052,7 +3064,16 @@ static void initial_placement_location(/*int * free_locations, ClusterBlockId bl
 //	*py_to = legal_pos[itype][*pipos].y;
 //	*pz_to = legal_pos[itype][*pipos].z;
 
-    bel = free_locations.at(cell->type).back();
+    auto it = free_locations.at(cell->type).rbegin();
+    auto ie = free_locations.at(cell->type).rend();
+    for (; it != ie; ++it) {
+        if (!npnr_ctx->isValidBelForCell(cell, *it)) 
+            continue;
+        bel = *it;
+        std::swap(*it, free_locations.at(cell->type).back());
+        return;
+    }
+    throw;
 }
 
 static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
