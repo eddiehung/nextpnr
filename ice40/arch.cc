@@ -26,7 +26,6 @@
 #include "router1.h"
 #include "util.h"
 #include "cells.h"
-#include "place.h"
 #include "place_vpr.h"
 
 NEXTPNR_NAMESPACE_BEGIN
@@ -464,8 +463,50 @@ delay_t Arch::estimateDelay(WireId src, WireId dst) const
 bool Arch::place() { return placer1(getCtx()); }
 bool Arch::place_vpr() 
 { 
-    place_gbs(getCtx());
-    return place_design_vpr(getCtx()); 
+    auto ctx = getCtx();
+
+    // VPR's initial placement is greedy and will place each cell
+    //   into a randomly selected bel. However, the ice40's GBs
+    //   have restrictions on which are not amenable to this greedy
+    //   approach. Work around this my placing those restrictive
+    //   GBs first.
+    std::vector<BelId> gb_reset;
+    std::vector<BelId> gb_cen;
+    for (auto bel : ctx->getBels()) {
+        BelType type = ctx->getBelType(bel);
+        if (type == TYPE_SB_GB) {
+            IdString glb_net = ctx->getWireName(ctx->getWireBelPin(bel, PIN_GLOBAL_BUFFER_OUTPUT));
+            int glb_id = std::stoi(std::string("") + glb_net.str(ctx).back());
+            if (glb_id % 2 == 0)
+                gb_reset.push_back(bel);
+            else
+                gb_cen.push_back(bel);
+        }
+    }
+    for (auto &c : ctx->cells) {
+        CellInfo *cell = c.second.get();
+        if (cell->type == ctx->id_sb_gb) {
+            bool is_reset = false, is_cen = false;
+            NPNR_ASSERT(cell->ports.at(ctx->id_glb_buf_out).net != nullptr);
+            for (auto user : cell->ports.at(ctx->id_glb_buf_out).net->users) {
+                if (ctx->isResetPort(user))
+                    is_reset = true;
+                if (ctx->isEnablePort(user))
+                    is_cen = true;
+            }
+            NPNR_ASSERT(!is_reset || !is_cen);
+            if (is_reset) {
+                ctx->bindBel(gb_reset.back(), cell->name, STRENGTH_WEAK);
+                gb_reset.pop_back();
+            } 
+            else if (is_cen) {
+                ctx->bindBel(gb_cen.back(), cell->name, STRENGTH_WEAK);
+                gb_cen.pop_back();
+            }
+        }
+    }
+
+    return place_design_vpr(ctx); 
 }
 
 bool Arch::route() { return router1(getCtx()); }
