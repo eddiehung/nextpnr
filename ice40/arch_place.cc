@@ -101,7 +101,8 @@ bool Arch::isValidBelForCell(CellInfo *cell, BelId bel) const
     if (cell->type == id_icestorm_lc) {
         NPNR_ASSERT(getBelType(bel) == TYPE_ICESTORM_LC);
 
-        std::vector<const CellInfo *> bel_cells;
+        static std::vector<const CellInfo *> bel_cells;
+        bel_cells.clear();
 
         for (auto bel_other : getBelsAtSameTile(bel)) {
             IdString cell_other = getBoundBelCell(bel_other);
@@ -119,9 +120,9 @@ bool Arch::isValidBelForCell(CellInfo *cell, BelId bel) const
         bool is_reset = false, is_cen = false;
         NPNR_ASSERT(cell->ports.at(id_glb_buf_out).net != nullptr);
         for (auto user : cell->ports.at(id_glb_buf_out).net->users) {
-            if (is_reset_port(this, user))
+            if (isResetPort(user))
                 is_reset = true;
-            if (is_enable_port(this, user))
+            if (isEnablePort(user))
                 is_cen = true;
         }
         IdString glb_net = getWireName(getWireBelPin(bel, PIN_GLOBAL_BUFFER_OUTPUT));

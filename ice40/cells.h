@@ -33,17 +33,9 @@ std::unique_ptr<CellInfo> create_ice_cell(Context *ctx, IdString type, std::stri
 inline bool is_lut(const BaseCtx *ctx, const CellInfo *cell) { return cell->type == ctx->id("SB_LUT4"); }
 
 // Return true if a cell is a flipflop
-inline bool is_ff(const BaseCtx *ctx, const CellInfo *cell)
+inline bool is_ff(const Context *ctx, const CellInfo *cell)
 {
-    return cell->type == ctx->id("SB_DFF") || cell->type == ctx->id("SB_DFFE") || cell->type == ctx->id("SB_DFFSR") ||
-           cell->type == ctx->id("SB_DFFR") || cell->type == ctx->id("SB_DFFSS") || cell->type == ctx->id("SB_DFFS") ||
-           cell->type == ctx->id("SB_DFFESR") || cell->type == ctx->id("SB_DFFER") ||
-           cell->type == ctx->id("SB_DFFESS") || cell->type == ctx->id("SB_DFFES") ||
-           cell->type == ctx->id("SB_DFFN") || cell->type == ctx->id("SB_DFFNE") ||
-           cell->type == ctx->id("SB_DFFNSR") || cell->type == ctx->id("SB_DFFNR") ||
-           cell->type == ctx->id("SB_DFFNSS") || cell->type == ctx->id("SB_DFFNS") ||
-           cell->type == ctx->id("SB_DFFNESR") || cell->type == ctx->id("SB_DFFNER") ||
-           cell->type == ctx->id("SB_DFFNESS") || cell->type == ctx->id("SB_DFFNES");
+    return ctx->isFF(cell);
 }
 
 inline bool is_carry(const BaseCtx *ctx, const CellInfo *cell) { return cell->type == ctx->id("SB_CARRY"); }
@@ -83,14 +75,6 @@ void dff_to_lc(const Context *ctx, CellInfo *dff, CellInfo *lc, bool pass_thru_l
 // Convert a nextpnr IO buffer to a SB_IO
 void nxio_to_sb(Context *ctx, CellInfo *nxio, CellInfo *sbio);
 
-// Return true if a port is a clock port
-bool is_clock_port(const BaseCtx *ctx, const PortRef &port);
-
-// Return true if a port is a reset port
-bool is_reset_port(const BaseCtx *ctx, const PortRef &port);
-
-// Return true if a port is a clock enable port
-bool is_enable_port(const BaseCtx *ctx, const PortRef &port);
 
 NEXTPNR_NAMESPACE_END
 

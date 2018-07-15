@@ -94,7 +94,7 @@ static void pack_nonlut_ffs(Context *ctx)
 
     for (auto cell : sorted(ctx->cells)) {
         CellInfo *ci = cell.second;
-        if (is_ff(ctx, ci)) {
+        if (ctx->isFF(ci)) {
             std::unique_ptr<CellInfo> packed =
                     create_ice_cell(ctx, ctx->id("ICESTORM_LC"), ci->name.str(ctx) + "_DFFLC");
             std::copy(ci->attrs.begin(), ci->attrs.end(), std::inserter(packed->attrs, packed->attrs.begin()));
@@ -445,8 +445,8 @@ static void insert_global(Context *ctx, NetInfo *net, bool is_reset, bool is_cen
     gb->ports[ctx->id("GLOBAL_BUFFER_OUTPUT")].net = glbnet.get();
     std::vector<PortRef> keep_users;
     for (auto user : net->users) {
-        if (is_clock_port(ctx, user) || (is_reset && is_reset_port(ctx, user)) ||
-            (is_cen && is_enable_port(ctx, user))) {
+        if (ctx->isClockPort(user) || (is_reset && ctx->isResetPort(user)) ||
+            (is_cen && ctx->isEnablePort(user))) {
             user.cell->ports[user.port].net = glbnet.get();
             glbnet->users.push_back(user);
         } else {
@@ -472,11 +472,11 @@ static void promote_globals(Context *ctx)
             cen_count[net.first] = 0;
 
             for (auto user : ni->users) {
-                if (is_clock_port(ctx, user))
+                if (ctx->isClockPort(user))
                     clock_count[net.first]++;
-                if (is_reset_port(ctx, user))
+                if (ctx->isResetPort(user))
                     reset_count[net.first]++;
-                if (is_enable_port(ctx, user))
+                if (ctx->isEnablePort(user))
                     cen_count[net.first]++;
             }
         }

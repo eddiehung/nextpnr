@@ -22,6 +22,7 @@
 #include "log.h"
 #include "nextpnr.h"
 #include "util.h"
+#include "cells.h"
 NEXTPNR_NAMESPACE_BEGIN
 
 // -----------------------------------------------------------------------
@@ -183,6 +184,19 @@ Arch::Arch(ArchArgs args) : args(args)
     id_i3 = id("I3");
     id_dff_en = id("DFF_ENABLE");
     id_neg_clk = id("NEG_CLK");
+    id_r = id("R");
+    id_s = id("S");
+    id_e = id("E");
+    id_set_ff = {
+            id("SB_DFF"), id("SB_DFFE"), id("SB_DFFSR"),
+            id("SB_DFFR"), id("SB_DFFSS"), id("SB_DFFS"),
+            id("SB_DFFESR"), id("SB_DFFER"),
+            id("SB_DFFESS"), id("SB_DFFES"),
+            id("SB_DFFN"), id("SB_DFFNE"),
+            id("SB_DFFNSR"), id("SB_DFFNR"),
+            id("SB_DFFNSS"), id("SB_DFFNS"),
+            id("SB_DFFNESR"), id("SB_DFFNER"),
+            id("SB_DFFNESS"), id("SB_DFFNES") };
 }
 
 // -----------------------------------------------------------------------
@@ -542,5 +556,41 @@ bool Arch::isIO(const CellInfo* cell) const
 {
     return cell->type == id("SB_IO");
 }
+
+bool Arch::isClockPort(const PortRef &port) const
+{
+    if (port.cell == nullptr)
+        return false;
+    if (isFF(port.cell))
+        return port.port == id("C");
+    if (port.cell->type == id("ICESTORM_LC"))
+        return port.port == id("CLK");
+    if (is_ram(this, port.cell) || port.cell->type == id("ICESTORM_RAM"))
+        return port.port == id("RCLK") || port.port == id("WCLK");
+    return false;
+}
+
+bool Arch::isResetPort(const PortRef &port) const
+{
+    if (port.cell == nullptr)
+        return false;
+    if (isFF(port.cell))
+        return port.port == id_r || port.port == id_s;
+    if (port.cell->type == id_icestorm_lc)
+        return port.port == id_sr;
+    return false;
+}
+
+bool Arch::isEnablePort(const PortRef &port) const
+{
+    if (port.cell == nullptr)
+        return false;
+    if (isFF(port.cell))
+        return port.port == id_e;
+    if (port.cell->type == id_icestorm_lc)
+        return port.port == id_cen;
+    return false;
+}
+
 
 NEXTPNR_NAMESPACE_END

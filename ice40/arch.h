@@ -667,6 +667,10 @@ struct Arch : BaseCtx
     bool isGlobalNet(const NetInfo *net) const;
     // Return true if cell is a IO
     bool isIO(const CellInfo* cell) const;
+    bool isClockPort(const PortRef &port) const;
+    bool isResetPort(const PortRef &port) const;
+    bool isEnablePort(const PortRef &port) const;
+    inline bool isFF(const CellInfo *cell) const { return id_set_ff.count(cell->type); }
 
     // -------------------------------------------------
 
@@ -688,6 +692,9 @@ struct Arch : BaseCtx
     IdString id_cen, id_clk, id_sr;
     IdString id_i0, id_i1, id_i2, id_i3;
     IdString id_dff_en, id_neg_clk;
+    IdString id_r, id_s;
+    IdString id_e;
+    std::unordered_set<IdString> id_set_ff;
 };
 
 NEXTPNR_NAMESPACE_END
