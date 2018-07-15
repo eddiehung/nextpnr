@@ -79,10 +79,6 @@ NEXTPNR_NAMESPACE_BEGIN
 
 class VPRPlacer
 {
-  private:
-    std::vector<std::vector<BelId>> free_locations;
-    std::vector<std::vector<BelId>::iterator> free_locations_front;
-
   public:
     VPRPlacer(Context *ctx) : ctx(ctx)
     {
@@ -101,7 +97,7 @@ class VPRPlacer
             vpr::grid._bels[x][y] = bel;
         }
         for (auto& c : vpr::grid._bels)
-            c.resize(max_y, BelId());
+            c.resize(max_y+1, BelId());
     }
 
     bool place()
