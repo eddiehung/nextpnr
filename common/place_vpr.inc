@@ -1542,6 +1542,10 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 //			/* Restore the place_ctx.block_locs data structures to their state before the move. */
             for (const auto &b : blocks_affected) {
                 auto blk = b.first;
+                npnr_ctx->unbindBel(blk->bel);
+            }
+            for (const auto &b : blocks_affected) {
+                auto blk = b.first;
                 auto bel = b.second;
 
 //				b_from = blocks_affected.moved_blocks[iblk].block_num;
@@ -1550,9 +1554,6 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 //				place_ctx.block_locs[b_from].y = blocks_affected.moved_blocks[iblk].yold;
 //				place_ctx.block_locs[b_from].z = blocks_affected.moved_blocks[iblk].zold;
                 
-                if (npnr_ctx->checkBelAvail(bel))
-                    npnr_ctx->unbindBel(bel);
-                npnr_ctx->unbindBel(blk->bel);
                 npnr_ctx->bindBel(bel, blk->name, STRENGTH_WEAK);
 			}
 		}
@@ -1897,7 +1898,6 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 		int py_to = min_y + y_rel;
 //		*px_to = (*px_to) - grid[*px_to][*py_to].width_offset; /* align it */
 //		*py_to = (*py_to) - grid[*px_to][*py_to].height_offset; /* align it */
-        bel_to = BelId();
         throw;
 	}
 }
