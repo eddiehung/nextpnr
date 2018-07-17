@@ -92,9 +92,9 @@ struct t_placer_statistics {
 ///********************** Variables local to place.c ***************************/
 
 /* Cost of a net, and a temporary cost of a net used during move assessment. */
-static std::unordered_map<NetInfo*, float> net_cost, temp_net_cost;
+static std::vector<float> net_cost, temp_net_cost;
 
-static std::unordered_map<IdString, std::vector<BelId>> legal_pos;
+static std::vector<std::vector<BelId>> legal_pos;
 //static int *num_legal_pos = nullptr; /* [0..num_legal_pos-1] */
 
 /* [0...cluster_ctx.clb_nlist.nets().size()-1]                                               *
@@ -109,7 +109,7 @@ static std::unordered_map<IdString, std::vector<BelId>> legal_pos;
  * particular bounding box cannot be updated incrementally before, hence the     *
  * bounding box is got from scratch, so the bounding box would definitely be     *
  * right, DO NOT update again.                                                   */
-static std::unordered_map<NetInfo*, char> bb_updated_before;
+static std::vector<char> bb_updated_before;
 
 ///* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]. What is the value of the timing   */
 ///* driven portion of the cost function. These arrays will be set to  */
@@ -133,7 +133,7 @@ static std::unordered_map<NetInfo*, char> bb_updated_before;
  * blocks on each of a net's bounding box (to allow efficient updates),      *
  * respectively.                                                             */
 
-static std::unordered_map<NetInfo*, t_bb> bb_coords, bb_num_on_edges;
+static std::vector<t_bb> bb_coords, bb_num_on_edges;
 
 /* Store the information on the blocks to be moved in a swap during     *
  * placement, in the form of array of structs instead of struct with    *
@@ -154,7 +154,7 @@ static std::vector<std::pair<CellInfo*,BelId>> blocks_affected;
 //
 ///* The following arrays are used by the try_swap function for speed.   */
 ///* [0...cluster_ctx.clb_nlist.nets().size()-1] */
-static std::unordered_map<NetInfo*, t_bb> ts_bb_coord_new, ts_bb_edge_new;
+static std::vector<t_bb> ts_bb_coord_new, ts_bb_edge_new;
 static std::vector<NetInfo*> ts_nets_to_update;
 
 ///* The pl_macros array stores all the carry chains placement macros.   *
@@ -192,9 +192,9 @@ static void alloc_and_load_placement_structs(
 		t_direct_inf *directs, int num_directs*/);
 
 //static void alloc_and_load_net_pin_indices();
-//
-//static void alloc_and_load_try_swap_structs();
-//
+
+static void alloc_and_load_try_swap_structs();
+
 //static void free_placement_structs(t_placer_opts placer_opts);
 //
 //static void alloc_and_load_for_fast_cost_update(float place_cost_exp);
@@ -214,11 +214,11 @@ static int try_place_macro(/*int itype, int ipos, int imacro*/
 static void initial_placement_pl_macros(/*int macros_max_num_tries, int * free_locations*/);
 
 static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type pad_loc_type*/
-    std::unordered_map<IdString,std::vector<BelId>> &free_locations);
+    std::vector<std::vector<BelId>> &free_locations);
 
 static void initial_placement_location(/*int * free_locations, ClusterBlockId blk_id,
 		int *pipos, int *px, int *py, int *pz*/
-        std::unordered_map<IdString, std::vector<BelId>> &free_locations,
+        std::vector<std::vector<BelId>> &free_locations,
         CellInfo *cell,
         BelId& bel);
 
@@ -1461,15 +1461,15 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 
 			/* update net cost functions and reset flags. */
             for (auto net_id : ts_nets_to_update) {
-				bb_coords[net_id] = ts_bb_coord_new[net_id];
+				bb_coords[net_id->name.index] = ts_bb_coord_new[net_id->name.index];
 				if (net_id->users.size() >= SMALL_NET)
-					bb_num_on_edges[net_id] = ts_bb_edge_new[net_id];
+					bb_num_on_edges[net_id->name.index] = ts_bb_edge_new[net_id->name.index];
 
-				net_cost[net_id] = temp_net_cost[net_id];
+				net_cost[net_id->name.index] = temp_net_cost[net_id->name.index];
 
 				/* negative temp_net_cost value is acting as a flag. */
-				temp_net_cost[net_id] =	-1;
-				bb_updated_before[net_id] = NOT_UPDATED_YET;
+				temp_net_cost[net_id->name.index] =	-1;
+				bb_updated_before[net_id->name.index] = NOT_UPDATED_YET;
 			}
 
 
@@ -1506,8 +1506,8 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 
 			/* Reset the net cost function flags first. */
             for (auto net_id : ts_nets_to_update) {
-				temp_net_cost[net_id] = -1;
-				bb_updated_before[net_id] = NOT_UPDATED_YET;
+				temp_net_cost[net_id->name.index] = -1;
+				bb_updated_before[net_id->name.index] = NOT_UPDATED_YET;
 			}
 
 //			/* Restore the place_ctx.block_locs data structures to their state before the move. */
@@ -1649,8 +1649,8 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
      * The cost is only updated once per net.
      */
     for (auto net_id : ts_nets_to_update) {
-        temp_net_cost[net_id] = get_net_cost(net_id, &ts_bb_coord_new[net_id]);
-        bb_delta_c += temp_net_cost[net_id] - net_cost[net_id];
+        temp_net_cost[net_id->name.index] = get_net_cost(net_id, &ts_bb_coord_new[net_id->name.index]);
+        bb_delta_c += temp_net_cost[net_id->name.index] - net_cost[net_id->name.index];
     }
 
 	return num_affected_nets;
@@ -1658,13 +1658,13 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 
 static void record_affected_net(/*const ClusterNetId*/ NetInfo *net, int& num_affected_nets) {
     //Record effected nets
-    if (temp_net_cost[net] < 0.) {
+    if (temp_net_cost[net->name.index] < 0.) {
         //Net not marked yet.
         ts_nets_to_update.push_back(net);
         num_affected_nets++;
 
         //Flag to say we've marked this net.
-        temp_net_cost[net] = 1.;
+        temp_net_cost[net->name.index] = 1.;
     }
 }
 
@@ -1675,8 +1675,8 @@ static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const
     if (net->users.size() < SMALL_NET) {
         //For small nets brute-force bounding box update is faster
 
-        if(bb_updated_before[net] == NOT_UPDATED_YET) { //Only once per-net
-            get_non_updateable_bb(net, &ts_bb_coord_new[net]);
+        if(bb_updated_before[net->name.index] == NOT_UPDATED_YET) { //Only once per-net
+            get_non_updateable_bb(net, &ts_bb_coord_new[net->name.index]);
         }
     } else {
         //For large nets, update bounding box incrementally
@@ -1693,8 +1693,8 @@ static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const
         npnr_ctx->estimatePosition(blk->bel, xnew, ynew, gb);
 
         //Incremental bounding box update
-        update_bb(net, &ts_bb_coord_new[net],
-                &ts_bb_edge_new[net],
+        update_bb(net, &ts_bb_coord_new[net->name.index],
+                &ts_bb_edge_new[net->name.index],
                 /*blocks_affected.moved_blocks[iblk].xold + pin_width_offset*/ xold,
                 /*blocks_affected.moved_blocks[iblk].yold + pin_height_offset*/ yold,
                 /*blocks_affected.moved_blocks[iblk].xnew + pin_width_offset*/ xnew,
@@ -1789,7 +1789,7 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 		is_legal = true;
 
 		/* Limit the number of tries when searching for an alternative position */
-		if(num_tries >= 2 * std::min<int>(active_area /*/ (type->width * type->height)*/, legal_pos[type].size()) + 10) {
+		if(num_tries >= 2 * std::min<int>(active_area /*/ (type->width * type->height)*/, legal_pos[type.index].size()) + 10) {
 			/* Tried randomly searching for a suitable position */
 			return false;
 		} else {
@@ -1875,9 +1875,9 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 	int max_y = std::min<float>(grid.height() - 1, y_from + rly);
 
 //	*pz_to = 0;
-	if (int(grid.width() / 4) < rlx || int(grid.height() / 4) < rly || legal_pos[type].size() < active_area) {
-		int ipos = npnr_ctx->rng(legal_pos[type].size());
-        bel_to = legal_pos[type][ipos];
+	if (int(grid.width() / 4) < rlx || int(grid.height() / 4) < rly || legal_pos[type.index].size() < active_area) {
+		int ipos = npnr_ctx->rng(legal_pos[type.index].size());
+        bel_to = legal_pos[type.index][ipos];
 	} else {
 		int x_rel = npnr_ctx->rng(std::max(0, max_x - min_x)+1); // +1 because rng() uses %
 		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y)+1); // +1 because rng() uses %
@@ -1935,7 +1935,7 @@ static float recompute_bb_cost() {
         auto net_id = n.second.get();
         if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
 			/* Bounding boxes don't have to be recomputed; they're correct. */
-			cost += net_cost[net_id];
+			cost += net_cost[net_id->name.index];
 		}
 	}
 
@@ -2105,15 +2105,15 @@ static float comp_bb_cost(/*e_cost_methods method*/) {
 			/* Small nets don't use incremental updating on their bounding boxes, *
 			 * so they can use a fast bounding box calculator.                    */
 			if (net_id->users.size() >= SMALL_NET /*&& method == NORMAL*/) {
-				get_bb_from_scratch(net_id, &bb_coords[net_id],
-					&bb_num_on_edges[net_id]);
+				get_bb_from_scratch(net_id, &bb_coords[net_id->name.index],
+					&bb_num_on_edges[net_id->name.index]);
 			}
 			else {
-				get_non_updateable_bb(net_id, &bb_coords[net_id]);
+				get_non_updateable_bb(net_id, &bb_coords[net_id->name.index]);
 			}
 
-			net_cost[net_id] = get_net_cost(net_id, &bb_coords[net_id]);
-			cost += net_cost[net_id];
+			net_cost[net_id->name.index] = get_net_cost(net_id, &bb_coords[net_id->name.index]);
+			cost += net_cost[net_id->name.index];
 //			if (method == CHECK)
 //				expected_wirelength += get_net_wirelength_estimate(net_id, &bb_coords[net_id]);
 		}
@@ -2186,12 +2186,12 @@ static void alloc_and_load_placement_structs(
 
 //	int max_pins_per_clb, i;
 //	unsigned int ipin;
-//
+
 //	auto& device_ctx = g_vpr_ctx.device();
-//	auto& cluster_ctx = g_vpr_ctx.clustering();
-//
-//    size_t num_nets = cluster_ctx.clb_nlist.nets().size();
-//
+	auto& cluster_ctx = g_vpr_ctx.clustering();
+
+    size_t num_nets = cluster_ctx.clb_nlist.nets().size();
+
 //    init_placement_context();
 //
 //	alloc_legal_placements();
@@ -2236,27 +2236,22 @@ static void alloc_and_load_placement_structs(
 //		}
 //	}
 
-    for (auto& n : npnr_ctx->nets) {
-        auto net_id = n.second.get();
-        net_cost.emplace(net_id, -1);
-        temp_net_cost.emplace(net_id, -1);
-        bb_updated_before.emplace(net_id, NOT_UPDATED_YET);
-    }
+    net_cost.resize(num_nets, -1);
+    temp_net_cost.resize(num_nets, -1);
+    bb_coords.resize(num_nets, t_bb());
+    bb_num_on_edges.resize(num_nets, t_bb());
 
-//    bb_coords.resize(num_nets, t_bb());
-//    bb_num_on_edges.resize(num_nets, t_bb());
-//
-//    /* Used to store costs for moves not yet made and to indicate when a net's   *
-//    * cost has been recomputed. temp_net_cost[inet] < 0 means net's cost hasn't *
-//    * been recomputed.                                                          */
-//    bb_updated_before.resize(num_nets, NOT_UPDATED_YET);
-//
+    /* Used to store costs for moves not yet made and to indicate when a net's   *
+    * cost has been recomputed. temp_net_cost[inet] < 0 means net's cost hasn't *
+    * been recomputed.                                                          */
+    bb_updated_before.resize(num_nets, NOT_UPDATED_YET);
+
 //	alloc_and_load_for_fast_cost_update(place_cost_exp);
 //
 //	alloc_and_load_net_pin_indices();
-//
-//	alloc_and_load_try_swap_structs();
-//
+
+	alloc_and_load_try_swap_structs();
+
 //	num_pl_macros = alloc_and_load_placement_macros(directs, num_directs, &pl_macros);
 }
 
@@ -2293,23 +2288,22 @@ static void alloc_and_load_placement_structs(
 //		}
 //	}
 //}
-//
-//static void alloc_and_load_try_swap_structs() {
-//	/* Allocate the local bb_coordinate storage, etc. only once. */
-//	/* Allocate with size cluster_ctx.clb_nlist.nets().size() for any number of nets affected. */
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
-//
-//    size_t num_nets = cluster_ctx.clb_nlist.nets().size();
-//
-//    ts_bb_coord_new.resize(num_nets, t_bb());
-//    ts_bb_edge_new.resize(num_nets, t_bb());
+
+static void alloc_and_load_try_swap_structs() {
+	/* Allocate the local bb_coordinate storage, etc. only once. */
+	/* Allocate with size cluster_ctx.clb_nlist.nets().size() for any number of nets affected. */
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+
+    size_t num_nets = cluster_ctx.clb_nlist.nets().size();
+
+    ts_bb_coord_new.resize(num_nets, t_bb());
+    ts_bb_edge_new.resize(num_nets, t_bb());
 //    ts_nets_to_update.resize(num_nets, ClusterNetId::INVALID());
-//
+
 //	/* Allocate with size cluster_ctx.clb_nlist.blocks().size() for any number of moved blocks. */
 //	blocks_affected.moved_blocks = (t_pl_moved_block*) vtr::calloc((int) cluster_ctx.clb_nlist.blocks().size(), sizeof(t_pl_moved_block));
 //	blocks_affected.num_moved_blocks = 0;
-//
-//}
+}
 
 /* This routine finds the bounding box of each net from scratch (i.e.   *
 * from only the block location information).  It updates both the       *
@@ -2566,14 +2560,14 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 	yold = std::max(std::min<int>(yold, /*device_ctx.*/grid.height() - 2), 1); //-2 for no perim channels
 
 	/* Check if the net had been updated before. */
-	if (bb_updated_before[net_id] == GOT_FROM_SCRATCH) {
+	if (bb_updated_before[net_id->name.index] == GOT_FROM_SCRATCH) {
         /* The net had been updated from scratch, DO NOT update again! */
 		return;
-	} else if (bb_updated_before[net_id] == NOT_UPDATED_YET) {
+	} else if (bb_updated_before[net_id->name.index] == NOT_UPDATED_YET) {
         /* The net had NOT been updated before, could use the old values */
-		curr_bb_coord = &bb_coords[net_id];
-		curr_bb_edge = &bb_num_on_edges[net_id];
-		bb_updated_before[net_id] = UPDATED_ONCE;
+		curr_bb_coord = &bb_coords[net_id->name.index];
+		curr_bb_edge = &bb_num_on_edges[net_id->name.index];
+		bb_updated_before[net_id->name.index] = UPDATED_ONCE;
 	} else {
         /* The net had been updated before, must use the new values */
 		curr_bb_coord = bb_coord_new;
@@ -2589,7 +2583,7 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		if (xold == curr_bb_coord->xmax) { /* Old position at xmax. */
 			if (curr_bb_edge->xmax == 1) {
 				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
+				bb_updated_before[net_id->name.index] = GOT_FROM_SCRATCH;
 				return;
 			} else {
 				bb_edge_new->xmax = curr_bb_edge->xmax - 1;
@@ -2621,7 +2615,7 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		if (xold == curr_bb_coord->xmin) { /* Old position at xmin. */
 			if (curr_bb_edge->xmin == 1) {
 				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
+				bb_updated_before[net_id->name.index] = GOT_FROM_SCRATCH;
 				return;
 			} else {
 				bb_edge_new->xmin = curr_bb_edge->xmin - 1;
@@ -2662,7 +2656,7 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		if (yold == curr_bb_coord->ymax) { /* Old position at ymax. */
 			if (curr_bb_edge->ymax == 1) {
 				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
+				bb_updated_before[net_id->name.index] = GOT_FROM_SCRATCH;
 				return;
 			} else {
 				bb_edge_new->ymax = curr_bb_edge->ymax - 1;
@@ -2694,7 +2688,7 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		if (yold == curr_bb_coord->ymin) { /* Old position at ymin. */
 			if (curr_bb_edge->ymin == 1) {
 				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-				bb_updated_before[net_id] = GOT_FROM_SCRATCH;
+				bb_updated_before[net_id->name.index] = GOT_FROM_SCRATCH;
 				return;
 			} else {
 				bb_edge_new->ymin = curr_bb_edge->ymin - 1;
@@ -2726,8 +2720,8 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		bb_edge_new->ymax = curr_bb_edge->ymax;
 	}
 
-	if (bb_updated_before[net_id] == NOT_UPDATED_YET) {
-		bb_updated_before[net_id] = UPDATED_ONCE;
+	if (bb_updated_before[net_id->name.index] == NOT_UPDATED_YET) {
+		bb_updated_before[net_id->name.index] = UPDATED_ONCE;
     }
 }
 
@@ -2788,7 +2782,10 @@ static void load_legal_placements() {
     for (auto bel : npnr_ctx->getBels()) {
         auto belType = npnr_ctx->getBelType(bel);
         auto type = npnr_ctx->belTypeToId(belType);
-        legal_pos[type].push_back(bel);
+        int itype = type.index;
+        if (itype >= legal_pos.size())
+            legal_pos.resize(itype+1);
+        legal_pos[itype].push_back(bel);
     }
 }
 
@@ -2991,7 +2988,7 @@ static void initial_placement_pl_macros(/*int macros_max_num_tries, int * free_l
 /* Place blocks that are NOT a part of any macro.
 * We'll randomly place each block in the clustered netlist, one by one. */
 static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type pad_loc_type*/
-        std::unordered_map<IdString, std::vector<BelId>>& free_locations) {
+        std::vector<std::vector<BelId>>& free_locations) {
 //	int itype, ipos, x, y, z;
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
@@ -3057,7 +3054,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 //			legal_pos[itype][ipos] = legal_pos[itype][free_locations[itype] - 1]; /* overwrite used block position */
 //			free_locations[itype]--;
 
-            free_locations.at(cell->type).pop_back();
+            free_locations.at(cell->type.index).pop_back();
 
 //		}
 	}
@@ -3065,7 +3062,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 
 static void initial_placement_location(/*int * free_locations, ClusterBlockId blk_id,
 		int *pipos, int *px, int *py, int *pz*/
-        std::unordered_map<IdString, std::vector<BelId>> &free_locations,
+        std::vector<std::vector<BelId>> &free_locations,
         CellInfo *cell,
         BelId &bel) {
 
@@ -3078,13 +3075,13 @@ static void initial_placement_location(/*int * free_locations, ClusterBlockId bl
 //	*py_to = legal_pos[itype][*pipos].y;
 //	*pz_to = legal_pos[itype][*pipos].z;
 
-    auto it = free_locations.at(cell->type).rbegin();
-    auto ie = free_locations.at(cell->type).rend();
+    auto it = free_locations.at(cell->type.index).rbegin();
+    auto ie = free_locations.at(cell->type.index).rend();
     for (; it != ie; ++it) {
         if (!npnr_ctx->isValidBelForCell(cell, *it)) 
             continue;
         bel = *it;
-        std::swap(*it, free_locations.at(cell->type).back());
+        std::swap(*it, free_locations.at(cell->type.index).back());
         return;
     }
     throw;
@@ -3113,7 +3110,7 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //		free_locations[itype] = num_legal_pos[itype];
 //	}
 
-    std::unordered_map<IdString, std::vector<BelId>> free_locations(legal_pos.begin(), legal_pos.end());
+    std::vector<std::vector<BelId>> free_locations(legal_pos.begin(), legal_pos.end());
 
 //	/* We'll use the grid to record where everything goes. Initialize to the grid has no
 //	 * blocks placed anywhere.
@@ -3160,13 +3157,10 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //	} // Finish updating the legal_pos[][] and free_locations[] array
 
     for (auto it = free_locations.begin(); it != free_locations.end(); it++) {
-        for (auto ipos = it->second.begin(); ipos != it->second.end(); ) {
-            auto cell_name = npnr_ctx->getBoundBelCell(*ipos);
-            if (cell_name != IdString())
-                ipos = it->second.erase(ipos);
-            else
-                ipos++;
-        }
+        it->erase(remove_if(it->begin(), it->end(), [](BelId bel) {
+                auto cell_name = npnr_ctx->getBoundBelCell(bel);
+                return cell_name != IdString();
+            }), it->end());
     }
 
 	initial_placement_blocks(free_locations);

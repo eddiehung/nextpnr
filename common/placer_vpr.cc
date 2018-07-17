@@ -49,6 +49,18 @@ namespace vpr {
     std::vector<CellInfo *> npnr_cells;
 
     static struct {
+        struct t_clustering {
+            struct {
+                struct t_nets {
+                    t_nets& operator()() { return *this; }
+                    size_t size() { return _size; }
+                    size_t _size;
+                } nets;
+            } clb_nlist;
+            t_clustering& operator()() { return *this; }
+        } clustering;
+    } g_vpr_ctx;
+    static struct {
         inline int width() { return _bels.size(); }
         inline int height() { return _bels.front().size(); }
         inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
@@ -108,6 +120,11 @@ class VPRPlacer
             if (ci->bel == BelId()) {
                 vpr::npnr_cells.push_back(cell.second.get());
             }
+        }
+        auto &num_nets = vpr::g_vpr_ctx.clustering.clb_nlist.nets._size;
+        for (auto& n : ctx->nets) {
+            auto net_id = n.second.get();
+            num_nets = std::max<size_t>(num_nets, net_id->name.index+1);
         }
     }
 
