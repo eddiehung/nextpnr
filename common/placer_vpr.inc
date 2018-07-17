@@ -2236,6 +2236,11 @@ static void alloc_and_load_placement_structs(
 //		}
 //	}
 
+    // We tradeoff memory for speed here:
+    //   npnr nets are actually pointers, with non sequential indices 
+    //   associated with their names, thus num_nets actually contains 
+    //   the max index of all net indices, which is likely to be more
+    //   than the actual number of nets
     net_cost.resize(num_nets, -1);
     temp_net_cost.resize(num_nets, -1);
     bb_coords.resize(num_nets, t_bb());
