@@ -253,7 +253,7 @@ static float starting_t(float *cost_ptr, float *bb_cost_ptr,
 static void update_t(float *t, float rlim, float success_rat/*,
 		t_annealing_sched annealing_sched*/);
 
-static void update_rlim(float *rlim, float success_rat /*, const DeviceGrid& grid*/);
+static void update_rlim(float *rlim, float success_rat, const DeviceGrid& grid);
 
 static int exit_crit(float t, float cost /*,
 		t_annealing_sched annealing_sched*/);
@@ -363,8 +363,8 @@ void try_place(/*t_placer_opts placer_opts,
 //#ifdef ENABLE_CLASSIC_VPR_STA
 //	t_slack * slacks = NULL;
 //#endif
-//
-//    auto& device_ctx = g_vpr_ctx.device();
+
+    auto& device_ctx = g_vpr_ctx.device();
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //
 //    std::shared_ptr<SetupTimingInfo> timing_info;
@@ -563,7 +563,7 @@ void try_place(/*t_placer_opts placer_opts,
 		inner_recompute_limit = move_lim + 1;
 //    }
 
-	rlim = (float) std::max(grid.width(), grid.height());
+	rlim = (float) std::max(device_ctx.grid.width(), device_ctx.grid.height());
 
 	first_rlim = rlim; /*used in timing-driven placement for exponent computation */
 	final_rlim = 1;
@@ -690,7 +690,7 @@ void try_place(/*t_placer_opts placer_opts,
 		sprintf(msg, "Cost: %g  BB Cost %g  TD Cost %g  Temperature: %g",
 				cost, bb_cost, timing_cost, t);
 //		update_screen(ScreenUpdatePriority::MINOR, msg, PLACEMENT, timing_info);
-		update_rlim(&rlim, success_rat /*, device_ctx.grid*/);
+		update_rlim(&rlim, success_rat, device_ctx.grid);
 
 //		if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
 //			crit_exponent = (1 - (rlim - final_rlim) * inverse_delta_rlim)
@@ -1049,7 +1049,7 @@ static double get_std_dev(int n, double sum_x_squared, double av_x) {
 	return (std_dev);
 }
 
-static void update_rlim(float *rlim, float success_rat /*, const DeviceGrid& grid*/) {
+static void update_rlim(float *rlim, float success_rat, const DeviceGrid& grid) {
 
 	/* Update the range limited to keep acceptance prob. near 0.44.  Use *
 	 * a floating point rlim to allow gradual transitions at low temps.  */
@@ -1757,7 +1757,7 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 	bool is_legal;
 //	int itype;
 
-//    auto& grid = g_vpr_ctx.device().grid;
+    auto& grid = g_vpr_ctx.device().grid;
 //    auto& place_ctx = g_vpr_ctx.placement();
 //
 //    auto grid_type = grid[x_from][y_from].type;
@@ -1859,10 +1859,10 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 		int *px_to, int *py_to, int *pz_to*/,
         BelId &bel_to) {
 
-//    auto& device_ctx = g_vpr_ctx.device();
-//    auto& grid = device_ctx.grid;
-//
-//	int itype = type->index;
+    auto& device_ctx = g_vpr_ctx.device();
+    auto& grid = device_ctx.grid;
+
+	int itype = type.index;
 
 
 	int rlx = std::min<float>(grid.width() - 1, rlim);
@@ -1875,9 +1875,9 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 	int max_y = std::min<float>(grid.height() - 1, y_from + rly);
 
 //	*pz_to = 0;
-	if (int(grid.width() / 4) < rlx || int(grid.height() / 4) < rly || legal_pos[type.index].size() < active_area) {
-		int ipos = npnr_ctx->rng(legal_pos[type.index].size());
-        bel_to = legal_pos[type.index][ipos];
+	if (int(grid.width() / 4) < rlx || int(grid.height() / 4) < rly || legal_pos[itype].size() < active_area) {
+		int ipos = npnr_ctx->rng(legal_pos[itype].size());
+        bel_to = legal_pos[itype][ipos];
 	} else {
 		int x_rel = npnr_ctx->rng(std::max(0, max_x - min_x)+1); // +1 because rng() uses %
 		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y)+1); // +1 because rng() uses %
@@ -2316,8 +2316,8 @@ static void get_bb_from_scratch(/*ClusterNetId*/ NetInfo *net_id, t_bb *coords,
 
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.placement();
-//    auto& device_ctx = g_vpr_ctx.device();
-//	auto& grid = device_ctx.grid;
+    auto& device_ctx = g_vpr_ctx.device();
+	auto& grid = device_ctx.grid;
 
 //	ClusterBlockId bnum = cluster_ctx.clb_nlist.net_driver_block(net_id);
 //	pnum = cluster_ctx.clb_nlist.net_pin_physical_index(net_id, 0);
@@ -2485,7 +2485,7 @@ static void get_non_updateable_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coo
 
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.placement();
-//    auto& device_ctx = g_vpr_ctx.device();
+    auto& device_ctx = g_vpr_ctx.device();
 
 	auto bnum = net_id->driver.cell;
 //	pnum = cluster_ctx.clb_nlist.net_pin_physical_index(net_id, 0);
@@ -2527,10 +2527,10 @@ static void get_non_updateable_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coo
 	 * clip to 1 in both directions as well (since minimum channel index *
 	 * is 0).  See route_common.cpp for a channel diagram.               */
 
-	bb_coord_new->xmin = std::max(std::min<int>(xmin, grid.width() - 2), 1); //-2 for no perim channels
-	bb_coord_new->ymin = std::max(std::min<int>(ymin, grid.height() - 2), 1); //-2 for no perim channels
-	bb_coord_new->xmax = std::max(std::min<int>(xmax, grid.width() - 2), 1); //-2 for no perim channels
-	bb_coord_new->ymax = std::max(std::min<int>(ymax, grid.height() - 2), 1); //-2 for no perim channels
+	bb_coord_new->xmin = std::max(std::min<int>(xmin, device_ctx.grid.width() - 2), 1); //-2 for no perim channels
+	bb_coord_new->ymin = std::max(std::min<int>(ymin, device_ctx.grid.height() - 2), 1); //-2 for no perim channels
+	bb_coord_new->xmax = std::max(std::min<int>(xmax, device_ctx.grid.width() - 2), 1); //-2 for no perim channels
+	bb_coord_new->ymax = std::max(std::min<int>(ymax, device_ctx.grid.height() - 2), 1); //-2 for no perim channels
 }
 
 static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
@@ -2552,12 +2552,12 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 
 	t_bb *curr_bb_edge, *curr_bb_coord;
 
-//    auto& device_ctx = g_vpr_ctx.device();
+    auto& device_ctx = g_vpr_ctx.device();
 
-	xnew = std::max(std::min<int>(xnew, /*device_ctx.*/grid.width() - 2), 1); //-2 for no perim channels
-	ynew = std::max(std::min<int>(ynew, /*device_ctx.*/grid.height() - 2), 1); //-2 for no perim channels
-	xold = std::max(std::min<int>(xold, /*device_ctx.*/grid.width() - 2), 1); //-2 for no perim channels
-	yold = std::max(std::min<int>(yold, /*device_ctx.*/grid.height() - 2), 1); //-2 for no perim channels
+	xnew = std::max(std::min<int>(xnew, device_ctx.grid.width() - 2), 1); //-2 for no perim channels
+	ynew = std::max(std::min<int>(ynew, device_ctx.grid.height() - 2), 1); //-2 for no perim channels
+	xold = std::max(std::min<int>(xold, device_ctx.grid.width() - 2), 1); //-2 for no perim channels
+	yold = std::max(std::min<int>(yold, device_ctx.grid.height() - 2), 1); //-2 for no perim channels
 
 	/* Check if the net had been updated before. */
 	if (bb_updated_before[net_id->name.index] == GOT_FROM_SCRATCH) {

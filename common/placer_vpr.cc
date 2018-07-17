@@ -48,24 +48,28 @@ namespace vpr {
     static Context* npnr_ctx = NULL;
     std::vector<CellInfo *> npnr_cells;
 
+    struct DeviceGrid {
+        inline int width() const { return _bels.size(); }
+        inline int height() const { return _bels.front().size(); }
+        inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
+        std::vector<std::vector<std::vector<BelId>>> _bels;
+    };
     static struct {
         struct t_clustering {
             struct {
                 struct t_nets {
-                    t_nets& operator()() { return *this; }
                     size_t size() { return _size; }
                     size_t _size;
+                    t_nets& operator()() { return *this; }
                 } nets;
             } clb_nlist;
             t_clustering& operator()() { return *this; }
         } clustering;
+        struct t_device {
+            DeviceGrid grid;
+            t_device& operator()() { return *this; }
+        } device;
     } g_vpr_ctx;
-    static struct {
-        inline int width() { return _bels.size(); }
-        inline int height() { return _bels.front().size(); }
-        inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
-        std::vector<std::vector<std::vector<BelId>>> _bels;
-    } grid;
     static struct {
         const float inner_num = 10;
     } annealing_sched;
@@ -101,18 +105,19 @@ class VPRPlacer
     {
         vpr::npnr_ctx = ctx;
         int max_y = 0;
+        auto &grid = vpr::g_vpr_ctx.device.grid;
         for (auto bel : ctx->getBels()) {
             int x, y;
             bool gb;
             ctx->estimatePosition(bel, x, y, gb);
-            if (x >= int(vpr::grid._bels.size()))
-                vpr::grid._bels.resize(x+1);
+            if (x >= int(grid._bels.size()))
+                grid._bels.resize(x+1);
             max_y = std::max(y, max_y);
-            if (max_y >= int(vpr::grid._bels[x].size()))
-                vpr::grid._bels[x].resize(max_y+1);
-            vpr::grid._bels[x][y].push_back(bel);
+            if (max_y >= int(grid._bels[x].size()))
+                grid._bels[x].resize(max_y+1);
+            grid._bels[x][y].push_back(bel);
         }
-        for (auto& c : vpr::grid._bels)
+        for (auto& c : grid._bels)
             c.resize(max_y+1);
 
         for (auto &cell : ctx->cells) {
