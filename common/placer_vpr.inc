@@ -62,13 +62,13 @@
 #define UPDATED_ONCE 'U'
 #define GOT_FROM_SCRATCH 'S'
 
-///* For comp_cost.  NORMAL means use the method that generates updateable  *
-// * bounding boxes for speed.  CHECK means compute all bounding boxes from *
-// * scratch using a very simple routine to allow checks of the other       *
-// * costs.                                                                 */
-//enum e_cost_methods {
-//	NORMAL, CHECK
-//};
+/* For comp_cost.  NORMAL means use the method that generates updateable  *
+ * bounding boxes for speed.  CHECK means compute all bounding boxes from *
+ * scratch using a very simple routine to allow checks of the other       *
+ * costs.                                                                 */
+enum e_cost_methods {
+	NORMAL /*, CHECK*/
+};
 
 /* This is for the placement swap routines. A swap attempt could be       *
  * rejected, accepted or aborted (due to the limitations placed on the    *
@@ -111,18 +111,18 @@ static std::vector<std::vector<BelId>> legal_pos;
  * right, DO NOT update again.                                                   */
 static std::vector<char> bb_updated_before;
 
-///* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]. What is the value of the timing   */
-///* driven portion of the cost function. These arrays will be set to  */
-///* (criticality * delay) for each point to point connection. */
-//
-//static vtr::vector<ClusterNetId, float *> point_to_point_timing_cost;
-//static vtr::vector<ClusterNetId, float *> temp_point_to_point_timing_cost;
-//
+/* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]. What is the value of the timing   */
+/* driven portion of the cost function. These arrays will be set to  */
+/* (criticality * delay) for each point to point connection. */
+
+static std::vector<float *> point_to_point_timing_cost;
+static std::vector<float *> temp_point_to_point_timing_cost;
+
 ///* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]. What is the value of the delay */
 ///* for each connection in the circuit */
-//static vtr::vector_map<ClusterNetId, float *> point_to_point_delay_cost;
-//static vtr::vector_map<ClusterNetId, float *> temp_point_to_point_delay_cost;
-//
+static std::vector<float *> point_to_point_delay_cost;
+static std::vector<float *> temp_point_to_point_delay_cost;
+
 ///* [0..cluster_ctx.clb_nlist.blocks().size()-1][0..pins_per_clb-1]. Indicates which pin on the net */
 ///* this block corresponds to, this is only required during timing-driven */
 ///* placement. It is used to allow us to update individual connections on */
@@ -188,7 +188,7 @@ static const float cross_count[50] = { /* [0..49] */1.0, 1.0, 1.0, 1.0828, 1.153
 //#endif
 
 static void alloc_and_load_placement_structs(
-		/*float place_cost_exp, t_placer_opts placer_opts,
+		/*float place_cost_exp,*/ t_placer_opts placer_opts /*,
 		t_direct_inf *directs, int num_directs*/);
 
 //static void alloc_and_load_net_pin_indices();
@@ -225,7 +225,7 @@ static void initial_placement_location(/*int * free_locations, ClusterBlockId bl
 static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 		const char *pad_loc_file*/);
 
-static float comp_bb_cost(/*e_cost_methods method*/);
+static float comp_bb_cost(e_cost_methods method);
 
 static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to, int y_to, int z_to*/ BelId bel_to);
 
@@ -258,22 +258,22 @@ static void update_rlim(float *rlim, float success_rat, const DeviceGrid& grid);
 static int exit_crit(float t, float cost /*,
 		t_annealing_sched annealing_sched*/);
 
-//static int count_connections();
+static int count_connections();
 
 static double get_std_dev(int n, double sum_x_squared, double av_x);
 
 static float recompute_bb_cost();
 
-//static float comp_td_point_to_point_delay(ClusterNetId net_id, int ipin);
-//
-//static void comp_td_point_to_point_delays();
-//
+static float comp_td_point_to_point_delay(/*ClusterNetId*/ NetInfo* net_id, /*int ipin*/ const PortRef& ipin);
+
+static void comp_td_point_to_point_delays();
+
 //static void update_td_cost();
 //
 //static bool driven_by_moved_block(const ClusterNetId net);
-//
-//static void comp_td_costs(float *timing_cost, float *connection_delay_sum);
-//
+
+static void comp_td_costs(float *timing_cost, float *connection_delay_sum);
+
 static e_swap_result assess_swap(float delta_c, float t);
 
 static bool find_to(/*t_type_ptr type,*/ float rlim,
@@ -332,8 +332,8 @@ static void placement_inner_loop(float t, float rlim, /*t_placer_opts placer_opt
     SetupTimingInfo& timing_info*/);
 
 /*****************************************************************************/
-void try_place(/*t_placer_opts placer_opts,
-		t_annealing_sched annealing_sched,
+void try_place(t_placer_opts placer_opts,
+		t_annealing_sched annealing_sched/*,
 		t_chan_width_dist chan_width_dist, t_router_opts router_opts,
 		t_det_routing_arch *det_routing_arch, t_segment_inf * segment_inf,
 #ifdef ENABLE_CLASSIC_VPR_STA
@@ -394,7 +394,7 @@ void try_place(/*t_placer_opts placer_opts,
 //
 //	init_chan(width_fac, chan_width_dist);
 
-	alloc_and_load_placement_structs(/*placer_opts.place_cost_exp, placer_opts,
+	alloc_and_load_placement_structs(/*placer_opts.place_cost_exp,*/ placer_opts /*,
 			directs, num_directs*/);
 
 	initial_placement(/*placer_opts.pad_loc_type, placer_opts.pad_loc_file.c_str()*/);
@@ -403,24 +403,24 @@ void try_place(/*t_placer_opts placer_opts,
 //
 //    //Enables fast look-up of atom pins connect to CLB pins
 //    ClusteredPinAtomPinsLookup netlist_pin_lookup(cluster_ctx.clb_nlist, pb_gpin_lookup);
-//
-//	/* Gets initial cost and loads bounding boxes. */
-//
-//	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE || placer_opts.enable_timing_computations) {
-//		bb_cost = comp_bb_cost(NORMAL);
-//
-//		crit_exponent = placer_opts.td_place_exp_first; /*this will be modified when rlim starts to change */
-//
-//		num_connections = count_connections();
-//		vtr::printf_info("\n");
-//		vtr::printf_info("There are %d point to point connections in this circuit.\n", num_connections);
-//		vtr::printf_info("\n");
-//
-//		place_delay_value = 0;
-//
-//        //Update the point-to-point delays from the initial placement
-//        comp_td_point_to_point_delays();
-//
+
+	/* Gets initial cost and loads bounding boxes. */
+
+	if (/*placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE ||*/ placer_opts.enable_timing_computations) {
+		bb_cost = comp_bb_cost(NORMAL);
+
+		crit_exponent = placer_opts.td_place_exp_first; /*this will be modified when rlim starts to change */
+
+		num_connections = count_connections();
+		vtr::printf_info("\n");
+		vtr::printf_info("There are %d point to point connections in this circuit.\n", num_connections);
+		vtr::printf_info("\n");
+
+		place_delay_value = 0;
+
+        //Update the point-to-point delays from the initial placement
+        comp_td_point_to_point_delays();
+
 //        /*
 //         * Initialize timing analysis
 //         */
@@ -443,23 +443,23 @@ void try_place(/*t_placer_opts placer_opts,
 //            tatum::write_echo(getEchoFileName(E_ECHO_INITIAL_PLACEMENT_TIMING_GRAPH),
 //                    *timing_ctx.graph, *timing_ctx.constraints, *placement_delay_calc, timing_info->analyzer());
 //        }
-//
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//        load_timing_graph_net_delays(point_to_point_delay_cost);
-//		do_timing_analysis(slacks, timing_inf, false, true);
-//
-//        float cpd_diff_ns = std::abs(get_critical_path_delay() - 1e9*critical_path.delay());
-//        if(cpd_diff_ns > ERROR_TOL) {
-//            print_classic_cpds();
-//            print_tatum_cpds(timing_info->critical_paths());
-//
-//            vpr_throw(VPR_ERROR_TIMING, __FILE__, __LINE__, "Classic VPR and Tatum critical paths do not match (%g and %g respectively)", get_critical_path_delay(), 1e9*critical_path.delay());
-//        }
-//#endif
-//
-//		/*now we can properly compute costs  */
-//		comp_td_costs(&timing_cost, &delay_cost); /*also updates values in point_to_point_delay_cost */
-//
+
+#ifdef ENABLE_CLASSIC_VPR_STA
+        load_timing_graph_net_delays(point_to_point_delay_cost);
+		do_timing_analysis(slacks, timing_inf, false, true);
+
+        float cpd_diff_ns = std::abs(get_critical_path_delay() - 1e9*critical_path.delay());
+        if(cpd_diff_ns > ERROR_TOL) {
+            print_classic_cpds();
+            print_tatum_cpds(timing_info->critical_paths());
+
+            vpr_throw(VPR_ERROR_TIMING, __FILE__, __LINE__, "Classic VPR and Tatum critical paths do not match (%g and %g respectively)", get_critical_path_delay(), 1e9*critical_path.delay());
+        }
+#endif
+
+		/*now we can properly compute costs  */
+		comp_td_costs(&timing_cost, &delay_cost); /*also updates values in point_to_point_delay_cost */
+
 //		if (getEchoEnabled()) {
 //#ifdef ENABLE_CLASSIC_VPR_STA
 //			if(isEchoFileEnabled(E_ECHO_INITIAL_PLACEMENT_SLACK))
@@ -468,15 +468,15 @@ void try_place(/*t_placer_opts placer_opts,
 //				print_criticality(slacks, getEchoFileName(E_ECHO_INITIAL_PLACEMENT_CRITICALITY));
 //#endif
 //		}
-//		outer_crit_iter_count = 1;
-//
-//		inverse_prev_timing_cost = 1 / timing_cost;
-//		inverse_prev_bb_cost = 1 / bb_cost;
-//		cost = 1; /*our new cost function uses normalized values of           */
-//		/*bb_cost and timing_cost, the value of cost will be reset  */
-//		/*to 1 at each temperature when *_TIMING_DRIVEN_PLACE is true */
-//	} else { /*BOUNDING_BOX_PLACE */
-		cost = bb_cost = comp_bb_cost(/*NORMAL*/);
+		outer_crit_iter_count = 1;
+
+		inverse_prev_timing_cost = 1 / timing_cost;
+		inverse_prev_bb_cost = 1 / bb_cost;
+		cost = 1; /*our new cost function uses normalized values of           */
+		/*bb_cost and timing_cost, the value of cost will be reset  */
+		/*to 1 at each temperature when *_TIMING_DRIVEN_PLACE is true */
+	} else { /*BOUNDING_BOX_PLACE */
+		cost = bb_cost = comp_bb_cost(NORMAL);
 		timing_cost = 0;
 		delay_cost = 0;
 		place_delay_value = 0;
@@ -486,8 +486,8 @@ void try_place(/*t_placer_opts placer_opts,
 
 		inverse_prev_timing_cost = 0; /*inverses not used */
 		inverse_prev_bb_cost = 0;
-//	}
-//
+	}
+
 //    //Sanity check that initial placement is legal
 //    check_place(bb_cost, timing_cost, placer_opts.place_algorithm, delay_cost);
 //
@@ -1011,21 +1011,22 @@ static void placement_inner_loop(float t, float rlim, /*t_placer_opts placer_opt
 	/* Inner loop ends */
 }
 
-///*only count non-global connections */
-//static int count_connections() {
-//
-//	int count = 0;
-//
-//	auto& cluster_ctx = g_vpr_ctx.clustering();
-//	for (auto net_id : cluster_ctx.clb_nlist.nets()) {
-//		if (cluster_ctx.clb_nlist.net_is_global(net_id))
-//			continue;
-//
-//		count += cluster_ctx.clb_nlist.net_sinks(net_id).size();
-//	}
-//
-//	return (count);
-//}
+/*only count non-global connections */
+static int count_connections() {
+
+	int count = 0;
+
+	auto& cluster_ctx = g_vpr_ctx.clustering();
+	for (const auto& net : cluster_ctx.clb_nlist.nets()) {
+        auto net_id = net.second.get();
+		if (cluster_ctx.clb_nlist.net_is_global(net_id))
+			continue;
+
+		count += cluster_ctx.clb_nlist.net_sinks(net_id).size();
+	}
+
+	return (count);
+}
 
 static double get_std_dev(int n, double sum_x_squared, double av_x) {
 
@@ -1942,23 +1943,26 @@ static float recompute_bb_cost() {
 	return (cost);
 }
 
-///*returns the delay of one point to point connection */
-//static float comp_td_point_to_point_delay(ClusterNetId net_id, int ipin) {
-//	auto& cluster_ctx = g_vpr_ctx.clustering();
+/*returns the delay of one point to point connection */
+static float comp_td_point_to_point_delay(/*ClusterNetId*/ NetInfo* net_id, /*int ipin*/ const PortRef& ipin) {
+	auto& cluster_ctx = g_vpr_ctx.clustering();
 //	auto& place_ctx = g_vpr_ctx.placement();
-//
-//	float delay_source_to_sink = 0.;
-//
-//	if (!cluster_ctx.clb_nlist.net_is_global(net_id)) {
-//		//Only estimate delay for signals routed through the inter-block
-//		//routing network. Global signals are assumed to have zero delay.
-//
+
+	float delay_source_to_sink = 0.;
+
+	if (!cluster_ctx.clb_nlist.net_is_global(net_id)) {
+		//Only estimate delay for signals routed through the inter-block
+		//routing network. Global signals are assumed to have zero delay.
+
 //		ClusterBlockId source_block = cluster_ctx.clb_nlist.net_driver_block(net_id);
 //		ClusterBlockId sink_block = cluster_ctx.clb_nlist.net_pin_block(net_id, ipin);
 //
 //		VTR_ASSERT_SAFE(cluster_ctx.clb_nlist.block_type(source_block) != nullptr);
 //		VTR_ASSERT_SAFE(cluster_ctx.clb_nlist.block_type(sink_block) != nullptr);
-//
+
+        auto drv_wire = npnr_ctx->getWireBelPin(net_id->driver.cell->bel, npnr_ctx->portPinFromId(net_id->driver.port));
+        auto user_wire = npnr_ctx->getWireBelPin(ipin.cell->bel, npnr_ctx->portPinFromId(ipin.port));
+
 //		int delta_x = abs(place_ctx.block_locs[sink_block].x - place_ctx.block_locs[source_block].x);
 //		int delta_y = abs(place_ctx.block_locs[sink_block].y - place_ctx.block_locs[source_block].y);
 //
@@ -1969,29 +1973,33 @@ static float recompute_bb_cost() {
 //         *       carry-chain connections.
 //         */
 //        delay_source_to_sink = get_delta_delay(delta_x, delta_y);
+
+          delay_source_to_sink = npnr_ctx->estimateDelay(drv_wire, user_wire);
+
 //        if (delay_source_to_sink < 0) {
 //            vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
 //                    "in comp_td_point_to_point_delay: Bad delay_source_to_sink value delta(%d, %d) delay of %g\n"
 //                    "in comp_td_point_to_point_delay: Delay is less than 0\n",
 //                    delta_x, delta_y, delay_source_to_sink);
 //        }
-//    }
-//
-//
-//	return (delay_source_to_sink);
-//}
-//
+    }
+
+
+	return (delay_source_to_sink);
+}
+
 ////Recompute all point to point delays, updating point_to_point_delay_cost
-//static void comp_td_point_to_point_delays() {
-//	auto& cluster_ctx = g_vpr_ctx.clustering();
-//
-//	for (auto net_id : cluster_ctx.clb_nlist.nets()) {
-//		for (size_t ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ++ipin) {
-//			point_to_point_delay_cost[net_id][ipin] = comp_td_point_to_point_delay(net_id, ipin);
-//		}
-//	}
-//}
-//
+static void comp_td_point_to_point_delays() {
+	auto& cluster_ctx = g_vpr_ctx.clustering();
+
+	for (const auto& net : cluster_ctx.clb_nlist.nets()) {
+        auto net_id = net.second.get();
+		for (size_t ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ++ipin) {
+			point_to_point_delay_cost[net_id->name.index][ipin] = comp_td_point_to_point_delay(net_id, net_id->users[ipin-1]);
+		}
+	}
+}
+
 ///* Update the point_to_point_timing_cost values from the temporary *
 //* values for all connections that have changed.                   */
 //static void update_td_cost() {
@@ -2044,46 +2052,47 @@ static float recompute_bb_cost() {
 //    }
 //    return false;
 //}
-//
-//static void comp_td_costs(float *timing_cost, float *connection_delay_sum) {
-//	/* Computes the cost (from scratch) due to the delays and criticalities  *
-//	 * on all point to point connections, we define the timing cost of       *
-//	 * each connection as criticality*delay.                                 */
-//
-//	unsigned ipin;
-//	float loc_timing_cost, loc_connection_delay_sum, temp_delay_cost,
-//			temp_timing_cost;
-//
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
-//
-//	loc_timing_cost = 0.;
-//	loc_connection_delay_sum = 0.;
-//
-//	for (auto net_id : cluster_ctx.clb_nlist.nets()) { /* For each net ... */
-//
-//		if (cluster_ctx.clb_nlist.net_is_global(net_id)) { /* Do only if not global. */
-//            continue;
-//        }
-//
-//        for (ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ipin++) {
-//            temp_delay_cost = comp_td_point_to_point_delay(net_id, ipin);
-//            temp_timing_cost = temp_delay_cost * get_timing_place_crit(net_id, ipin);
-//
-//            loc_connection_delay_sum += temp_delay_cost;
-//            point_to_point_delay_cost[net_id][ipin] = temp_delay_cost;
-//            temp_point_to_point_delay_cost[net_id][ipin] = -1; /* Undefined */
-//
-//            point_to_point_timing_cost[net_id][ipin] = temp_timing_cost;
-//            temp_point_to_point_timing_cost[net_id][ipin] = -1; /* Undefined */
-//            loc_timing_cost += temp_timing_cost;
-//        }
-//	}
-//
-//	/* Make sure timing cost does not go above MIN_TIMING_COST. */
-//	*timing_cost = loc_timing_cost;
-//
-//	*connection_delay_sum = loc_connection_delay_sum;
-//}
+
+static void comp_td_costs(float *timing_cost, float *connection_delay_sum) {
+	/* Computes the cost (from scratch) due to the delays and criticalities  *
+	 * on all point to point connections, we define the timing cost of       *
+	 * each connection as criticality*delay.                                 */
+
+	unsigned ipin;
+	float loc_timing_cost, loc_connection_delay_sum, temp_delay_cost,
+			temp_timing_cost;
+
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+
+	loc_timing_cost = 0.;
+	loc_connection_delay_sum = 0.;
+
+	for (const auto& net : cluster_ctx.clb_nlist.nets()) { /* For each net ... */
+        auto net_id = net.second.get();
+
+		if (cluster_ctx.clb_nlist.net_is_global(net_id)) { /* Do only if not global. */
+            continue;
+        }
+
+        for (ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ipin++) {
+            temp_delay_cost = comp_td_point_to_point_delay(net_id, net_id->users[ipin-1]);
+            temp_timing_cost = temp_delay_cost * get_timing_place_crit(net_id, net_id->users[ipin-1]);
+
+            loc_connection_delay_sum += temp_delay_cost;
+            point_to_point_delay_cost[net_id->name.index][ipin] = temp_delay_cost;
+            temp_point_to_point_delay_cost[net_id->name.index][ipin] = -1; /* Undefined */
+
+            point_to_point_timing_cost[net_id->name.index][ipin] = temp_timing_cost;
+            temp_point_to_point_timing_cost[net_id->name.index][ipin] = -1; /* Undefined */
+            loc_timing_cost += temp_timing_cost;
+        }
+	}
+
+	/* Make sure timing cost does not go above MIN_TIMING_COST. */
+	*timing_cost = loc_timing_cost;
+
+	*connection_delay_sum = loc_connection_delay_sum;
+}
 
 
 /* Finds the cost from scratch.  Done only when the placement   *
@@ -2094,7 +2103,7 @@ static float recompute_bb_cost() {
 * are found via the non_updateable_bb routine, to provide a    *
 * cost which can be used to check the correctness of the       *
 * other routine.                                               */
-static float comp_bb_cost(/*e_cost_methods method*/) {
+static float comp_bb_cost(e_cost_methods method) {
 	float cost = 0;
 //	double expected_wirelength = 0.0;
 //	auto& cluster_ctx = g_vpr_ctx.clustering();
@@ -2104,7 +2113,7 @@ static float comp_bb_cost(/*e_cost_methods method*/) {
         if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
 			/* Small nets don't use incremental updating on their bounding boxes, *
 			 * so they can use a fast bounding box calculator.                    */
-			if (net_id->users.size() >= SMALL_NET /*&& method == NORMAL*/) {
+			if (net_id->users.size() >= SMALL_NET && method == NORMAL) {
 				get_bb_from_scratch(net_id, &bb_coords[net_id->name.index],
 					&bb_num_on_edges[net_id->name.index]);
 			}
@@ -2181,11 +2190,11 @@ static float comp_bb_cost(/*e_cost_methods method*/) {
 /* Allocates the major structures needed only by the placer, primarily for *
 * computing costs quickly and such.                                       */
 static void alloc_and_load_placement_structs(
-	/*float place_cost_exp, t_placer_opts placer_opts,
+	/*float place_cost_exp,*/ t_placer_opts placer_opts /*,
 	t_direct_inf *directs, int num_directs*/) {
 
 //	int max_pins_per_clb, i;
-//	unsigned int ipin;
+	unsigned int ipin;
 
 //	auto& device_ctx = g_vpr_ctx.device();
 	auto& cluster_ctx = g_vpr_ctx.clustering();
@@ -2202,39 +2211,41 @@ static void alloc_and_load_placement_structs(
 //		max_pins_per_clb = max(max_pins_per_clb, device_ctx.block_types[i].num_pins);
 //	}
 //
-//	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
-//		|| placer_opts.enable_timing_computations) {
-//		/* Allocate structures associated with timing driven placement */
-//		/* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]  */
-//		point_to_point_delay_cost.resize(num_nets);
-//		temp_point_to_point_delay_cost.resize(num_nets);
-//
-//		point_to_point_timing_cost.resize(num_nets);
-//		temp_point_to_point_timing_cost.resize(num_nets);
-//
-//		for (auto net_id : cluster_ctx.clb_nlist.nets()) {
-//            size_t num_sinks = cluster_ctx.clb_nlist.net_sinks(net_id).size();
-//			/* In the following, subract one so index starts at *
-//			 * 1 instead of 0 */
-//			point_to_point_delay_cost[net_id] = (float *)vtr::malloc(num_sinks * sizeof(float));
-//			point_to_point_delay_cost[net_id]--;
-//
-//			temp_point_to_point_delay_cost[net_id] = (float *)vtr::malloc(num_sinks * sizeof(float));
-//			temp_point_to_point_delay_cost[net_id]--;
-//
-//			point_to_point_timing_cost[net_id] = (float *)vtr::malloc(num_sinks * sizeof(float));
-//			point_to_point_timing_cost[net_id]--;
-//
-//			temp_point_to_point_timing_cost[net_id] = (float *)vtr::malloc(num_sinks * sizeof(float));
-//			temp_point_to_point_timing_cost[net_id]--;
-//		}
-//		for (auto net_id : cluster_ctx.clb_nlist.nets()) {
-//			for (ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ipin++) {
-//				point_to_point_delay_cost[net_id][ipin] = 0;
-//				temp_point_to_point_delay_cost[net_id][ipin] = 0;
-//			}
-//		}
-//	}
+	if (/*placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
+		||*/ placer_opts.enable_timing_computations) {
+		/* Allocate structures associated with timing driven placement */
+		/* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]  */
+		point_to_point_delay_cost.resize(num_nets);
+		temp_point_to_point_delay_cost.resize(num_nets);
+
+		point_to_point_timing_cost.resize(num_nets);
+		temp_point_to_point_timing_cost.resize(num_nets);
+
+		for (const auto& net : cluster_ctx.clb_nlist.nets()) {
+            auto net_id = net.second.get();
+            size_t num_sinks = cluster_ctx.clb_nlist.net_sinks(net_id).size();
+			/* In the following, subract one so index starts at *
+			 * 1 instead of 0 */
+			point_to_point_delay_cost[net_id->name.index] = (float *)malloc(num_sinks * sizeof(float));
+			point_to_point_delay_cost[net_id->name.index]--;
+
+			temp_point_to_point_delay_cost[net_id->name.index] = (float *)malloc(num_sinks * sizeof(float));
+			temp_point_to_point_delay_cost[net_id->name.index]--;
+
+			point_to_point_timing_cost[net_id->name.index] = (float *)malloc(num_sinks * sizeof(float));
+			point_to_point_timing_cost[net_id->name.index]--;
+
+			temp_point_to_point_timing_cost[net_id->name.index] = (float *)malloc(num_sinks * sizeof(float));
+			temp_point_to_point_timing_cost[net_id->name.index]--;
+		}
+		for (const auto& net : cluster_ctx.clb_nlist.nets()) {
+            auto net_id = net.second.get();
+			for (ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ipin++) {
+				point_to_point_delay_cost[net_id->name.index][ipin] = 0;
+				temp_point_to_point_delay_cost[net_id->name.index][ipin] = 0;
+			}
+		}
+	}
 
     // We tradeoff memory for speed here:
     //   npnr nets are actually pointers, with non sequential indices 

@@ -60,8 +60,16 @@ namespace vpr {
                 struct t_nets {
                     size_t size() { return _size; }
                     size_t _size;
-                    t_nets& operator()() { return *this; }
+                    std::unordered_map<IdString, std::unique_ptr<nextpnr_ice40::NetInfo>>& operator()() const { return npnr_ctx->nets; }
                 } nets;
+                bool net_is_global(const NetInfo* net) const { return npnr_ctx->isGlobalNet(net); }
+                std::vector<PortRef>& net_sinks(NetInfo* net) const { return net->users; }
+                struct t_net_pins {
+                    t_net_pins(NetInfo* net) : _net(net) {}
+                    size_t size() const { return _net->users.size() + 1; }
+                    NetInfo* _net;
+                };
+                t_net_pins net_pins(NetInfo* net) const { return t_net_pins(net); }
             } clb_nlist;
             t_clustering& operator()() { return *this; }
         } clustering;
@@ -70,9 +78,19 @@ namespace vpr {
             t_device& operator()() { return *this; }
         } device;
     } g_vpr_ctx;
-    static struct {
+    static struct t_annealing_sched {
         const float inner_num = 10;
     } annealing_sched;
+    static struct t_placer_opts {
+        bool enable_timing_computations;
+        const float td_place_exp_first = 1.0;
+    } placer_opts;
+
+    // timing_place.cpp
+    float get_timing_place_crit(NetInfo* /*net_id*/, const PortRef& ipin)
+    {
+        return ipin.budget;
+    }
     
     #define VTR_ASSERT NPNR_ASSERT
     #define VTR_ASSERT_SAFE NPNR_ASSERT
@@ -131,13 +149,14 @@ class VPRPlacer
             auto net_id = n.second.get();
             num_nets = std::max<size_t>(num_nets, net_id->name.index+1);
         }
+        vpr::placer_opts.enable_timing_computations = ctx->timing_driven;
     }
 
     bool place()
     {
         log_break();
 
-        vpr::try_place();
+        vpr::try_place(vpr::placer_opts, vpr::annealing_sched);
 
         // Final post-pacement validitiy check
         for (auto bel : ctx->getBels()) {
