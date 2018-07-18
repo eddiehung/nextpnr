@@ -54,22 +54,34 @@ namespace vpr {
         inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
         std::vector<std::vector<std::vector<BelId>>> _bels;
     };
+    enum PinType
+    {
+        DRIVER = PortType::PORT_OUT,
+        SINK = PortType::PORT_IN,
+    };
     static struct {
         struct t_clustering {
             struct {
-                struct t_nets {
-                    size_t size() { return _size; }
-                    size_t _size;
-                    std::unordered_map<IdString, std::unique_ptr<nextpnr_ice40::NetInfo>>& operator()() const { return npnr_ctx->nets; }
-                } nets;
+                std::unordered_map<IdString, std::unique_ptr<nextpnr_ice40::NetInfo>>& nets() const { return npnr_ctx->nets; }
                 bool net_is_global(const NetInfo* net) const { return npnr_ctx->isGlobalNet(net); }
                 std::vector<PortRef>& net_sinks(NetInfo* net) const { return net->users; }
                 struct t_net_pins {
-                    t_net_pins(NetInfo* net) : _net(net) {}
+                    t_net_pins(const NetInfo* net) : _net(net) {}
                     size_t size() const { return _net->users.size() + 1; }
-                    NetInfo* _net;
+                    const NetInfo* _net;
                 };
-                t_net_pins net_pins(NetInfo* net) const { return t_net_pins(net); }
+                t_net_pins net_pins(const NetInfo* net) const { return t_net_pins(net); }
+                std::unordered_map<IdString, PortInfo>& block_pins(CellInfo* cell) { return cell->ports; }
+                PinType pin_type(const PortInfo& port) { return static_cast<PinType>(port.type); }
+                CellInfo* net_driver_block(const NetInfo* net) const { return net->driver.cell; }
+                size_t pin_net_index(const PortInfo& port) {
+                    auto net = port.net;
+                    for (auto it = net->users.begin(); it != net->users.end(); ++it) {
+                        if (it->port == port.name)
+                            return it - net->users.begin() + 1;
+                    }
+                    throw;
+                }
             } clb_nlist;
             t_clustering& operator()() { return *this; }
         } clustering;
@@ -84,12 +96,13 @@ namespace vpr {
     static struct t_placer_opts {
         bool enable_timing_computations;
         const float td_place_exp_first = 1.0;
+        const float timing_tradeoff = 0.5;
     } placer_opts;
 
     // timing_place.cpp
-    float get_timing_place_crit(NetInfo* /*net_id*/, const PortRef& ipin)
+    float get_timing_place_crit(NetInfo* net_id, int ipin)
     {
-        return ipin.budget;
+        return net_id->users[ipin-1].budget;
     }
     
     #define VTR_ASSERT NPNR_ASSERT
@@ -143,11 +156,6 @@ class VPRPlacer
             if (ci->bel == BelId()) {
                 vpr::npnr_cells.push_back(cell.second.get());
             }
-        }
-        auto &num_nets = vpr::g_vpr_ctx.clustering.clb_nlist.nets._size;
-        for (auto& n : ctx->nets) {
-            auto net_id = n.second.get();
-            num_nets = std::max<size_t>(num_nets, net_id->name.index+1);
         }
         vpr::placer_opts.enable_timing_computations = ctx->timing_driven;
     }
