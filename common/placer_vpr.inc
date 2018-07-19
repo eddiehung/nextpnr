@@ -555,13 +555,13 @@ void try_place(t_placer_opts placer_opts,
 	if (move_lim <= 0)
 		move_lim = 1;
 
-//	if (placer_opts.inner_loop_recompute_divider != 0) {
-//		inner_recompute_limit = (int)
-//			(0.5 + (float) move_lim	/ (float) placer_opts.inner_loop_recompute_divider);
-//    } else {
+	if (placer_opts.inner_loop_recompute_divider != 0) {
+		inner_recompute_limit = (int)
+			(0.5 + (float) move_lim	/ (float) placer_opts.inner_loop_recompute_divider);
+    } else {
 		/*don't do an inner recompute */
 		inner_recompute_limit = move_lim + 1;
-//    }
+    }
 
 	rlim = (float) std::max(device_ctx.grid.width(), device_ctx.grid.height());
 
@@ -1466,15 +1466,15 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 
 			/* update net cost functions and reset flags. */
             for (auto net_id : ts_nets_to_update) {
-				bb_coords[net_id->name.index] = ts_bb_coord_new[net_id->name.index];
+				bb_coords[net_id->udata] = ts_bb_coord_new[net_id->udata];
 				if (net_id->users.size() >= SMALL_NET)
-					bb_num_on_edges[net_id->name.index] = ts_bb_edge_new[net_id->name.index];
+					bb_num_on_edges[net_id->udata] = ts_bb_edge_new[net_id->udata];
 
-				net_cost[net_id->name.index] = temp_net_cost[net_id->name.index];
+				net_cost[net_id->udata] = temp_net_cost[net_id->udata];
 
 				/* negative temp_net_cost value is acting as a flag. */
-				temp_net_cost[net_id->name.index] =	-1;
-				bb_updated_before[net_id->name.index] = NOT_UPDATED_YET;
+				temp_net_cost[net_id->udata] =	-1;
+				bb_updated_before[net_id->udata] = NOT_UPDATED_YET;
 			}
 
 
@@ -1511,8 +1511,8 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 
 			/* Reset the net cost function flags first. */
             for (auto net_id : ts_nets_to_update) {
-				temp_net_cost[net_id->name.index] = -1;
-				bb_updated_before[net_id->name.index] = NOT_UPDATED_YET;
+				temp_net_cost[net_id->udata] = -1;
+				bb_updated_before[net_id->udata] = NOT_UPDATED_YET;
 			}
 
 //			/* Restore the place_ctx.block_locs data structures to their state before the move. */
@@ -1656,8 +1656,8 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
      * The cost is only updated once per net.
      */
     for (auto net_id : ts_nets_to_update) {
-        temp_net_cost[net_id->name.index] = get_net_cost(net_id, &ts_bb_coord_new[net_id->name.index]);
-        bb_delta_c += temp_net_cost[net_id->name.index] - net_cost[net_id->name.index];
+        temp_net_cost[net_id->udata] = get_net_cost(net_id, &ts_bb_coord_new[net_id->udata]);
+        bb_delta_c += temp_net_cost[net_id->udata] - net_cost[net_id->udata];
     }
 
 	return num_affected_nets;
@@ -1665,13 +1665,13 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 
 static void record_affected_net(/*const ClusterNetId*/ NetInfo *net, int& num_affected_nets) {
     //Record effected nets
-    if (temp_net_cost[net->name.index] < 0.) {
+    if (temp_net_cost[net->udata] < 0.) {
         //Net not marked yet.
         ts_nets_to_update.push_back(net);
         num_affected_nets++;
 
         //Flag to say we've marked this net.
-        temp_net_cost[net->name.index] = 1.;
+        temp_net_cost[net->udata] = 1.;
     }
 }
 
@@ -1682,8 +1682,8 @@ static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const
     if (net->users.size() < SMALL_NET) {
         //For small nets brute-force bounding box update is faster
 
-        if(bb_updated_before[net->name.index] == NOT_UPDATED_YET) { //Only once per-net
-            get_non_updateable_bb(net, &ts_bb_coord_new[net->name.index]);
+        if(bb_updated_before[net->udata] == NOT_UPDATED_YET) { //Only once per-net
+            get_non_updateable_bb(net, &ts_bb_coord_new[net->udata]);
         }
     } else {
         //For large nets, update bounding box incrementally
@@ -1700,8 +1700,8 @@ static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const
         npnr_ctx->estimatePosition(blk->bel, xnew, ynew, gb);
 
         //Incremental bounding box update
-        update_bb(net, &ts_bb_coord_new[net->name.index],
-                &ts_bb_edge_new[net->name.index],
+        update_bb(net, &ts_bb_coord_new[net->udata],
+                &ts_bb_edge_new[net->udata],
                 /*blocks_affected.moved_blocks[iblk].xold + pin_width_offset*/ xold,
                 /*blocks_affected.moved_blocks[iblk].yold + pin_height_offset*/ yold,
                 /*blocks_affected.moved_blocks[iblk].xnew + pin_width_offset*/ xnew,
@@ -1718,11 +1718,11 @@ static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*C
         //Re-compute all point to point connections for this net.
         for (size_t ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net).size(); ipin++) {
             float temp_delay = comp_td_point_to_point_delay(net, ipin);
-            temp_point_to_point_delay_cost[net->name.index][ipin] = temp_delay;
+            temp_point_to_point_delay_cost[net->udata][ipin] = temp_delay;
 
-            temp_point_to_point_timing_cost[net->name.index][ipin] = get_timing_place_crit(net, ipin) * temp_delay;
-            delta_timing_cost += temp_point_to_point_timing_cost[net->name.index][ipin] - point_to_point_timing_cost[net->name.index][ipin];
-            delta_delay_cost += temp_point_to_point_delay_cost[net->name.index][ipin] - point_to_point_delay_cost[net->name.index][ipin];
+            temp_point_to_point_timing_cost[net->udata][ipin] = get_timing_place_crit(net, ipin) * temp_delay;
+            delta_timing_cost += temp_point_to_point_timing_cost[net->udata][ipin] - point_to_point_timing_cost[net->udata][ipin];
+            delta_delay_cost += temp_point_to_point_delay_cost[net->udata][ipin] - point_to_point_delay_cost[net->udata][ipin];
 
         }
     } else {
@@ -1739,11 +1739,11 @@ static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*C
             int net_pin = cluster_ctx.clb_nlist.pin_net_index(pin);
 
             float temp_delay = comp_td_point_to_point_delay(net, net_pin);
-            temp_point_to_point_delay_cost[net->name.index][net_pin] = temp_delay;
+            temp_point_to_point_delay_cost[net->udata][net_pin] = temp_delay;
 
-            temp_point_to_point_timing_cost[net->name.index][net_pin] = get_timing_place_crit(net, net_pin) * temp_delay;
-            delta_timing_cost += temp_point_to_point_timing_cost[net->name.index][net_pin] - point_to_point_timing_cost[net->name.index][net_pin];
-            delta_delay_cost += temp_point_to_point_delay_cost[net->name.index][net_pin] - point_to_point_delay_cost[net->name.index][net_pin];
+            temp_point_to_point_timing_cost[net->udata][net_pin] = get_timing_place_crit(net, net_pin) * temp_delay;
+            delta_timing_cost += temp_point_to_point_timing_cost[net->udata][net_pin] - point_to_point_timing_cost[net->udata][net_pin];
+            delta_delay_cost += temp_point_to_point_delay_cost[net->udata][net_pin] - point_to_point_delay_cost[net->udata][net_pin];
         }
     }
 }
@@ -1942,7 +1942,7 @@ static float recompute_bb_cost() {
         auto net_id = n.second.get();
         if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
 			/* Bounding boxes don't have to be recomputed; they're correct. */
-			cost += net_cost[net_id->name.index];
+			cost += net_cost[net_id->udata];
 		}
 	}
 
@@ -2001,7 +2001,7 @@ static void comp_td_point_to_point_delays() {
 	for (const auto& net : cluster_ctx.clb_nlist.nets()) {
         auto net_id = net.second.get();
 		for (size_t ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ++ipin) {
-			point_to_point_delay_cost[net_id->name.index][ipin] = comp_td_point_to_point_delay(net_id, ipin);
+			point_to_point_delay_cost[net_id->udata][ipin] = comp_td_point_to_point_delay(net_id, ipin);
 		}
 	}
 }
@@ -2026,10 +2026,10 @@ static void update_td_cost() {
                 //This net is being driven by a moved block, recompute
                 //all point to point connections on this net.
 				for (size_t ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ipin++) {
-					point_to_point_delay_cost[net_id->name.index][ipin] = temp_point_to_point_delay_cost[net_id->name.index][ipin];
-					temp_point_to_point_delay_cost[net_id->name.index][ipin] = -1;
-					point_to_point_timing_cost[net_id->name.index][ipin] = temp_point_to_point_timing_cost[net_id->name.index][ipin];
-					temp_point_to_point_timing_cost[net_id->name.index][ipin] = -1;
+					point_to_point_delay_cost[net_id->udata][ipin] = temp_point_to_point_delay_cost[net_id->udata][ipin];
+					temp_point_to_point_delay_cost[net_id->udata][ipin] = -1;
+					point_to_point_timing_cost[net_id->udata][ipin] = temp_point_to_point_timing_cost[net_id->udata][ipin];
+					temp_point_to_point_timing_cost[net_id->udata][ipin] = -1;
 				}
 			} else {
                 //This pin is a net sink on a moved block
@@ -2039,10 +2039,10 @@ static void update_td_cost() {
 				if (!driven_by_moved_block(net_id)) {
                     int net_pin = cluster_ctx.clb_nlist.pin_net_index(pin_id);
 
-					point_to_point_delay_cost[net_id->name.index][net_pin] = temp_point_to_point_delay_cost[net_id->name.index][net_pin];
-					temp_point_to_point_delay_cost[net_id->name.index][net_pin] = -1;
-					point_to_point_timing_cost[net_id->name.index][net_pin] = temp_point_to_point_timing_cost[net_id->name.index][net_pin];
-					temp_point_to_point_timing_cost[net_id->name.index][net_pin] = -1;
+					point_to_point_delay_cost[net_id->udata][net_pin] = temp_point_to_point_delay_cost[net_id->udata][net_pin];
+					temp_point_to_point_delay_cost[net_id->udata][net_pin] = -1;
+					point_to_point_timing_cost[net_id->udata][net_pin] = temp_point_to_point_timing_cost[net_id->udata][net_pin];
+					temp_point_to_point_timing_cost[net_id->udata][net_pin] = -1;
 				}
 			}
 		} /* Finished going through all the pins in the moved block */
@@ -2088,11 +2088,11 @@ static void comp_td_costs(float *timing_cost, float *connection_delay_sum) {
             temp_timing_cost = temp_delay_cost * get_timing_place_crit(net_id, ipin);
 
             loc_connection_delay_sum += temp_delay_cost;
-            point_to_point_delay_cost[net_id->name.index][ipin] = temp_delay_cost;
-            temp_point_to_point_delay_cost[net_id->name.index][ipin] = -1; /* Undefined */
+            point_to_point_delay_cost[net_id->udata][ipin] = temp_delay_cost;
+            temp_point_to_point_delay_cost[net_id->udata][ipin] = -1; /* Undefined */
 
-            point_to_point_timing_cost[net_id->name.index][ipin] = temp_timing_cost;
-            temp_point_to_point_timing_cost[net_id->name.index][ipin] = -1; /* Undefined */
+            point_to_point_timing_cost[net_id->udata][ipin] = temp_timing_cost;
+            temp_point_to_point_timing_cost[net_id->udata][ipin] = -1; /* Undefined */
             loc_timing_cost += temp_timing_cost;
         }
 	}
@@ -2123,15 +2123,15 @@ static float comp_bb_cost(e_cost_methods method) {
 			/* Small nets don't use incremental updating on their bounding boxes, *
 			 * so they can use a fast bounding box calculator.                    */
 			if (net_id->users.size() >= SMALL_NET && method == NORMAL) {
-				get_bb_from_scratch(net_id, &bb_coords[net_id->name.index],
-					&bb_num_on_edges[net_id->name.index]);
+				get_bb_from_scratch(net_id, &bb_coords[net_id->udata],
+					&bb_num_on_edges[net_id->udata]);
 			}
 			else {
-				get_non_updateable_bb(net_id, &bb_coords[net_id->name.index]);
+				get_non_updateable_bb(net_id, &bb_coords[net_id->udata]);
 			}
 
-			net_cost[net_id->name.index] = get_net_cost(net_id, &bb_coords[net_id->name.index]);
-			cost += net_cost[net_id->name.index];
+			net_cost[net_id->udata] = get_net_cost(net_id, &bb_coords[net_id->udata]);
+			cost += net_cost[net_id->udata];
 //			if (method == CHECK)
 //				expected_wirelength += get_net_wirelength_estimate(net_id, &bb_coords[net_id]);
 		}
@@ -2161,17 +2161,17 @@ static void free_placement_structs(t_placer_opts placer_opts) {
 		for (const auto& net : cluster_ctx.clb_nlist.nets()) {
             auto net_id = net.second.get();
 			/*add one to the address since it is indexed from 1 not 0 */
-			point_to_point_timing_cost[net_id->name.index]++;
-			free(point_to_point_timing_cost[net_id->name.index]);
+			point_to_point_timing_cost[net_id->udata]++;
+			free(point_to_point_timing_cost[net_id->udata]);
 
-			temp_point_to_point_timing_cost[net_id->name.index]++;
-			free(temp_point_to_point_timing_cost[net_id->name.index]);
+			temp_point_to_point_timing_cost[net_id->udata]++;
+			free(temp_point_to_point_timing_cost[net_id->udata]);
 
-			point_to_point_delay_cost[net_id->name.index]++;
-			free(point_to_point_delay_cost[net_id->name.index]);
+			point_to_point_delay_cost[net_id->udata]++;
+			free(point_to_point_delay_cost[net_id->udata]);
 
-			temp_point_to_point_delay_cost[net_id->name.index]++;
-			free(temp_point_to_point_delay_cost[net_id->name.index]);
+			temp_point_to_point_delay_cost[net_id->udata]++;
+			free(temp_point_to_point_delay_cost[net_id->udata]);
 		}
 
 		point_to_point_timing_cost.clear();
@@ -2210,7 +2210,7 @@ static void alloc_and_load_placement_structs(
 	auto& cluster_ctx = g_vpr_ctx.clustering();
 
     size_t num_nets = cluster_ctx.clb_nlist.nets().size();
-    for (const auto& n : cluster_ctx.clb_nlist.nets()) num_nets = std::max<int>(num_nets, n.second.get()->name.index);
+    ++num_nets; // Because VPR needs it so
 
 //    init_placement_context();
 //
@@ -2237,23 +2237,23 @@ static void alloc_and_load_placement_structs(
             size_t num_sinks = cluster_ctx.clb_nlist.net_sinks(net_id).size();
 			/* In the following, subract one so index starts at *
 			 * 1 instead of 0 */
-			point_to_point_delay_cost[net_id->name.index] = (float *)malloc(num_sinks * sizeof(float));
-			point_to_point_delay_cost[net_id->name.index]--;
+			point_to_point_delay_cost[net_id->udata] = (float *)malloc(num_sinks * sizeof(float));
+			point_to_point_delay_cost[net_id->udata]--;
 
-			temp_point_to_point_delay_cost[net_id->name.index] = (float *)malloc(num_sinks * sizeof(float));
-			temp_point_to_point_delay_cost[net_id->name.index]--;
+			temp_point_to_point_delay_cost[net_id->udata] = (float *)malloc(num_sinks * sizeof(float));
+			temp_point_to_point_delay_cost[net_id->udata]--;
 
-			point_to_point_timing_cost[net_id->name.index] = (float *)malloc(num_sinks * sizeof(float));
-			point_to_point_timing_cost[net_id->name.index]--;
+			point_to_point_timing_cost[net_id->udata] = (float *)malloc(num_sinks * sizeof(float));
+			point_to_point_timing_cost[net_id->udata]--;
 
-			temp_point_to_point_timing_cost[net_id->name.index] = (float *)malloc(num_sinks * sizeof(float));
-			temp_point_to_point_timing_cost[net_id->name.index]--;
+			temp_point_to_point_timing_cost[net_id->udata] = (float *)malloc(num_sinks * sizeof(float));
+			temp_point_to_point_timing_cost[net_id->udata]--;
 		}
 		for (const auto& net : cluster_ctx.clb_nlist.nets()) {
             auto net_id = net.second.get();
 			for (ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ipin++) {
-				point_to_point_delay_cost[net_id->name.index][ipin] = 0;
-				temp_point_to_point_delay_cost[net_id->name.index][ipin] = 0;
+				point_to_point_delay_cost[net_id->udata][ipin] = 0;
+				temp_point_to_point_delay_cost[net_id->udata][ipin] = 0;
 			}
 		}
 	}
@@ -2322,7 +2322,7 @@ static void alloc_and_load_try_swap_structs() {
     auto& cluster_ctx = g_vpr_ctx.clustering();
 
     size_t num_nets = cluster_ctx.clb_nlist.nets().size();
-    for (const auto& n : cluster_ctx.clb_nlist.nets()) num_nets = std::max<int>(num_nets, n.second.get()->name.index);
+    ++num_nets; // Because VPR needs it so
 
     ts_bb_coord_new.resize(num_nets, t_bb());
     ts_bb_edge_new.resize(num_nets, t_bb());
@@ -2588,14 +2588,14 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 	yold = std::max(std::min<int>(yold, device_ctx.grid.height() - 2), 1); //-2 for no perim channels
 
 	/* Check if the net had been updated before. */
-	if (bb_updated_before[net_id->name.index] == GOT_FROM_SCRATCH) {
+	if (bb_updated_before[net_id->udata] == GOT_FROM_SCRATCH) {
         /* The net had been updated from scratch, DO NOT update again! */
 		return;
-	} else if (bb_updated_before[net_id->name.index] == NOT_UPDATED_YET) {
+	} else if (bb_updated_before[net_id->udata] == NOT_UPDATED_YET) {
         /* The net had NOT been updated before, could use the old values */
-		curr_bb_coord = &bb_coords[net_id->name.index];
-		curr_bb_edge = &bb_num_on_edges[net_id->name.index];
-		bb_updated_before[net_id->name.index] = UPDATED_ONCE;
+		curr_bb_coord = &bb_coords[net_id->udata];
+		curr_bb_edge = &bb_num_on_edges[net_id->udata];
+		bb_updated_before[net_id->udata] = UPDATED_ONCE;
 	} else {
         /* The net had been updated before, must use the new values */
 		curr_bb_coord = bb_coord_new;
@@ -2611,7 +2611,7 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		if (xold == curr_bb_coord->xmax) { /* Old position at xmax. */
 			if (curr_bb_edge->xmax == 1) {
 				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-				bb_updated_before[net_id->name.index] = GOT_FROM_SCRATCH;
+				bb_updated_before[net_id->udata] = GOT_FROM_SCRATCH;
 				return;
 			} else {
 				bb_edge_new->xmax = curr_bb_edge->xmax - 1;
@@ -2643,7 +2643,7 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		if (xold == curr_bb_coord->xmin) { /* Old position at xmin. */
 			if (curr_bb_edge->xmin == 1) {
 				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-				bb_updated_before[net_id->name.index] = GOT_FROM_SCRATCH;
+				bb_updated_before[net_id->udata] = GOT_FROM_SCRATCH;
 				return;
 			} else {
 				bb_edge_new->xmin = curr_bb_edge->xmin - 1;
@@ -2684,7 +2684,7 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		if (yold == curr_bb_coord->ymax) { /* Old position at ymax. */
 			if (curr_bb_edge->ymax == 1) {
 				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-				bb_updated_before[net_id->name.index] = GOT_FROM_SCRATCH;
+				bb_updated_before[net_id->udata] = GOT_FROM_SCRATCH;
 				return;
 			} else {
 				bb_edge_new->ymax = curr_bb_edge->ymax - 1;
@@ -2716,7 +2716,7 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		if (yold == curr_bb_coord->ymin) { /* Old position at ymin. */
 			if (curr_bb_edge->ymin == 1) {
 				get_bb_from_scratch(net_id, bb_coord_new, bb_edge_new);
-				bb_updated_before[net_id->name.index] = GOT_FROM_SCRATCH;
+				bb_updated_before[net_id->udata] = GOT_FROM_SCRATCH;
 				return;
 			} else {
 				bb_edge_new->ymin = curr_bb_edge->ymin - 1;
@@ -2748,8 +2748,8 @@ static void update_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new,
 		bb_edge_new->ymax = curr_bb_edge->ymax;
 	}
 
-	if (bb_updated_before[net_id->name.index] == NOT_UPDATED_YET) {
-		bb_updated_before[net_id->name.index] = UPDATED_ONCE;
+	if (bb_updated_before[net_id->udata] == NOT_UPDATED_YET) {
+		bb_updated_before[net_id->udata] = UPDATED_ONCE;
     }
 }
 

@@ -95,6 +95,7 @@ namespace vpr {
     } annealing_sched;
     static struct t_placer_opts {
         bool enable_timing_computations;
+        const int inner_loop_recompute_divider = 0;
         const float td_place_exp_first = 1.0;
         const float timing_tradeoff = 0.5;
     } placer_opts;
@@ -151,13 +152,21 @@ class VPRPlacer
         for (auto& c : grid._bels)
             c.resize(max_y+1);
 
+        int32_t cell_idx = 0;
         for (auto &cell : ctx->cells) {
             CellInfo *ci = cell.second.get();
             if (ci->bel == BelId()) {
                 vpr::npnr_cells.push_back(cell.second.get());
             }
+            ci->udata = cell_idx++;
         }
-        vpr::placer_opts.enable_timing_computations = ctx->timing_driven;
+        int32_t net_idx = 0;
+        for (auto &net : ctx->nets) {
+            NetInfo *ni = net.second.get();
+            ni->udata = net_idx++;
+        }
+
+        vpr::placer_opts.enable_timing_computations = /*ctx->timing_driven*/ false;
     }
 
     bool place()
