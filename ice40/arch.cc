@@ -46,8 +46,8 @@ IdString Arch::belTypeToId(BelType type) const
         return id("ICESTORM_PLL");
     if (type == TYPE_SB_WARMBOOT)
         return id("SB_WARMBOOT");
-    if (type == TYPE_SB_MAC16)
-        return id("SB_MAC16");
+    if (type == TYPE_ICESTORM_DSP)
+        return id("ICESTORM_DSP");
     if (type == TYPE_ICESTORM_HFOSC)
         return id("ICESTORM_HFOSC");
     if (type == TYPE_ICESTORM_LFOSC)
@@ -81,8 +81,8 @@ BelType Arch::belTypeFromId(IdString type) const
         return TYPE_ICESTORM_PLL;
     if (type == id("SB_WARMBOOT"))
         return TYPE_SB_WARMBOOT;
-    if (type == id("SB_MAC16"))
-        return TYPE_SB_MAC16;
+    if (type == id("ICESTORM_DSP"))
+        return TYPE_ICESTORM_DSP;
     if (type == id("ICESTORM_HFOSC"))
         return TYPE_ICESTORM_HFOSC;
     if (type == id("ICESTORM_LFOSC"))
@@ -672,8 +672,7 @@ std::vector<GraphicElement> Arch::getDecalGraphics(DecalId decal) const
         }
 
         if (bel_type == TYPE_ICESTORM_RAM) {
-            for (int i = 0; i < 2; i++)
-            {
+            for (int i = 0; i < 2; i++) {
                 int tx = chip_info->bel_data[bel.index].x;
                 int ty = chip_info->bel_data[bel.index].y + i;
 
@@ -683,7 +682,7 @@ std::vector<GraphicElement> Arch::getDecalGraphics(DecalId decal) const
                 el.x1 = chip_info->bel_data[bel.index].x + logic_cell_x1;
                 el.x2 = chip_info->bel_data[bel.index].x + logic_cell_x2;
                 el.y1 = chip_info->bel_data[bel.index].y + logic_cell_y1;
-                el.y2 = chip_info->bel_data[bel.index].y + logic_cell_y2 + 7*logic_cell_pitch;
+                el.y2 = chip_info->bel_data[bel.index].y + logic_cell_y2 + 7 * logic_cell_pitch;
                 el.z = 0;
                 ret.push_back(el);
 
@@ -774,7 +773,10 @@ bool Arch::isClockPort(const PortRef &port) const
     if (port.cell->type == id("ICESTORM_LC"))
         return port.port == id("CLK");
     if (is_ram(this, port.cell) || port.cell->type == id("ICESTORM_RAM"))
-        return port.port == id("RCLK") || port.port == id("WCLK");
+        return port.port == id("RCLK") || port.port == id("WCLK") || port.port == id("RCLKN") ||
+               port.port == id("WCLKN");
+    if (is_sb_mac16(this, port.cell) || port.cell->type == id("ICESTORM_DSP"))
+        return port.port == id("CLK");
     return false;
 }
 
@@ -786,6 +788,9 @@ bool Arch::isResetPort(const PortRef &port) const
         return port.port == id_r || port.port == id_s;
     if (port.cell->type == id_icestorm_lc)
         return port.port == id_sr;
+//    if (is_sb_mac16(this, port.cell) || port.cell->type == id("ICESTORM_DSP"))
+//        return port.port == id("IRSTTOP") || port.port == id("IRSTBOT") || port.port == id("ORSTTOP") ||
+//               port.port == id("ORSTBOT");
     return false;
 }
 
@@ -797,8 +802,46 @@ bool Arch::isEnablePort(const PortRef &port) const
         return port.port == id_e;
     if (port.cell->type == id_icestorm_lc)
         return port.port == id_cen;
+    // FIXME
+    // if (is_sb_mac16(ctx, port.cell) || port.cell->type == ctx->id("ICESTORM_DSP"))
+    //    return port.port == ctx->id("CE");
     return false;
 }
 
+
+// Assign arch arg info
+void Arch::assignArchInfo()
+{
+    for (auto &net : getCtx()->nets) {
+        NetInfo *ni = net.second.get();
+        if (isGlobalNet(ni))
+            ni->is_global = true;
+    }
+    for (auto &cell : getCtx()->cells) {
+        CellInfo *ci = cell.second.get();
+        assignCellInfo(ci);
+    }
+}
+
+void Arch::assignCellInfo(CellInfo *cell)
+{
+    cell->belType = belTypeFromId(cell->type);
+    if (cell->type == id_icestorm_lc) {
+        cell->lcInfo.dffEnable = bool_or_default(cell->params, id_dff_en);
+        cell->lcInfo.negClk = bool_or_default(cell->params, id_neg_clk);
+        cell->lcInfo.clk = get_net_or_empty(cell, id_clk);
+        cell->lcInfo.cen = get_net_or_empty(cell, id_cen);
+        cell->lcInfo.sr = get_net_or_empty(cell, id_sr);
+        cell->lcInfo.inputCount = 0;
+        if (get_net_or_empty(cell, id_i0))
+            cell->lcInfo.inputCount++;
+        if (get_net_or_empty(cell, id_i1))
+            cell->lcInfo.inputCount++;
+        if (get_net_or_empty(cell, id_i2))
+            cell->lcInfo.inputCount++;
+        if (get_net_or_empty(cell, id_i3))
+            cell->lcInfo.inputCount++;
+    }
+}
 
 NEXTPNR_NAMESPACE_END

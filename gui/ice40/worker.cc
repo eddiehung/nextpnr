@@ -121,7 +121,8 @@ void Worker::place(bool timing_driven)
     Q_EMIT taskStarted();
     try {
         ctx->timing_driven = timing_driven;
-        Q_EMIT place_finished(ctx->place());
+        //Q_EMIT place_finished(ctx->place());
+        Q_EMIT place_finished(ctx->place_vpr());
     } catch (WorkerInterruptionRequested) {
         Q_EMIT taskCanceled();
     }

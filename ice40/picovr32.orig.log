@@ -1,0 +1,152 @@
+Info: Importing module top
+Info: Rule checker, Verifying pre-placed design
+Info: Checksum: 0xf9b3ecfa
+
+Info: Packing constants..
+Info: Promoting globals..
+Info: Packing IOs..
+Info: Packing LUT-FFs..
+Info: Packing non-LUT FFs..
+Info: Packing carries..
+Info: Packing RAMs..
+Info: Packing special functions..
+Info: Checksum: 0x8b3404a8
+
+Info: Annotating ports with timing budgets
+Info: Checksum: 0x45e4b18e
+
+Info: Device utilisation:
+Info: 	         ICESTORM_LC:  1808/ 7680    23%
+Info: 	        ICESTORM_RAM:     4/   32    12%
+Info: 	               SB_IO:   106/  256    41%
+Info: 	               SB_GB:     8/    8   100%
+Info: 	        ICESTORM_PLL:     0/    2     0%
+Info: 	         SB_WARMBOOT:     0/    1     0%
+
+Info: Placed 0 cells based on constraints.
+Info: Creating initial placement for remaining 1926 cells.
+Info:   initial placement placed 500/1926 cells
+Info:   initial placement placed 1000/1926 cells
+Info:   initial placement placed 1500/1926 cells
+Info:   initial placement placed 1926/1926 cells
+Info: Running simulated annealing placer.
+Info:   at iteration #1: temp = 10000.000000, wire length = 77641, est tns = -70.48ns
+Info:   at iteration #5: temp = 2401.000000, wire length = 77348, est tns = -76.91ns
+Info:   at iteration #10: temp = 403.536072, wire length = 77382, est tns = -86.55ns
+Info:   at iteration #15: temp = 138.412872, wire length = 72333, est tns = -56.75ns
+Info:   at iteration #20: temp = 67.822304, wire length = 68195, est tns = -31.45ns
+Info:   at iteration #25: temp = 47.475613, wire length = 65216, est tns = -19.08ns
+Info:   at iteration #30: temp = 38.455246, wire length = 64059, est tns = -26.91ns
+Info:   at iteration #35: temp = 31.148750, wire length = 59193, est tns = -9.09ns
+Info:   at iteration #40: temp = 25.230488, wire length = 56814, est tns = -6.92ns
+Info:   at iteration #45: temp = 22.770515, wire length = 54446, est tns = -2.39ns
+Info:   at iteration #50: temp = 20.550390, wire length = 52666, est tns = -5.73ns
+Info:   at iteration #55: temp = 18.546728, wire length = 49849, est tns = -0.65ns
+Info:   at iteration #60: temp = 15.901502, wire length = 47680, est tns = -0.10ns
+Info:   at iteration #65: temp = 14.351105, wire length = 46997, est tns = -0.36ns
+Info:   at iteration #70: temp = 13.633550, wire length = 44929, est tns = -0.34ns
+Info:   at iteration #75: temp = 13.633550, wire length = 44155, est tns = -0.82ns
+Info:   at iteration #80: temp = 13.633550, wire length = 44715, est tns = -0.29ns
+Info:   at iteration #85: temp = 13.633550, wire length = 43272, est tns = -0.52ns
+Info:   at iteration #90: temp = 12.951872, wire length = 41284, est tns = -1.16ns
+Info:   at iteration #95: temp = 12.304278, wire length = 39771, est tns = 0.00ns
+Info:   at iteration #100: temp = 11.689064, wire length = 40213, est tns = -0.30ns
+Info:   at iteration #105: temp = 11.104610, wire length = 39433, est tns = -0.80ns
+Info:   at iteration #110: temp = 10.549380, wire length = 37709, est tns = -0.12ns
+Info:   at iteration #115: temp = 10.021912, wire length = 36097, est tns = -1.26ns
+Info:   at iteration #120: temp = 9.520816, wire length = 34598, est tns = 0.00ns
+Info:   at iteration #125: temp = 9.044775, wire length = 33608, est tns = 0.00ns
+Info:   at iteration #130: temp = 8.162910, wire length = 32927, est tns = 0.00ns
+Info:   at iteration #135: temp = 7.754764, wire length = 31602, est tns = 0.00ns
+Info:   at iteration #140: temp = 7.367026, wire length = 28738, est tns = 0.00ns
+Info:   at iteration #145: temp = 6.998674, wire length = 28030, est tns = 0.00ns
+Info:   at iteration #150: temp = 6.648741, wire length = 26978, est tns = 0.00ns
+Info:   at iteration #155: temp = 6.000489, wire length = 25385, est tns = 0.00ns
+Info:   at iteration #160: temp = 5.700464, wire length = 24104, est tns = 0.00ns
+Info:   at iteration #165: temp = 5.144669, wire length = 23993, est tns = 0.00ns
+Info:   at iteration #170: temp = 4.887435, wire length = 22839, est tns = 0.00ns
+Info:   at iteration #175: temp = 4.643064, wire length = 21926, est tns = 0.00ns
+Info:   at iteration #180: temp = 4.190365, wire length = 20030, est tns = 0.00ns
+Info:   at iteration #185: temp = 3.980847, wire length = 19305, est tns = 0.00ns
+Info:   at iteration #190: temp = 3.781804, wire length = 18874, est tns = 0.00ns
+Info:   at iteration #195: temp = 3.592714, wire length = 18087, est tns = 0.00ns
+Info:   at iteration #200: temp = 3.242424, wire length = 17292, est tns = 0.00ns
+Info:   at iteration #205: temp = 3.080303, wire length = 16011, est tns = 0.00ns
+Info:   at iteration #210: temp = 2.779974, wire length = 15993, est tns = 0.00ns
+Info:   at iteration #215: temp = 2.640975, wire length = 14940, est tns = 0.00ns
+Info:   at iteration #220: temp = 2.508926, wire length = 14409, est tns = 0.00ns
+Info:   at iteration #225: temp = 2.264306, wire length = 13574, est tns = 0.00ns
+Info:   at iteration #230: temp = 2.151091, wire length = 12986, est tns = 0.00ns
+Info:   at iteration #235: temp = 1.941359, wire length = 12984, est tns = 0.00ns
+Info:   at iteration #240: temp = 1.844291, wire length = 12165, est tns = 0.00ns
+Info:   at iteration #245: temp = 1.664473, wire length = 11866, est tns = 0.00ns
+Info:   at iteration #250: temp = 1.581249, wire length = 11282, est tns = 0.00ns
+Info:   at iteration #255: temp = 1.427078, wire length = 10748, est tns = 0.00ns
+Info:   at iteration #260: temp = 1.355724, wire length = 10406, est tns = 0.00ns
+Info:   at iteration #265: temp = 1.223541, wire length = 9846, est tns = 0.00ns
+Info: Legalising design..
+
+Info: Annotating ports with timing budgets
+Info: Checksum: 0x54430fb5
+Info:   at iteration #270: temp = 6.860000, wire length = 30219, est tns = 0.00ns
+Info:   at iteration #275: temp = 5.587513, wire length = 25358, est tns = 0.00ns
+Info:   at iteration #280: temp = 4.323511, wire length = 21186, est tns = 0.00ns
+Info:   at iteration #285: temp = 3.521526, wire length = 18653, est tns = 0.00ns
+Info:   at iteration #290: temp = 2.868305, wire length = 16543, est tns = 0.00ns
+Info:   at iteration #295: temp = 2.219440, wire length = 14237, est tns = 0.00ns
+Info:   at iteration #300: temp = 1.807748, wire length = 12902, est tns = 0.00ns
+Info:   at iteration #305: temp = 1.398801, wire length = 11683, est tns = 0.00ns
+Info:   at iteration #310: temp = 0.911465, wire length = 10580, est tns = 0.00ns
+Info:   at iteration #315: temp = 0.729172, wire length = 9221, est tns = 0.00ns
+Info:   at iteration #320: temp = 0.583338, wire length = 8774, est tns = 0.00ns
+Info:   at iteration #325: temp = 0.466670, wire length = 8500, est tns = 0.00ns
+Info:   at iteration #330: temp = 0.298669, wire length = 8222, est tns = 0.00ns
+Info:   at iteration #335: temp = 0.152919, wire length = 8058, est tns = 0.00ns
+Info:   at iteration #340: temp = 0.062635, wire length = 7976, est tns = 0.00ns
+Info:   at iteration #345: temp = 0.020524, wire length = 7950, est tns = 0.00ns
+Info:   at iteration #350: temp = 0.006725, wire length = 7933, est tns = 0.00ns
+Info:   at iteration #355: temp = 0.002755, wire length = 7917, est tns = 0.00ns
+Info:   at iteration #360: temp = 0.000903, wire length = 7908, est tns = 0.00ns
+Info:   at iteration #365: temp = 0.000296, wire length = 7892, est tns = 0.00ns
+Info:   at iteration #370: temp = 0.000097, wire length = 7886, est tns = 0.00ns
+Info:   at iteration #375: temp = 0.000032, wire length = 7885, est tns = 0.00ns
+Info:   at iteration #380: temp = 0.000010, wire length = 7882, est tns = 0.00ns
+Info:   at iteration #385: temp = 0.000003, wire length = 7882, est tns = 0.00ns
+Info:   at iteration #390: temp = 0.000001, wire length = 7880, est tns = 0.00ns
+Info:   at iteration #395: temp = 0.000000, wire length = 7880, est tns = 0.00ns
+Info: Checksum: 0x64b16b40
+
+Info: Routing..
+Info: found 1915 unrouted nets. starting routing procedure.
+Info: estimated total wire delay: 4807800.00 (avg 697.49)
+Info: routing queue contains 1915 nets.
+Info:   processed 100 nets. (100 routed, 0 failed)
+Info:   processed 200 nets. (200 routed, 0 failed)
+Info:   processed 300 nets. (300 routed, 0 failed)
+Info:   processed 400 nets. (400 routed, 0 failed)
+Info:   processed 500 nets. (500 routed, 0 failed)
+Info:   processed 600 nets. (600 routed, 0 failed)
+Info:   processed 700 nets. (700 routed, 0 failed)
+Info:   processed 800 nets. (800 routed, 0 failed)
+Info:   processed 900 nets. (900 routed, 0 failed)
+Info:   processed 1000 nets. (1000 routed, 0 failed)
+Info:   processed 1100 nets. (1100 routed, 0 failed)
+Info:   processed 1200 nets. (1200 routed, 0 failed)
+Info:   processed 1300 nets. (1300 routed, 0 failed)
+Info:   processed 1400 nets. (1400 routed, 0 failed)
+Info:   processed 1500 nets. (1499 routed, 1 failed)
+Info:   processed 1600 nets. (1599 routed, 1 failed)
+Info:   processed 1700 nets. (1699 routed, 1 failed)
+Info:   processed 1800 nets. (1799 routed, 1 failed)
+Info:   processed 1900 nets. (1897 routed, 3 failed)
+Info:   processed 1915 nets. (1912 routed, 3 failed)
+Info: failed to route 3 nets. re-routing in ripup mode.
+Info:   routed 3 nets, ripped 37 nets.
+Info: iteration 1: routed 1912 nets without ripup, routed 3 nets with ripup.
+Info: iteration 2: routed 35 nets without ripup, routed 2 nets with ripup.
+Info: iteration 3: routed 1 nets without ripup, routed 1 nets with ripup.
+Info: iteration 4: routed 0 nets without ripup, routed 1 nets with ripup.
+Info: iteration 5: routed 1 nets without ripup, routed 0 nets with ripup.
+Info: routing complete after 5 iterations.
+Info: visited 214816 PIPs (2.33% revisits, 1.38% overtime revisits).
+Info: Checksum: 0xea141172
