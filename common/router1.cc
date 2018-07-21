@@ -748,7 +748,7 @@ bool router1(Context *ctx)
                         total_delay += ctx->estimateDelay(src, last_wire);
                     return total_delay;
                 };
-                update_budget(ctx, actual_delay);
+                //update_budget(ctx, actual_delay);
             }
 
             bool printNets = ctx->verbose && (jobQueue.size() < 10);
