@@ -82,6 +82,7 @@ namespace vpr {
                     }
                     throw;
                 }
+                std::unordered_map<IdString, std::unique_ptr<nextpnr_ice40::CellInfo>>& blocks() const { return npnr_ctx->cells; }
             } clb_nlist;
             t_clustering& operator()() { return *this; }
         } clustering;
@@ -123,6 +124,10 @@ namespace vpr {
         }
         template <typename ...Args>
         inline void printf_info(const char* fmt, Args... args) {
+            log_info(fmt, std::forward<Args>(args)...);
+        }
+        template <typename ...Args>
+        inline void printf_error(const char* fmt, Args... args) {
             log_info(fmt, std::forward<Args>(args)...);
         }
         inline void printf(const char* fmt) {

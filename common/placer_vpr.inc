@@ -239,9 +239,9 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 
 static /*ClusterBlockId*/ CellInfo* pick_from_block();
 
-//static void check_place(float bb_cost, float timing_cost,
-//		enum e_place_algorithm place_algorithm,
-//		float delay_cost);
+static void check_place(float bb_cost, float timing_cost,
+		/*enum e_place_algorithm place_algorithm,*/
+		float delay_cost);
 
 static float starting_t(float *cost_ptr, float *bb_cost_ptr,
 		float *timing_cost_ptr,
@@ -303,8 +303,8 @@ static float get_net_cost(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_ptr);
 static void get_bb_from_scratch(/*ClusterNetId*/ NetInfo* net, t_bb *coords,
 		t_bb *num_on_edges);
 
-//static double get_net_wirelength_estimate(ClusterNetId net_id, t_bb *bbptr);
-//
+static double get_net_wirelength_estimate(/*ClusterNetId*/ NetInfo* net_id, t_bb *bbptr);
+
 //static void free_try_swap_arrays();
 
 static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
@@ -365,14 +365,14 @@ void try_place(t_placer_opts placer_opts,
 //#endif
 
     auto& device_ctx = g_vpr_ctx.device();
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
-//
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+
 //    std::shared_ptr<SetupTimingInfo> timing_info;
 //    std::shared_ptr<PlacementDelayCalculator> placement_delay_calc;
 //
 //	/* Allocated here because it goes into timing critical code where each memory allocation is expensive */
 //    IntraLbPbPinLookup pb_gpin_lookup(device_ctx.block_types, device_ctx.num_block_types);
-//
+
 
 	/* init file scope variables */
 	num_swap_rejected = 0;
@@ -488,9 +488,9 @@ void try_place(t_placer_opts placer_opts,
 		inverse_prev_bb_cost = 0;
 	}
 
-//    //Sanity check that initial placement is legal
-//    check_place(bb_cost, timing_cost, placer_opts.place_algorithm, delay_cost);
-//
+    //Sanity check that initial placement is legal
+    check_place(bb_cost, timing_cost, /*placer_opts.place_algorithm,*/ delay_cost);
+
     //Initial pacement statistics
     vtr::printf_info("Initial placement cost: %g bb_cost: %g td_cost: %g delay_cost: %g\n",
             cost, bb_cost, timing_cost, delay_cost);
@@ -546,7 +546,7 @@ void try_place(t_placer_opts placer_opts,
 //    //Draw the initial placement
 //	update_screen(ScreenUpdatePriority::MAJOR, msg, PLACEMENT, timing_info);
 
-	move_lim = (int) (annealing_sched.inner_num * pow(npnr_ctx->cells.size(), 1.3333));
+	move_lim = (int) (annealing_sched.inner_num * pow(cluster_ctx.clb_nlist.blocks().size(), 1.3333));
 
 	/* Sometimes I want to run the router with a random placement.  Avoid *
 	 * using 0 moves to stop division by 0 and 0 length vector problems,  *
@@ -777,7 +777,7 @@ void try_place(t_placer_opts placer_opts,
 	}
 #endif
 
-//	check_place(bb_cost, timing_cost, placer_opts.place_algorithm, delay_cost);
+	check_place(bb_cost, timing_cost, /*placer_opts.place_algorithm,*/ delay_cost);
 
     //Some stats
     vtr::printf_info("\n");
@@ -1102,11 +1102,11 @@ static int exit_crit(float t, float cost/*,
 //			return (0);
 //		}
 //	}
-//
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
+
+    auto& cluster_ctx = g_vpr_ctx.clustering();
 
 	/* Automatic annealing schedule */
-    float t_exit = 0.005 * cost / npnr_ctx->nets.size();
+    float t_exit = 0.005 * cost / cluster_ctx.clb_nlist.nets().size();
 
     if (t < t_exit) {
 		return (1);
@@ -1132,10 +1132,10 @@ static float starting_t(float *cost_ptr, float *bb_cost_ptr,
 
 //	if (annealing_sched.type == USER_SCHED)
 //		return (annealing_sched.init_t);
-//
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
 
-	move_lim = std::min(max_moves, (int) npnr_ctx->cells.size());
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+
+	move_lim = std::min(max_moves, (int) cluster_ctx.clb_nlist.blocks().size());
 
 	num_accepted = 0;
 	av = 0.;
@@ -1605,13 +1605,13 @@ static /*ClusterBlockId*/ CellInfo* pick_from_block() {
      *                                                                *
      * We need to track the blocks we have tried to avoid an infinite *
      * loop if all blocks are fixed.                                  */
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
+    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
 
     std::unordered_set<CellInfo*> tried_from_blocks;
 
     //So long as untried blocks remain
-    while (tried_from_blocks.size() < npnr_ctx->cells.size()) {
+    while (tried_from_blocks.size() < cluster_ctx.clb_nlist.blocks().size()) {
 
         //Pick a block at random
         //ClusterBlockId b_from = ClusterBlockId(vtr::irand((int) cluster_ctx.clb_nlist.blocks().size() - 1));
@@ -1966,9 +1966,9 @@ static float recompute_bb_cost() {
 
 	float cost = 0;
 
-//	auto& cluster_ctx = g_vpr_ctx.clustering();
+	auto& cluster_ctx = g_vpr_ctx.clustering();
 
-	for (auto& n : npnr_ctx->nets) { /* for each net ... */
+	for (auto& n : cluster_ctx.clb_nlist.nets()) { /* for each net ... */
         auto net_id = n.second.get();
         if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
 			/* Bounding boxes don't have to be recomputed; they're correct. */
@@ -2145,10 +2145,10 @@ static void comp_td_costs(float *timing_cost, float *connection_delay_sum) {
 * other routine.                                               */
 static float comp_bb_cost(e_cost_methods method) {
 	float cost = 0;
-//	double expected_wirelength = 0.0;
-//	auto& cluster_ctx = g_vpr_ctx.clustering();
+	double expected_wirelength = 0.0;
+	auto& cluster_ctx = g_vpr_ctx.clustering();
 
-	for (auto& n : npnr_ctx->nets) { /* for each net ... */
+	for (auto& n : cluster_ctx.clb_nlist.nets()) { /* for each net ... */
         auto net_id = n.second.get();
         if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
 			/* Small nets don't use incremental updating on their bounding boxes, *
@@ -2163,15 +2163,15 @@ static float comp_bb_cost(e_cost_methods method) {
 
 			net_cost[net_id->udata] = get_net_cost(net_id, &bb_coords[net_id->udata]);
 			cost += net_cost[net_id->udata];
-//			if (method == CHECK)
-//				expected_wirelength += get_net_wirelength_estimate(net_id, &bb_coords[net_id]);
+			if (method == CHECK)
+				expected_wirelength += get_net_wirelength_estimate(net_id, &bb_coords[net_id->udata]);
 		}
 	}
 
-//	if (method == CHECK) {
-//		vtr::printf_info("\n");
-//		vtr::printf_info("BB estimate of min-dist (placement) wire length: %.0f\n", expected_wirelength);
-//	}
+	if (method == CHECK) {
+		vtr::printf_info("\n");
+		vtr::printf_info("BB estimate of min-dist (placement) wire length: %.0f\n", expected_wirelength);
+	}
 	return cost;
 }
 
@@ -2185,7 +2185,7 @@ static void free_placement_structs(t_placer_opts placer_opts) {
 
 //	free_legal_placements();
 //	free_fast_cost_update();
-//
+
 	if (/*placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
 		||*/ placer_opts.enable_timing_computations) {
 
@@ -2289,11 +2289,6 @@ static void alloc_and_load_placement_structs(
 		}
 	}
 
-    // We tradeoff memory for speed here:
-    //   npnr nets are actually pointers, with non sequential indices 
-    //   associated with their names, thus num_nets actually contains 
-    //   the max index of all net indices, which is likely to be more
-    //   than the actual number of nets
     net_cost.resize(num_nets, -1);
     temp_net_cost.resize(num_nets, -1);
     bb_coords.resize(num_nets, t_bb());
@@ -2459,41 +2454,41 @@ static void get_bb_from_scratch(/*ClusterNetId*/ NetInfo *net_id, t_bb *coords,
 	num_on_edges->ymax = ymax_edge;
 }
 
-//static double get_net_wirelength_estimate(ClusterNetId net_id, t_bb *bbptr) {
-//
-//	/* WMF: Finds the estimate of wirelength due to one net by looking at   *
-//	 * its coordinate bounding box.                                         */
-//
-//	double ncost, crossing;
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
-//
-//	/* Get the expected "crossing count" of a net, based on its number *
-//	 * of pins.  Extrapolate for very large nets.                      */
-//
-//	if (((cluster_ctx.clb_nlist.net_pins(net_id).size()) > 50)
-//			&& ((cluster_ctx.clb_nlist.net_pins(net_id).size()) < 85)) {
-//		crossing = 2.7933 + 0.02616 * ((cluster_ctx.clb_nlist.net_pins(net_id).size()) - 50);
-//	} else if ((cluster_ctx.clb_nlist.net_pins(net_id).size()) >= 85) {
-//		crossing = 2.7933 + 0.011 * (cluster_ctx.clb_nlist.net_pins(net_id).size())
-//				- 0.0000018 * (cluster_ctx.clb_nlist.net_pins(net_id).size())
-//					* (cluster_ctx.clb_nlist.net_pins(net_id).size());
-//	} else {
-//		crossing = cross_count[cluster_ctx.clb_nlist.net_pins(net_id).size() - 1];
-//	}
-//
-//	/* Could insert a check for xmin == xmax.  In that case, assume  *
-//	 * connection will be made with no bends and hence no x-cost.    *
-//	 * Same thing for y-cost.                                        */
-//
-//	/* Cost = wire length along channel * cross_count / average      *
-//	 * channel capacity.   Do this for x, then y direction and add.  */
-//
-//	ncost = (bbptr->xmax - bbptr->xmin + 1) * crossing;
-//
-//	ncost += (bbptr->ymax - bbptr->ymin + 1) * crossing;
-//
-//	return (ncost);
-//}
+static double get_net_wirelength_estimate(/*ClusterNetId*/ NetInfo* net_id, t_bb *bbptr) {
+
+	/* WMF: Finds the estimate of wirelength due to one net by looking at   *
+	 * its coordinate bounding box.                                         */
+
+	double ncost, crossing;
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+
+	/* Get the expected "crossing count" of a net, based on its number *
+	 * of pins.  Extrapolate for very large nets.                      */
+
+	if (((cluster_ctx.clb_nlist.net_pins(net_id).size()) > 50)
+			&& ((cluster_ctx.clb_nlist.net_pins(net_id).size()) < 85)) {
+		crossing = 2.7933 + 0.02616 * ((cluster_ctx.clb_nlist.net_pins(net_id).size()) - 50);
+	} else if ((cluster_ctx.clb_nlist.net_pins(net_id).size()) >= 85) {
+		crossing = 2.7933 + 0.011 * (cluster_ctx.clb_nlist.net_pins(net_id).size())
+				- 0.0000018 * (cluster_ctx.clb_nlist.net_pins(net_id).size())
+					* (cluster_ctx.clb_nlist.net_pins(net_id).size());
+	} else {
+		crossing = cross_count[cluster_ctx.clb_nlist.net_pins(net_id).size() - 1];
+	}
+
+	/* Could insert a check for xmin == xmax.  In that case, assume  *
+	 * connection will be made with no bends and hence no x-cost.    *
+	 * Same thing for y-cost.                                        */
+
+	/* Cost = wire length along channel * cross_count / average      *
+	 * channel capacity.   Do this for x, then y direction and add.  */
+
+	ncost = (bbptr->xmax - bbptr->xmin + 1) * crossing;
+
+	ncost += (bbptr->ymax - bbptr->ymin + 1) * crossing;
+
+	return (ncost);
+}
 
 static float get_net_cost(/*ClusterNetId*/ NetInfo* net_id, t_bb *bbptr) {
 
@@ -3049,13 +3044,12 @@ static void initial_placement_pl_macros(/*int macros_max_num_tries, int * free_l
 static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type pad_loc_type*/
         std::vector<std::vector<BelId>>& free_locations) {
 //	int itype, ipos, x, y, z;
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
+    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
 //    auto& device_ctx = g_vpr_ctx.device();
 //
-//	for (auto blk_id : cluster_ctx.clb_nlist.blocks()) {
-    for (auto& cell_entry : npnr_ctx->cells) {
-        auto cell = cell_entry.second.get();
+	for (auto& blk_id : cluster_ctx.clb_nlist.blocks()) {
+        auto cell = blk_id.second.get();
 //		if (place_ctx.block_locs[blk_id].x != -1) { // -1 is a sentinel for an empty block
 //			// block placed.
 //			continue;
@@ -3339,11 +3333,11 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //					(double) place_cost_exp);
 //		}
 //}
-//
-//static void check_place(float bb_cost, float timing_cost,
-//		enum e_place_algorithm place_algorithm,
-//		float delay_cost) {
-//
+
+static void check_place(float bb_cost, float timing_cost,
+		/*enum e_place_algorithm place_algorithm,*/
+		float delay_cost) {
+
 //	/* Checks that the placement has not confused our data structures. *
 //	 * i.e. the clb and block structures agree about the locations of  *
 //	 * every block, blocks are in legal spots, etc.  Also recomputes   *
@@ -3351,40 +3345,41 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //	 * within roundoff of what we think the cost is.                   */
 //
 //	vtr::vector<ClusterBlockId, int> bdone;
-//	int error = 0;
+	int error = 0;
 //	ClusterBlockId bnum, head_iblk, member_iblk;
-//	float bb_cost_check;
+	float bb_cost_check;
 //	int usage_check;
-//	float timing_cost_check, delay_cost_check;
+	float timing_cost_check, delay_cost_check;
 //	int imacro, imember, member_x, member_y, member_z;
-//
-//	bb_cost_check = comp_bb_cost(CHECK);
-//	//vtr::printf_info("bb_cost recomputed from scratch: %g\n", bb_cost_check);
-//	if (fabs(bb_cost_check - bb_cost) > bb_cost * ERROR_TOL) {
-//		vtr::printf_error(__FILE__, __LINE__,
-//				"bb_cost_check: %g and bb_cost: %g differ in check_place.\n",
-//				bb_cost_check, bb_cost);
-//		error++;
-//	}
-//
+
+	bb_cost_check = comp_bb_cost(CHECK);
+	//vtr::printf_info("bb_cost recomputed from scratch: %g\n", bb_cost_check);
+	if (fabs(bb_cost_check - bb_cost) > bb_cost * ERROR_TOL) {
+		vtr::printf_error(__FILE__, __LINE__,
+				"bb_cost_check: %g and bb_cost: %g differ in check_place.\n",
+				bb_cost_check, bb_cost);
+		error++;
+	}
+
 //	if (place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//		comp_td_costs(&timing_cost_check, &delay_cost_check);
-//		//vtr::printf_info("timing_cost recomputed from scratch: %g\n", timing_cost_check);
-//		if (fabs(timing_cost_check - timing_cost) > timing_cost * ERROR_TOL) {
-//			vtr::printf_error(__FILE__, __LINE__,
-//					"timing_cost_check: %g and timing_cost: %g differ in check_place.\n",
-//					timing_cost_check, timing_cost);
-//			error++;
-//		}
-//		//vtr::printf_info("delay_cost recomputed from scratch: %g\n", delay_cost_check);
-//		if (fabs(delay_cost_check - delay_cost) > delay_cost * ERROR_TOL) {
-//			vtr::printf_error(__FILE__, __LINE__,
-//					"delay_cost_check: %g and delay_cost: %g differ in check_place.\n",
-//					delay_cost_check, delay_cost);
-//			error++;
-//		}
-//	}
-//
+	if (placer_opts.enable_timing_computations) {
+		comp_td_costs(&timing_cost_check, &delay_cost_check);
+		//vtr::printf_info("timing_cost recomputed from scratch: %g\n", timing_cost_check);
+		if (fabs(timing_cost_check - timing_cost) > timing_cost * ERROR_TOL) {
+			vtr::printf_error(__FILE__, __LINE__,
+					"timing_cost_check: %g and timing_cost: %g differ in check_place.\n",
+					timing_cost_check, timing_cost);
+			error++;
+		}
+		//vtr::printf_info("delay_cost recomputed from scratch: %g\n", delay_cost_check);
+		if (fabs(delay_cost_check - delay_cost) > delay_cost * ERROR_TOL) {
+			vtr::printf_error(__FILE__, __LINE__,
+					"delay_cost_check: %g and delay_cost: %g differ in check_place.\n",
+					delay_cost_check, delay_cost);
+			error++;
+		}
+	}
+
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.placement();
 //    auto& device_ctx = g_vpr_ctx.device();
@@ -3472,19 +3467,19 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //			}
 //		} // Finish going through all the members
 //	} // Finish going through all the macros
-//
-//	if (error == 0) {
-//		vtr::printf_info("\n");
-//		vtr::printf_info("Completed placement consistency check successfully.\n");
-//
-//	} else {
-//		vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//				"\nCompleted placement consistency check, %d errors found.\n"
-//				"Aborting program.\n", error);
-//	}
-//
-//}
-//
+
+	if (error == 0) {
+		vtr::printf_info("\n");
+		vtr::printf_info("Completed placement consistency check successfully.\n");
+
+	} else {
+		vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+				"\nCompleted placement consistency check, %d errors found.\n"
+				"Aborting program.\n", error);
+	}
+
+}
+
 //#ifdef VERBOSE
 //static void print_clb_placement(const char *fname) {
 //
