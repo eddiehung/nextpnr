@@ -296,7 +296,8 @@ static void record_affected_net(/*const ClusterNetId*/ NetInfo *net, int& num_af
 
 static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const ClusterBlockId blk, const ClusterPinId blk_pin*/
         CellInfo* blk, BelId bel_from);
-static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*ClusterPinId*/ PortInfo &pin, float& delta_timing_cost, float& delta_delay_cost);
+static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*ClusterPinId*/ PortInfo &pin, float& delta_timing_cost, float& delta_delay_cost,
+        CellInfo* blk);
 
 static float get_net_cost(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_ptr);
 
@@ -623,16 +624,16 @@ void try_place(t_placer_opts placer_opts,
 //			if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
             if (placer_opts.enable_timing_computations) {
 				comp_td_costs(&new_timing_cost, &new_delay_cost);
-//				if (fabs(new_timing_cost - timing_cost) > timing_cost * ERROR_TOL) {
-//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//							"in try_place: new_timing_cost = %g, old timing_cost = %g, ERROR_TOL = %g\n",
-//							new_timing_cost, timing_cost, ERROR_TOL);
-//				}
-//				if (fabs(new_delay_cost - delay_cost) > delay_cost * ERROR_TOL) {
-//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//							"in try_place: new_delay_cost = %g, old delay_cost = %g, ERROR_TOL = %g\n",
-//							new_delay_cost, delay_cost, ERROR_TOL);
-//				}
+				if (fabs(new_timing_cost - timing_cost) > timing_cost * ERROR_TOL) {
+					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+							"in try_place: new_timing_cost = %g, old timing_cost = %g, ERROR_TOL = %g\n",
+							new_timing_cost, timing_cost, ERROR_TOL);
+				}
+				if (fabs(new_delay_cost - delay_cost) > delay_cost * ERROR_TOL) {
+					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+							"in try_place: new_delay_cost = %g, old delay_cost = %g, ERROR_TOL = %g\n",
+							new_delay_cost, delay_cost, ERROR_TOL);
+				}
 				timing_cost = new_timing_cost;
 			}
 
@@ -878,7 +879,7 @@ void try_place(t_placer_opts placer_opts,
 //	free_try_swap_arrays();
 }
 
-///* Function to recompute the criticalities before the inner loop of the annealing */
+/* Function to recompute the criticalities before the inner loop of the annealing */
 static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
 	int num_connections, float crit_exponent, float bb_cost,
 	float * place_delay_value, float * timing_cost, float * delay_cost,
@@ -1630,7 +1631,7 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
         auto bel = b.second;
 
 		//Go through all the pins in the moved block
-        for (const auto &p : blk->ports) {
+        for (const auto &p : cluster_ctx.clb_nlist.block_pins(blk)) {
             const auto& port = p.second;
             auto net_id = port.net;
             if (!net_id) continue;
@@ -1652,7 +1653,7 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 //            if (place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
             if (placer_opts.enable_timing_computations) {
                 //Determine the change in timing costs if required
-                update_td_delta_costs(net_id, /*blk_pin*/ port, timing_delta_c, delay_delta_c);
+                update_td_delta_costs(net_id, /*blk_pin*/ port, timing_delta_c, delay_delta_c, blk);
             }
 		}
 	}
@@ -1715,7 +1716,8 @@ static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const
 
 }
 
-static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*ClusterPinId*/ PortInfo &pin, float& delta_timing_cost, float& delta_delay_cost) {
+static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*ClusterPinId*/ PortInfo &pin, float& delta_timing_cost, float& delta_delay_cost,
+        CellInfo* blk) {
     auto& cluster_ctx = g_vpr_ctx.clustering();
 
     if (cluster_ctx.clb_nlist.pin_type(pin) == PinType::DRIVER) {
@@ -1741,7 +1743,7 @@ static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*C
         //Computing it here would double count the change, and mess up the
         //delta_timing_cost value.
         if (!driven_by_moved_block(net)) {
-            int net_pin = cluster_ctx.clb_nlist.pin_net_index(pin);
+            int net_pin = cluster_ctx.clb_nlist.pin_net_index(pin, blk);
 
             float temp_delay = comp_td_point_to_point_delay(net, net_pin);
             temp_point_to_point_delay_cost[net->udata][net_pin] = temp_delay;
@@ -2032,8 +2034,10 @@ static void update_td_cost() {
                 //This net is being driven by a moved block, recompute
                 //all point to point connections on this net.
 				for (size_t ipin = 1; ipin < cluster_ctx.clb_nlist.net_pins(net_id).size(); ipin++) {
+					NPNR_ASSERT(temp_point_to_point_delay_cost[net_id->udata][ipin] >= 0);
 					point_to_point_delay_cost[net_id->udata][ipin] = temp_point_to_point_delay_cost[net_id->udata][ipin];
 					temp_point_to_point_delay_cost[net_id->udata][ipin] = -1;
+					NPNR_ASSERT(temp_point_to_point_timing_cost[net_id->udata][ipin] >= 0);
 					point_to_point_timing_cost[net_id->udata][ipin] = temp_point_to_point_timing_cost[net_id->udata][ipin];
 					temp_point_to_point_timing_cost[net_id->udata][ipin] = -1;
 				}
@@ -2043,10 +2047,12 @@ static void update_td_cost() {
 
 				/* The following "if" prevents the value from being updated twice. */
 				if (!driven_by_moved_block(net_id)) {
-                    int net_pin = cluster_ctx.clb_nlist.pin_net_index(pin_id);
+					int net_pin = cluster_ctx.clb_nlist.pin_net_index(pin_id, bnum);
 
+					NPNR_ASSERT(temp_point_to_point_delay_cost[net_id->udata][net_pin] >= 0);
 					point_to_point_delay_cost[net_id->udata][net_pin] = temp_point_to_point_delay_cost[net_id->udata][net_pin];
 					temp_point_to_point_delay_cost[net_id->udata][net_pin] = -1;
+					NPNR_ASSERT(temp_point_to_point_timing_cost[net_id->udata][net_pin] >= 0);
 					point_to_point_timing_cost[net_id->udata][net_pin] = temp_point_to_point_timing_cost[net_id->udata][net_pin];
 					temp_point_to_point_timing_cost[net_id->udata][net_pin] = -1;
 				}
