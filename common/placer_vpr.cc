@@ -130,7 +130,7 @@ namespace vpr {
         float slack = npnr_ctx->getDelayNS(load.budget) - npnr_ctx->getDelayNS(raw_wl);
         if (slack <= 0)
             return 1 - slack;
-        return 1/slack;
+        return 1/std::max<float>(1, slack);
 #else
         return 1;
 #endif
