@@ -96,14 +96,16 @@ namespace vpr {
     static struct t_placer_opts {
         bool enable_timing_computations;
         const int inner_loop_recompute_divider = 0;
+        const int recompute_crit_iter = 1;
         const float td_place_exp_first = 1.0;
+        const float td_place_exp_last = 8.0;
         const float timing_tradeoff = 0.5;
     } placer_opts;
 
     // timing_place.cpp
     float get_timing_place_crit(NetInfo* net_id, int ipin)
     {
-        return net_id->users[ipin-1].budget;
+        return 1;
     }
     
     #define VTR_ASSERT NPNR_ASSERT
@@ -121,6 +123,13 @@ namespace vpr {
         }
         template <typename ...Args>
         inline void printf_info(const char* fmt, Args... args) {
+            log_info(fmt, std::forward<Args>(args)...);
+        }
+        inline void printf(const char* fmt) {
+            log_info(fmt);
+        }
+        template <typename ...Args>
+        inline void printf(const char* fmt, Args... args) {
             log_info(fmt, std::forward<Args>(args)...);
         }
     }
@@ -166,7 +175,7 @@ class VPRPlacer
             ni->udata = net_idx++;
         }
 
-        vpr::placer_opts.enable_timing_computations = /*ctx->timing_driven*/ false;
+        vpr::placer_opts.enable_timing_computations = ctx->timing_driven;
     }
 
     bool place()

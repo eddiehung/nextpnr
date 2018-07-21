@@ -67,7 +67,7 @@
  * scratch using a very simple routine to allow checks of the other       *
  * costs.                                                                 */
 enum e_cost_methods {
-	NORMAL /*, CHECK*/
+	NORMAL, CHECK
 };
 
 /* This is for the placement swap routines. A swap attempt could be       *
@@ -83,13 +83,13 @@ struct t_placer_statistics {
 	int success_sum;
 };
 
-//#define MAX_INV_TIMING_COST 1.e9
-///* Stops inverse timing cost from going to infinity with very lax timing constraints,
-//which avoids multiplying by a gigantic inverse_prev_timing_cost when auto-normalizing.
-//The exact value of this cost has relatively little impact, but should not be
-//large enough to be on the order of timing costs for normal constraints. */
-//
-///********************** Variables local to place.c ***************************/
+#define MAX_INV_TIMING_COST 1.e9
+/* Stops inverse timing cost from going to infinity with very lax timing constraints,
+which avoids multiplying by a gigantic inverse_prev_timing_cost when auto-normalizing.
+The exact value of this cost has relatively little impact, but should not be
+large enough to be on the order of timing costs for normal constraints. */
+
+/********************** Variables local to place.c ***************************/
 
 /* Cost of a net, and a temporary cost of a net used during move assessment. */
 static std::vector<float> net_cost, temp_net_cost;
@@ -307,19 +307,19 @@ static void get_bb_from_scratch(/*ClusterNetId*/ NetInfo* net, t_bb *coords,
 //
 //static void free_try_swap_arrays();
 
-//static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
-//	int num_connections, float crit_exponent, float bb_cost,
-//	float * place_delay_value, float * timing_cost, float * delay_cost,
-//	int * outer_crit_iter_count, float * inverse_prev_timing_cost,
-//	float * inverse_prev_bb_cost,
-//    const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//    t_slack* slacks,
-//    t_timing_inf timing_inf,
-//#endif
-//    SetupTimingInfo& timing_info);
+static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
+	int num_connections, float crit_exponent, float bb_cost,
+	float * place_delay_value, float * timing_cost, float * delay_cost,
+	int * outer_crit_iter_count, float * inverse_prev_timing_cost,
+	float * inverse_prev_bb_cost/*,
+    const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
+#ifdef ENABLE_CLASSIC_VPR_STA
+    t_slack* slacks,
+    t_timing_inf timing_inf,
+#endif
+    SetupTimingInfo& timing_info*/);
 
-static void placement_inner_loop(float t, float rlim, /*t_placer_opts placer_opts,*/
+static void placement_inner_loop(float t, float rlim, t_placer_opts placer_opts,
 	float inverse_prev_bb_cost, float inverse_prev_timing_cost, int move_lim,
 	float crit_exponent, int inner_recompute_limit,
 	t_placer_statistics *stats, float * cost, float * bb_cost, float * timing_cost,
@@ -581,20 +581,21 @@ void try_place(t_placer_opts placer_opts,
 	while (exit_crit(t, cost /*, annealing_sched*/) == 0) {
 
 //		if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//			cost = 1;
-//		}
+		if (placer_opts.enable_timing_computations) {
+			cost = 1;
+		}
 
-//		outer_loop_recompute_criticalities(placer_opts, num_connections,
-//			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
-//			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost,
-//            netlist_pin_lookup,
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//            slacks,
-//            timing_inf,
-//#endif
-//            *timing_info);
+		outer_loop_recompute_criticalities(placer_opts, num_connections,
+			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
+			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost/*,
+            netlist_pin_lookup,
+#ifdef ENABLE_CLASSIC_VPR_STA
+            slacks,
+            timing_inf,
+#endif
+            *timing_info*/);
 
-		placement_inner_loop(t, rlim, /*placer_opts,*/ inverse_prev_bb_cost, inverse_prev_timing_cost,
+		placement_inner_loop(t, rlim, placer_opts, inverse_prev_bb_cost, inverse_prev_timing_cost,
 			move_lim, crit_exponent, inner_recompute_limit, &stats,
 			&cost, &bb_cost, &timing_cost, &delay_cost/*,
 #ifdef ENABLE_CLASSIC_VPR_STA
@@ -636,8 +637,9 @@ void try_place(t_placer_opts placer_opts,
 			}
 
 //			if (placer_opts.place_algorithm == BOUNDING_BOX_PLACE) {
+            else {
 				cost = new_bb_cost;
-//			}
+			}
 			moves_since_cost_recompute = 0;
 		}
 
@@ -694,10 +696,11 @@ void try_place(t_placer_opts placer_opts,
 		update_rlim(&rlim, success_rat, device_ctx.grid);
 
 //		if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//			crit_exponent = (1 - (rlim - final_rlim) * inverse_delta_rlim)
-//					* (placer_opts.td_place_exp_last - placer_opts.td_place_exp_first)
-//					+ placer_opts.td_place_exp_first;
-//		}
+		if (placer_opts.enable_timing_computations) {
+			crit_exponent = (1 - (rlim - final_rlim) * inverse_delta_rlim)
+					* (placer_opts.td_place_exp_last - placer_opts.td_place_exp_first)
+					+ placer_opts.td_place_exp_first;
+		}
 #ifdef VERBOSE
 		if (getEchoEnabled()) {
 			print_clb_placement("first_iteration_clb_placement.echo");
@@ -707,23 +710,23 @@ void try_place(t_placer_opts placer_opts,
 	/* Outer loop of the simmulated annealing ends */
 
 
-//	outer_loop_recompute_criticalities(placer_opts, num_connections,
-//			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
-//			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost,
-//            netlist_pin_lookup,
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//            slacks,
-//            timing_inf,
-//#endif
-//            *timing_info);
+	outer_loop_recompute_criticalities(placer_opts, num_connections,
+			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
+			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost /*,
+            netlist_pin_lookup,
+#ifdef ENABLE_CLASSIC_VPR_STA
+            slacks,
+            timing_inf,
+#endif
+            *timing_info*/);
 
 	t = 0; /* freeze out */
 
 	/* Run inner loop again with temperature = 0 so as to accept only swaps
 	 * which reduce the cost of the placement */
-	placement_inner_loop(t, rlim, /*placer_opts,*/ inverse_prev_bb_cost, inverse_prev_timing_cost,
+	placement_inner_loop(t, rlim, placer_opts, inverse_prev_bb_cost, inverse_prev_timing_cost,
 			move_lim, crit_exponent, inner_recompute_limit, &stats,
-			&cost, &bb_cost, &timing_cost, &delay_cost/*,
+			&cost, &bb_cost, &timing_cost, &delay_cost /*,
 #ifdef ENABLE_CLASSIC_VPR_STA
             slacks,
             timing_inf,
@@ -876,57 +879,58 @@ void try_place(t_placer_opts placer_opts,
 }
 
 ///* Function to recompute the criticalities before the inner loop of the annealing */
-//static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
-//	int num_connections, float crit_exponent, float bb_cost,
-//	float * place_delay_value, float * timing_cost, float * delay_cost,
-//	int * outer_crit_iter_count, float * inverse_prev_timing_cost,
-//	float * inverse_prev_bb_cost,
-//    const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//    t_slack* slacks,
-//    t_timing_inf timing_inf,
-//#endif
-//    SetupTimingInfo& timing_info) {
-//
+static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
+	int num_connections, float crit_exponent, float bb_cost,
+	float * place_delay_value, float * timing_cost, float * delay_cost,
+	int * outer_crit_iter_count, float * inverse_prev_timing_cost,
+	float * inverse_prev_bb_cost/*,
+    const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
+#ifdef ENABLE_CLASSIC_VPR_STA
+    t_slack* slacks,
+    t_timing_inf timing_inf,
+#endif
+    SetupTimingInfo& timing_info*/) {
+
 //	if (placer_opts.place_algorithm != PATH_TIMING_DRIVEN_PLACE)
-//		return;
-//
-//	/*at each temperature change we update these values to be used     */
-//	/*for normalizing the tradeoff between timing and wirelength (bb)  */
-//	if (*outer_crit_iter_count >= placer_opts.recompute_crit_iter
-//			|| placer_opts.inner_loop_recompute_divider != 0) {
-//#ifdef VERBOSE
-//		vtr::printf_info("Outer loop recompute criticalities\n");
-//#endif
-//        num_connections = std::max(num_connections, 1); //Avoid division by zero
-//        VTR_ASSERT(num_connections > 0);
-//
-//		*place_delay_value = (*delay_cost) / num_connections;
-//
+	if (!placer_opts.enable_timing_computations)
+		return;
+
+	/*at each temperature change we update these values to be used     */
+	/*for normalizing the tradeoff between timing and wirelength (bb)  */
+	if (*outer_crit_iter_count >= placer_opts.recompute_crit_iter
+			|| placer_opts.inner_loop_recompute_divider != 0) {
+#ifdef VERBOSE
+		vtr::printf_info("Outer loop recompute criticalities\n");
+#endif
+        num_connections = std::max(num_connections, 1); //Avoid division by zero
+        VTR_ASSERT(num_connections > 0);
+
+		*place_delay_value = (*delay_cost) / num_connections;
+
 //        //Per-temperature timing update
 //        timing_info.update();
 //		load_criticalities(timing_info, crit_exponent, netlist_pin_lookup);
-//
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//        load_timing_graph_net_delays(point_to_point_delay_cost);
-//		do_timing_analysis(slacks, timing_inf, false, true);
-//#endif
-//
-//		/*recompute costs from scratch, based on new criticalities */
-//		comp_td_costs(timing_cost, delay_cost);
-//		*outer_crit_iter_count = 0;
-//	}
-//	(*outer_crit_iter_count)++;
-//
-//	/*at each temperature change we update these values to be used     */
-//	/*for normalizing the tradeoff between timing and wirelength (bb)  */
-//*inverse_prev_bb_cost = 1 / bb_cost;
-///*Prevent inverse timing cost from going to infinity */
-//*inverse_prev_timing_cost = min(1 / (*timing_cost), (float)MAX_INV_TIMING_COST);
-//}
+
+#ifdef ENABLE_CLASSIC_VPR_STA
+        load_timing_graph_net_delays(point_to_point_delay_cost);
+		do_timing_analysis(slacks, timing_inf, false, true);
+#endif
+
+		/*recompute costs from scratch, based on new criticalities */
+		comp_td_costs(timing_cost, delay_cost);
+		*outer_crit_iter_count = 0;
+	}
+	(*outer_crit_iter_count)++;
+
+	/*at each temperature change we update these values to be used     */
+	/*for normalizing the tradeoff between timing and wirelength (bb)  */
+*inverse_prev_bb_cost = 1 / bb_cost;
+/*Prevent inverse timing cost from going to infinity */
+*inverse_prev_timing_cost = std::min(1 / (*timing_cost), (float)MAX_INV_TIMING_COST);
+}
 
 /* Function which contains the inner loop of the simulated annealing */
-static void placement_inner_loop(float t, float rlim, /*t_placer_opts placer_opts,*/
+static void placement_inner_loop(float t, float rlim, t_placer_opts placer_opts,
 	float inverse_prev_bb_cost, float inverse_prev_timing_cost, int move_lim,
 	float crit_exponent, int inner_recompute_limit,
 	t_placer_statistics *stats, float * cost, float * bb_cost, float * timing_cost,
@@ -1464,6 +1468,32 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 				update_td_cost();
 			}
 
+// *********************************
+//            if (placer_opts.enable_timing_computations) {
+//                float new_timing_cost, new_delay_cost;
+//                comp_td_costs(&new_timing_cost, &new_delay_cost);
+//                static int here = 0;
+//				if (fabs(new_timing_cost - *timing_cost) > *timing_cost * ERROR_TOL) {
+//                    printf("here = %d\n", here);
+//                    asm("int3");
+//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+//							"in try_swap: new_timing_cost = %g, old timing_cost = %g, ERROR_TOL = %g\n",
+//							new_timing_cost, *timing_cost, ERROR_TOL);
+//				}
+//				if (fabs(new_delay_cost - *delay_cost) > *delay_cost * ERROR_TOL) {
+//                    printf("here = %d\n", here);
+//                    asm("int3");
+//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+//							"in try_swap: new_delay_cost = %g, old delay_cost = %g, ERROR_TOL = %g\n",
+//							new_delay_cost, *delay_cost, ERROR_TOL);
+//				}
+//                here++;
+//				*timing_cost = new_timing_cost;
+//				*delay_cost = new_delay_cost;
+//			}
+// *********************************
+
+
 			/* update net cost functions and reset flags. */
             for (auto net_id : ts_nets_to_update) {
 				bb_coords[net_id->udata] = ts_bb_coord_new[net_id->udata];
@@ -1980,7 +2010,8 @@ static float comp_td_point_to_point_delay(/*ClusterNetId*/ NetInfo* net_id, int 
 //         */
 //        delay_source_to_sink = get_delta_delay(delta_x, delta_y);
 
-          delay_source_to_sink = npnr_ctx->estimateDelay(drv_wire, user_wire);
+          delay_source_to_sink = npnr_ctx->getDelayNS(npnr_ctx->estimateDelay(drv_wire, user_wire));
+          NPNR_ASSERT(delay_source_to_sink >= 0);
 
 //        if (delay_source_to_sink < 0) {
 //            vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
