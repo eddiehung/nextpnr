@@ -1637,7 +1637,7 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
             VTR_ASSERT_SAFE_MSG(net_id, "Only valid nets should be found in compressed netlist block pins");
 
 
-            if (npnr_ctx->isGlobalNet(net_id))
+            if (cluster_ctx.clb_nlist.net_is_global(net_id))
                 continue; //Global nets are assumed to span the whole chip, and do not effect costs
 
             //Record effected nets
@@ -1945,7 +1945,7 @@ static float recompute_bb_cost() {
 
 	for (auto& n : cluster_ctx.clb_nlist.nets()) { /* for each net ... */
         auto net_id = n.second.get();
-        if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
+        if (!cluster_ctx.clb_nlist.net_is_global(net_id)) { /* Do only if not global. */
 			/* Bounding boxes don't have to be recomputed; they're correct. */
 			cost += net_cost[net_id->udata];
 		}
@@ -2125,7 +2125,7 @@ static float comp_bb_cost(e_cost_methods method) {
 
 	for (auto& n : cluster_ctx.clb_nlist.nets()) { /* for each net ... */
         auto net_id = n.second.get();
-        if (!npnr_ctx->isGlobalNet(net_id)) { /* Do only if not global. */
+        if (!cluster_ctx.clb_nlist.net_is_global(net_id)) { /* Do only if not global. */
 			/* Small nets don't use incremental updating on their bounding boxes, *
 			 * so they can use a fast bounding box calculator.                    */
 			if (net_id->users.size() >= SMALL_NET && method == NORMAL) {
