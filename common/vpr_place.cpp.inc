@@ -10,7 +10,7 @@
 //#include "vtr_random.h"
 //#include "vtr_matrix.h"
 //
-#include "vpr_types.h"
+//#include "vpr_types.h"
 //#include "vpr_error.h"
 //#include "vpr_utils.h"
 //
@@ -381,16 +381,16 @@ void try_place(t_placer_opts placer_opts,
 	num_swap_aborted = 0;
 	num_ts_called = 0;
 
-//	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
-//			|| placer_opts.enable_timing_computations) {
-//		/*do this before the initial placement to avoid messing up the initial placement */
-//		alloc_lookups_and_criticalities(chan_width_dist, router_opts, det_routing_arch, segment_inf, directs, num_directs);
-//
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//        slacks = alloc_and_load_timing_graph(timing_inf);
-//#endif
-//	}
-//
+	if (/*placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
+			||*/ placer_opts.enable_timing_computations) {
+		/*do this before the initial placement to avoid messing up the initial placement */
+		alloc_lookups_and_criticalities(/*chan_width_dist, router_opts, det_routing_arch, segment_inf, directs, num_directs*/);
+
+#ifdef ENABLE_CLASSIC_VPR_STA
+        slacks = alloc_and_load_timing_graph(timing_inf);
+#endif
+	}
+
 //	width_fac = placer_opts.place_chan_width;
 //
 //	init_chan(width_fac, chan_width_dist);
@@ -431,10 +431,10 @@ void try_place(t_placer_opts placer_opts,
 //
 //        timing_info->update();
 //        timing_info->set_warn_unconstrained(false); //Don't warn again about unconstrained nodes again during placement
-//
-//        //Initial slack estimates
-//        load_criticalities(*timing_info, crit_exponent, netlist_pin_lookup);
-//
+
+        //Initial slack estimates
+        load_criticalities(/**timing_info,*/ crit_exponent /*, netlist_pin_lookup*/);
+
 //        critical_path = timing_info->least_slack_critical_path();
 //
 //        //Write out the initial timing echo file
@@ -866,16 +866,16 @@ void try_place(t_placer_opts placer_opts,
 	vtr::printf_info("\tSwaps aborted : %*d (%4.1f %%)\n", num_swap_print_digits, num_swap_aborted, 100*abort_rate);
 
 	free_placement_structs(placer_opts);
-//	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
-//			|| placer_opts.enable_timing_computations) {
-//
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//        free_timing_graph(slacks);
-//#endif
-//
-//		free_lookups_and_criticalities();
-//	}
-//
+	if (/*placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
+			||*/ placer_opts.enable_timing_computations) {
+
+#ifdef ENABLE_CLASSIC_VPR_STA
+        free_timing_graph(slacks);
+#endif
+
+		free_lookups_and_criticalities();
+	}
+
 //	free_try_swap_arrays();
 }
 
@@ -910,7 +910,7 @@ static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
 
 //        //Per-temperature timing update
 //        timing_info.update();
-//		load_criticalities(timing_info, crit_exponent, netlist_pin_lookup);
+        load_criticalities(/*timing_info,*/ crit_exponent /*, netlist_pin_lookup*/);
 
 #ifdef ENABLE_CLASSIC_VPR_STA
         load_timing_graph_net_delays(point_to_point_delay_cost);
@@ -996,7 +996,7 @@ static void placement_inner_loop(float t, float rlim, t_placer_opts placer_opts,
 				 */
 				 //Inner loop timing update
 //				timing_info.update();
-//				load_criticalities(timing_info, crit_exponent, netlist_pin_lookup);
+                load_criticalities(/*timing_info,*/ crit_exponent /*, netlist_pin_lookup*/);
 
 #ifdef ENABLE_CLASSIC_VPR_STA
 				load_timing_graph_net_delays(point_to_point_delay_cost);

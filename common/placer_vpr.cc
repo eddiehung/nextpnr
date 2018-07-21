@@ -103,10 +103,37 @@ namespace vpr {
         const float timing_tradeoff = 0.5;
     } placer_opts;
 
-    // timing_place.cpp
-    float get_timing_place_crit(NetInfo* net_id, int ipin)
+    // timing_util.cpp
+    float calculate_clb_net_pin_criticality(/*timing_info, pin_lookup,*/ const PortRef& load, const NetInfo* net)
     {
+        NPNR_ASSERT(npnr_ctx->timing_driven);
+
+#if 1
+        int driver_x, driver_y;
+        bool driver_gb;
+        CellInfo *driver_cell = net->driver.cell;
+        if (!driver_cell)
+            return 0;
+        if (driver_cell->bel == BelId())
+            return 0;
+        npnr_ctx->estimatePosition(driver_cell->bel, driver_x, driver_y, driver_gb);
+        WireId drv_wire = npnr_ctx->getWireBelPin(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
+        if (driver_gb)
+            return 0;
+        if (load.cell == nullptr)
+            return 0;
+        CellInfo *load_cell = load.cell;
+        if (load_cell->bel == BelId())
+            return 0;
+        WireId user_wire = npnr_ctx->getWireBelPin(load_cell->bel, npnr_ctx->portPinFromId(load.port));
+        delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
+        float slack = npnr_ctx->getDelayNS(load.budget) - npnr_ctx->getDelayNS(raw_wl);
+        if (slack <= 0)
+            return 1 - slack;
+        return 1/slack;
+#else
         return 1;
+#endif
     }
     
     #define VTR_ASSERT NPNR_ASSERT
@@ -139,7 +166,9 @@ namespace vpr {
         }
     }
 
-    #include "placer_vpr.inc"
+    #include "vpr_types.h"
+    #include "vpr_timing_place.cpp.inc"
+    #include "vpr_place.cpp.inc"
 }
 
 NEXTPNR_NAMESPACE_BEGIN
