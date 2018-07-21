@@ -16,8 +16,8 @@
  *  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  */
-#ifndef PLACE_SA_H
-#define PLACE_SA_H
+#ifndef PLACER1_H
+#define PLACER1_H
 
 #include "nextpnr.h"
 
@@ -27,4 +27,4 @@ extern bool placer1(Context *ctx);
 
 NEXTPNR_NAMESPACE_END
 
-#endif // PLACE_SA_H
+#endif // PLACER1_H

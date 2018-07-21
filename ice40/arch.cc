@@ -27,7 +27,6 @@
 #include "util.h"
 #include "cells.h"
 #include "placer_vpr.h"
-
 NEXTPNR_NAMESPACE_BEGIN
 
 // -----------------------------------------------------------------------
@@ -189,19 +188,6 @@ Arch::Arch(ArchArgs args) : args(args)
     id_i3 = id("I3");
     id_dff_en = id("DFF_ENABLE");
     id_neg_clk = id("NEG_CLK");
-    id_r = id("R");
-    id_s = id("S");
-    id_e = id("E");
-    id_set_ff = {
-            id("SB_DFF"), id("SB_DFFE"), id("SB_DFFSR"),
-            id("SB_DFFR"), id("SB_DFFSS"), id("SB_DFFS"),
-            id("SB_DFFESR"), id("SB_DFFER"),
-            id("SB_DFFESS"), id("SB_DFFES"),
-            id("SB_DFFN"), id("SB_DFFNE"),
-            id("SB_DFFNSR"), id("SB_DFFNR"),
-            id("SB_DFFNSS"), id("SB_DFFNS"),
-            id("SB_DFFNESR"), id("SB_DFFNER"),
-            id("SB_DFFNESS"), id("SB_DFFNES") };
 }
 
 // -----------------------------------------------------------------------
@@ -270,11 +256,52 @@ BelId Arch::getBelByName(IdString name) const
     return ret;
 }
 
+BelId Arch::getBelByLocation(Loc loc) const
+{
+    BelId bel;
+
+    if (bel_by_loc.empty()) {
+        for (int i = 0; i < chip_info->num_bels; i++) {
+            BelId b;
+            b.index = i;
+            bel_by_loc[getBelLocation(b)] = i;
+        }
+    }
+
+    auto it = bel_by_loc.find(loc);
+    if (it != bel_by_loc.end())
+        bel.index = it->second;
+
+    return bel;
+}
+
+BelRange Arch::getBelsByTile(int x, int y) const
+{
+    // In iCE40 chipdb bels at the same tile are consecutive and dense z ordinates are used
+    BelRange br;
+
+    Loc loc;
+    loc.x = x;
+    loc.y = y;
+    loc.z = 0;
+
+    br.b.cursor = Arch::getBelByLocation(loc).index;
+    br.e.cursor = br.b.cursor;
+
+    if (br.e.cursor != -1) {
+        while (br.e.cursor < chip_info->num_bels &&
+               chip_info->bel_data[br.e.cursor].x == x &&
+               chip_info->bel_data[br.e.cursor].y == y)
+            br.e.cursor++;
+    }
+
+    return br;
+}
+
 BelRange Arch::getBelsAtSameTile(BelId bel) const
 {
     BelRange br;
     NPNR_ASSERT(bel != BelId());
-    // This requires Bels at the same tile are consecutive
     int x = chip_info->bel_data[bel.index].x;
     int y = chip_info->bel_data[bel.index].y;
     int start = bel.index, end = bel.index;
@@ -490,14 +517,9 @@ bool Arch::place_vpr()
     for (auto &c : ctx->cells) {
         CellInfo *cell = c.second.get();
         if (cell->type == ctx->id_sb_gb) {
-            bool is_reset = false, is_cen = false;
-            NPNR_ASSERT(cell->ports.at(ctx->id_glb_buf_out).net != nullptr);
-            for (auto user : cell->ports.at(ctx->id_glb_buf_out).net->users) {
-                if (ctx->isResetPort(user))
-                    is_reset = true;
-                if (ctx->isEnablePort(user))
-                    is_cen = true;
-            }
+			auto net = cell->ports.at(ctx->id_glb_buf_out).net;
+            NPNR_ASSERT(net != nullptr);
+            bool is_reset = net->is_reset, is_cen = net->is_enable;
             NPNR_ASSERT(!is_reset || !is_cen);
             if (is_reset) {
                 ctx->bindBel(gb_reset.back(), cell->name, STRENGTH_WEAK);
@@ -759,56 +781,6 @@ bool Arch::isGlobalNet(const NetInfo *net) const
     return net->driver.cell != nullptr && net->driver.port == id_glb_buf_out;
 }
 
-bool Arch::isIO(const CellInfo* cell) const
-{
-    return cell->type == id("SB_IO");
-}
-
-bool Arch::isClockPort(const PortRef &port) const
-{
-    if (port.cell == nullptr)
-        return false;
-    if (isFF(port.cell))
-        return port.port == id("C");
-    if (port.cell->type == id("ICESTORM_LC"))
-        return port.port == id("CLK");
-    if (is_ram(this, port.cell) || port.cell->type == id("ICESTORM_RAM"))
-        return port.port == id("RCLK") || port.port == id("WCLK") || port.port == id("RCLKN") ||
-               port.port == id("WCLKN");
-    if (is_sb_mac16(this, port.cell) || port.cell->type == id("ICESTORM_DSP"))
-        return port.port == id("CLK");
-    return false;
-}
-
-bool Arch::isResetPort(const PortRef &port) const
-{
-    if (port.cell == nullptr)
-        return false;
-    if (isFF(port.cell))
-        return port.port == id_r || port.port == id_s;
-    if (port.cell->type == id_icestorm_lc)
-        return port.port == id_sr;
-//    if (is_sb_mac16(this, port.cell) || port.cell->type == id("ICESTORM_DSP"))
-//        return port.port == id("IRSTTOP") || port.port == id("IRSTBOT") || port.port == id("ORSTTOP") ||
-//               port.port == id("ORSTBOT");
-    return false;
-}
-
-bool Arch::isEnablePort(const PortRef &port) const
-{
-    if (port.cell == nullptr)
-        return false;
-    if (isFF(port.cell))
-        return port.port == id_e;
-    if (port.cell->type == id_icestorm_lc)
-        return port.port == id_cen;
-    // FIXME
-    // if (is_sb_mac16(ctx, port.cell) || port.cell->type == ctx->id("ICESTORM_DSP"))
-    //    return port.port == ctx->id("CE");
-    return false;
-}
-
-
 // Assign arch arg info
 void Arch::assignArchInfo()
 {
@@ -816,6 +788,14 @@ void Arch::assignArchInfo()
         NetInfo *ni = net.second.get();
         if (isGlobalNet(ni))
             ni->is_global = true;
+        ni->is_enable = false;
+        ni->is_reset = false;
+        for (auto usr : ni->users) {
+            if (is_enable_port(this, usr))
+                ni->is_enable = true;
+            if (is_reset_port(this, usr))
+                ni->is_reset = true;
+        }
     }
     for (auto &cell : getCtx()->cells) {
         CellInfo *ci = cell.second.get();

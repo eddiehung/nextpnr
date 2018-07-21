@@ -312,4 +312,48 @@ void nxio_to_sb(Context *ctx, CellInfo *nxio, CellInfo *sbio)
     }
 }
 
+bool is_clock_port(const BaseCtx *ctx, const PortRef &port)
+{
+    if (port.cell == nullptr)
+        return false;
+    if (is_ff(ctx, port.cell))
+        return port.port == ctx->id("C");
+    if (port.cell->type == ctx->id("ICESTORM_LC"))
+        return port.port == ctx->id("CLK");
+    if (is_ram(ctx, port.cell) || port.cell->type == ctx->id("ICESTORM_RAM"))
+        return port.port == ctx->id("RCLK") || port.port == ctx->id("WCLK") || port.port == ctx->id("RCLKN") ||
+               port.port == ctx->id("WCLKN");
+    if (is_sb_mac16(ctx, port.cell) || port.cell->type == ctx->id("ICESTORM_DSP"))
+        return port.port == ctx->id("CLK");
+    return false;
+}
+
+bool is_reset_port(const BaseCtx *ctx, const PortRef &port)
+{
+    if (port.cell == nullptr)
+        return false;
+    if (is_ff(ctx, port.cell))
+        return port.port == ctx->id("R") || port.port == ctx->id("S");
+    if (port.cell->type == ctx->id("ICESTORM_LC"))
+        return port.port == ctx->id("SR");
+    if (is_sb_mac16(ctx, port.cell) || port.cell->type == ctx->id("ICESTORM_DSP"))
+        return port.port == ctx->id("IRSTTOP") || port.port == ctx->id("IRSTBOT") || port.port == ctx->id("ORSTTOP") ||
+               port.port == ctx->id("ORSTBOT");
+    return false;
+}
+
+bool is_enable_port(const BaseCtx *ctx, const PortRef &port)
+{
+    if (port.cell == nullptr)
+        return false;
+    if (is_ff(ctx, port.cell))
+        return port.port == ctx->id("E");
+    if (port.cell->type == ctx->id("ICESTORM_LC"))
+        return port.port == ctx->id("CEN");
+    // FIXME
+    // if (is_sb_mac16(ctx, port.cell) || port.cell->type == ctx->id("ICESTORM_DSP"))
+    //    return port.port == ctx->id("CE");
+    return false;
+}
+
 NEXTPNR_NAMESPACE_END
