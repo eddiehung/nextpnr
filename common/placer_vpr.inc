@@ -623,16 +623,16 @@ void try_place(t_placer_opts placer_opts,
 //			if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
             if (placer_opts.enable_timing_computations) {
 				comp_td_costs(&new_timing_cost, &new_delay_cost);
-				if (fabs(new_timing_cost - timing_cost) > timing_cost * ERROR_TOL) {
-					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-							"in try_place: new_timing_cost = %g, old timing_cost = %g, ERROR_TOL = %g\n",
-							new_timing_cost, timing_cost, ERROR_TOL);
-				}
-				if (fabs(new_delay_cost - delay_cost) > delay_cost * ERROR_TOL) {
-					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-							"in try_place: new_delay_cost = %g, old delay_cost = %g, ERROR_TOL = %g\n",
-							new_delay_cost, delay_cost, ERROR_TOL);
-				}
+//				if (fabs(new_timing_cost - timing_cost) > timing_cost * ERROR_TOL) {
+//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+//							"in try_place: new_timing_cost = %g, old timing_cost = %g, ERROR_TOL = %g\n",
+//							new_timing_cost, timing_cost, ERROR_TOL);
+//				}
+//				if (fabs(new_delay_cost - delay_cost) > delay_cost * ERROR_TOL) {
+//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+//							"in try_place: new_delay_cost = %g, old delay_cost = %g, ERROR_TOL = %g\n",
+//							new_delay_cost, delay_cost, ERROR_TOL);
+//				}
 				timing_cost = new_timing_cost;
 			}
 
@@ -1467,31 +1467,6 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 
 				update_td_cost();
 			}
-
-// *********************************
-//            if (placer_opts.enable_timing_computations) {
-//                float new_timing_cost, new_delay_cost;
-//                comp_td_costs(&new_timing_cost, &new_delay_cost);
-//                static int here = 0;
-//				if (fabs(new_timing_cost - *timing_cost) > *timing_cost * ERROR_TOL) {
-//                    printf("here = %d\n", here);
-//                    asm("int3");
-//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//							"in try_swap: new_timing_cost = %g, old timing_cost = %g, ERROR_TOL = %g\n",
-//							new_timing_cost, *timing_cost, ERROR_TOL);
-//				}
-//				if (fabs(new_delay_cost - *delay_cost) > *delay_cost * ERROR_TOL) {
-//                    printf("here = %d\n", here);
-//                    asm("int3");
-//					vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//							"in try_swap: new_delay_cost = %g, old delay_cost = %g, ERROR_TOL = %g\n",
-//							new_delay_cost, *delay_cost, ERROR_TOL);
-//				}
-//                here++;
-//				*timing_cost = new_timing_cost;
-//				*delay_cost = new_delay_cost;
-//			}
-// *********************************
 
 
 			/* update net cost functions and reset flags. */

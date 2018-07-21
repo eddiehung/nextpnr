@@ -127,8 +127,8 @@ namespace vpr {
             log_info(fmt, std::forward<Args>(args)...);
         }
         template <typename ...Args>
-        inline void printf_error(const char* fmt, Args... args) {
-            log_info(fmt, std::forward<Args>(args)...);
+        inline void printf_error(const char*, int, const char* fmt, Args... args) {
+            log_error(fmt, std::forward<Args>(args)...);
         }
         inline void printf(const char* fmt) {
             log_info(fmt);
