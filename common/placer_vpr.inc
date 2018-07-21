@@ -1620,7 +1620,7 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
     VTR_ASSERT_SAFE(bb_delta_c == 0.);
     VTR_ASSERT_SAFE(timing_delta_c == 0.);
     VTR_ASSERT_SAFE(delay_delta_c == 0.);
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
+    auto& cluster_ctx = g_vpr_ctx.clustering();
 
 	int num_affected_nets = 0;
 
