@@ -1632,8 +1632,8 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 
 		//Go through all the pins in the moved block
         for (const auto &p : cluster_ctx.clb_nlist.block_pins(blk)) {
-            const auto& port = p.second;
-            auto net_id = port.net;
+            const auto& blk_pin = p.second;
+            auto net_id = blk_pin.net;
             if (!net_id) continue;
             VTR_ASSERT_SAFE_MSG(net_id, "Only valid nets should be found in compressed netlist block pins");
 
@@ -1653,7 +1653,7 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 //            if (place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
             if (placer_opts.enable_timing_computations) {
                 //Determine the change in timing costs if required
-                update_td_delta_costs(net_id, /*blk_pin*/ port, timing_delta_c, delay_delta_c, blk);
+                update_td_delta_costs(net_id, blk_pin, timing_delta_c, delay_delta_c, blk);
             }
 		}
 	}
