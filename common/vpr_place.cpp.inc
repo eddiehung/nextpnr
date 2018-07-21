@@ -312,25 +312,25 @@ static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
 	int num_connections, float crit_exponent, float bb_cost,
 	float * place_delay_value, float * timing_cost, float * delay_cost,
 	int * outer_crit_iter_count, float * inverse_prev_timing_cost,
-	float * inverse_prev_bb_cost/*,
-    const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
+	float * inverse_prev_bb_cost,
+    /*const ClusteredPinAtomPinsLookup& netlist_pin_lookup,*/
 #ifdef ENABLE_CLASSIC_VPR_STA
     t_slack* slacks,
     t_timing_inf timing_inf,
 #endif
-    SetupTimingInfo& timing_info*/);
+    SetupTimingInfo& timing_info);
 
 static void placement_inner_loop(float t, float rlim, t_placer_opts placer_opts,
 	float inverse_prev_bb_cost, float inverse_prev_timing_cost, int move_lim,
 	float crit_exponent, int inner_recompute_limit,
 	t_placer_statistics *stats, float * cost, float * bb_cost, float * timing_cost,
-	float * delay_cost/*,
+	float * delay_cost,
 #ifdef ENABLE_CLASSIC_VPR_STA
     t_slack* slacks,
     t_timing_inf timing_inf,
 #endif
-    const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
-    SetupTimingInfo& timing_info*/);
+    /*const ClusteredPinAtomPinsLookup& netlist_pin_lookup,*/
+    SetupTimingInfo& timing_info);
 
 /*****************************************************************************/
 void try_place(t_placer_opts placer_opts,
@@ -588,23 +588,23 @@ void try_place(t_placer_opts placer_opts,
 
 		outer_loop_recompute_criticalities(placer_opts, num_connections,
 			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
-			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost/*,
-            netlist_pin_lookup,
+			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost,
+            /*netlist_pin_lookup,*/
 #ifdef ENABLE_CLASSIC_VPR_STA
             slacks,
             timing_inf,
 #endif
-            *timing_info*/);
+            /***/timing_info);
 
 		placement_inner_loop(t, rlim, placer_opts, inverse_prev_bb_cost, inverse_prev_timing_cost,
 			move_lim, crit_exponent, inner_recompute_limit, &stats,
-			&cost, &bb_cost, &timing_cost, &delay_cost/*,
+			&cost, &bb_cost, &timing_cost, &delay_cost,
 #ifdef ENABLE_CLASSIC_VPR_STA
             slacks,
             timing_inf,
 #endif
-            netlist_pin_lookup,
-            *timing_info*/);
+            /*netlist_pin_lookup,*/
+            /***/timing_info);
 
 		/* Lines below prevent too much round-off error from accumulating *
 		 * in the cost over many iterations.  This round-off can lead to  *
@@ -713,13 +713,13 @@ void try_place(t_placer_opts placer_opts,
 
 	outer_loop_recompute_criticalities(placer_opts, num_connections,
 			crit_exponent, bb_cost, &place_delay_value, &timing_cost, &delay_cost,
-			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost /*,
-            netlist_pin_lookup,
+			&outer_crit_iter_count, &inverse_prev_timing_cost, &inverse_prev_bb_cost,
+            /*netlist_pin_lookup,*/
 #ifdef ENABLE_CLASSIC_VPR_STA
             slacks,
             timing_inf,
 #endif
-            *timing_info*/);
+            /***/timing_info);
 
 	t = 0; /* freeze out */
 
@@ -727,13 +727,13 @@ void try_place(t_placer_opts placer_opts,
 	 * which reduce the cost of the placement */
 	placement_inner_loop(t, rlim, placer_opts, inverse_prev_bb_cost, inverse_prev_timing_cost,
 			move_lim, crit_exponent, inner_recompute_limit, &stats,
-			&cost, &bb_cost, &timing_cost, &delay_cost /*,
+			&cost, &bb_cost, &timing_cost, &delay_cost,
 #ifdef ENABLE_CLASSIC_VPR_STA
             slacks,
             timing_inf,
 #endif
-            netlist_pin_lookup,
-            *timing_info*/);
+            /*netlist_pin_lookup,*/
+            /***/timing_info);
 
 	tot_iter += move_lim;
 	success_rat = ((float) stats.success_sum) / move_lim;
@@ -884,13 +884,13 @@ static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
 	int num_connections, float crit_exponent, float bb_cost,
 	float * place_delay_value, float * timing_cost, float * delay_cost,
 	int * outer_crit_iter_count, float * inverse_prev_timing_cost,
-	float * inverse_prev_bb_cost/*,
-    const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
+	float * inverse_prev_bb_cost,
+    /*const ClusteredPinAtomPinsLookup& netlist_pin_lookup,*/
 #ifdef ENABLE_CLASSIC_VPR_STA
     t_slack* slacks,
     t_timing_inf timing_inf,
 #endif
-    SetupTimingInfo& timing_info*/) {
+    SetupTimingInfo& timing_info) {
 
 //	if (placer_opts.place_algorithm != PATH_TIMING_DRIVEN_PLACE)
 	if (!placer_opts.enable_timing_computations)
@@ -908,8 +908,8 @@ static void outer_loop_recompute_criticalities(t_placer_opts placer_opts,
 
 		*place_delay_value = (*delay_cost) / num_connections;
 
-//        //Per-temperature timing update
-//        timing_info.update();
+        //Per-temperature timing update
+        timing_info.update();
         load_criticalities(/*timing_info,*/ crit_exponent /*, netlist_pin_lookup*/);
 
 #ifdef ENABLE_CLASSIC_VPR_STA
@@ -935,13 +935,13 @@ static void placement_inner_loop(float t, float rlim, t_placer_opts placer_opts,
 	float inverse_prev_bb_cost, float inverse_prev_timing_cost, int move_lim,
 	float crit_exponent, int inner_recompute_limit,
 	t_placer_statistics *stats, float * cost, float * bb_cost, float * timing_cost,
-	float * delay_cost /*,
+	float * delay_cost,
 #ifdef ENABLE_CLASSIC_VPR_STA
 	t_slack* slacks,
 	t_timing_inf timing_inf,
 #endif
-	const ClusteredPinAtomPinsLookup& netlist_pin_lookup,
-	SetupTimingInfo& timing_info*/) {
+	/*const ClusteredPinAtomPinsLookup& netlist_pin_lookup,*/
+	SetupTimingInfo& timing_info) {
 
 	int inner_crit_iter_count, inner_iter;
 
@@ -995,7 +995,7 @@ static void placement_inner_loop(float t, float rlim, t_placer_opts placer_opts,
 				 * criticalities; then update the timing cost since it will change.
 				 */
 				 //Inner loop timing update
-//				timing_info.update();
+				timing_info.update();
                 load_criticalities(/*timing_info,*/ crit_exponent /*, netlist_pin_lookup*/);
 
 #ifdef ENABLE_CLASSIC_VPR_STA

@@ -102,6 +102,10 @@ namespace vpr {
         const float td_place_exp_last = 8.0;
         const float timing_tradeoff = 0.5;
     } placer_opts;
+    struct SetupTimingInfo {
+        void update() { update_budget(npnr_ctx); }
+    };
+    static SetupTimingInfo timing_info;
 
     // timing_util.cpp
     float calculate_clb_net_pin_criticality(/*timing_info, pin_lookup,*/ const PortRef& load, const NetInfo* net)
