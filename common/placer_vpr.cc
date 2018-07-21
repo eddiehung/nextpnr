@@ -74,10 +74,10 @@ namespace vpr {
                 std::unordered_map<IdString, PortInfo>& block_pins(CellInfo* cell) { return cell->ports; }
                 PinType pin_type(const PortInfo& port) { return static_cast<PinType>(port.type); }
                 CellInfo* net_driver_block(const NetInfo* net) const { return net->driver.cell; }
-                size_t pin_net_index(const PortInfo& port) {
+                size_t pin_net_index(const PortInfo& port, const CellInfo* cell) {
                     auto net = port.net;
                     for (auto it = net->users.begin(); it != net->users.end(); ++it) {
-                        if (it->port == port.name)
+                        if (it->port == port.name && it->cell == cell)
                             return it - net->users.begin() + 1;
                     }
                     throw;
