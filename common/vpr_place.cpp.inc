@@ -207,7 +207,7 @@ static void load_legal_placements();
 
 static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x, int y, int z);
 
-static int try_place_macro(int itype, int ipos, /*int*/ CellInfo* macro);
+static int try_place_macro(int itype, /*int*/ BelId ipos, /*int*/ CellInfo* macro);
 
 static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<BelId>> &free_locations);
 
@@ -2846,10 +2846,6 @@ static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x,
 		member_y = y + pl_macros[imacro]/*.members*/[imember].y_offset;
 		member_z = z + pl_macros[imacro]/*.members*/[imember].z_offset;
 
-        volatile auto mx = member_x;
-        volatile auto my = member_y;
-        volatile auto mz = member_z;
-
 		// Check whether the location could accept block of this type
 		// Then check whether the location could still accomodate more blocks
 		// Also check whether the member position is valid, that is the member's location
@@ -2872,7 +2868,7 @@ static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x,
 }
 
 
-static int try_place_macro(int itype, int ipos, /*int*/ CellInfo* imacro) {
+static int try_place_macro(int itype, /*int*/ BelId ipos, /*int*/ CellInfo* imacro) {
 
 	int x, y, z, member_x, member_y, member_z, imember;
 
@@ -2883,18 +2879,17 @@ static int try_place_macro(int itype, int ipos, /*int*/ CellInfo* imacro) {
 	int macro_placed = false;
 
 	// Choose a random position for the head
-    auto bel = legal_pos[itype][ipos];
-    auto loc = npnr_ctx->getBelLocation(bel);
+    auto loc = npnr_ctx->getBelLocation(ipos);
     x = loc.x;
     y = loc.y;
     z = loc.z;
 
 	// If that location is occupied, do nothing.
-	if (!npnr_ctx->checkBelAvail(bel)) {
+	if (!npnr_ctx->checkBelAvail(ipos)) {
 		return (macro_placed);
 	}
 
-    if (!npnr_ctx->isValidBelForCell(imacro, bel))
+    if (!npnr_ctx->isValidBelForCell(imacro, ipos))
         return macro_placed;
 
 	int macro_can_be_placed = check_macro_can_be_placed(imacro, itype, x, y, z);
@@ -2912,7 +2907,7 @@ static int try_place_macro(int itype, int ipos, /*int*/ CellInfo* imacro) {
             auto iblk = pl_macros[imacro]/*.members*/[imember].blk_index;
             auto bel = grid[member_x][member_y][member_z];
 
-            npnr_ctx->bindBel(bel, imacro->name, STRENGTH_WEAK);
+            npnr_ctx->bindBel(bel, iblk->name, STRENGTH_WEAK);
 
 			// Could not ensure that the randomiser would not pick this location again
 			// So, would have to do a lazy removal - whenever I come across a block that could not be placed,
@@ -2928,8 +2923,9 @@ static int try_place_macro(int itype, int ipos, /*int*/ CellInfo* imacro) {
 static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<BelId>> &free_locations) {
 
 	int macro_placed;
-	int /*imacro,*/ itype, itry, ipos;
+	int /*imacro,*/ itype, itry /*, ipos*/;
 //	ClusterBlockId blk_id;
+    BelId ipos;
 
     auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& device_ctx = g_vpr_ctx.device();
@@ -2961,7 +2957,7 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 		for (itry = 0; itry < macros_max_num_tries && macro_placed == false; itry++) {
 
 			// Choose a random position for the head
-			ipos = vtr::irand(free_locations[itype].size() - 1);
+			ipos = free_locations[itype][vtr::irand(free_locations[itype].size() - 1)];
 
 			// Try to place the macro
 			macro_placed = try_place_macro(itype, ipos, imacro);
@@ -2976,10 +2972,12 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 			// if there are no legal positions, error out
 
 			// Exhaustive placement of carry macros
-			for (ipos = 0; ipos < free_locations[itype].size() && macro_placed == false; ipos++) {
+            for (ipos : free_locations[itype]) {
 
 				// Try to place the macro
 				macro_placed = try_place_macro(itype, ipos, imacro);
+
+                if (macro_placed == true) break;
 
 			} // Exhausted all the legal placement position for this macro
 
@@ -3115,26 +3113,38 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //						  * That is, this stores the number of entries in legal_pos[itype] that are worth considering
 //						  * as you look for a free location.
 //						  */
+    std::vector<std::vector<BelId>> free_locations;
 //    auto& device_ctx = g_vpr_ctx.device();
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
 
-    std::vector<std::vector<BelId>> free_locations(legal_pos.begin(), legal_pos.end());
+    free_locations.resize(legal_pos.size());
+
+    // HACK HACK HACK
+    // Initially, populate free_locations with just z == 0 cells
+    //   for carry chain placement
+    for (auto it = legal_pos.begin(); it != legal_pos.end(); it++) {
+        for (auto jt = it->begin(); jt != it->end(); jt++) {
+            auto loc = npnr_ctx->getBelLocation(*jt);
+            if (loc.z == 0)
+                free_locations[it - legal_pos.begin()].push_back(*jt);
+        }
+    }
 
 	initial_placement_pl_macros(MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY, free_locations);
 
 	// All the macros are placed, update the legal_pos[][] array
-    for (auto it = free_locations.begin(); it != free_locations.end(); it++) {
-        it->erase(remove_if(it->begin(), it->end(), [](BelId bel) {
-                auto cell_name = npnr_ctx->getBoundBelCell(bel);
-                return cell_name != IdString();
-            }), it->end());
-    }
     for (auto it = legal_pos.begin(); it != legal_pos.end(); it++) {
         it->erase(remove_if(it->begin(), it->end(), [](BelId bel) {
                 auto cell_name = npnr_ctx->getBoundBelCell(bel);
                 return cell_name != IdString();
             }), it->end());
+    }
+    for (auto it = free_locations.begin(); it != free_locations.end(); it++) {
+        it->clear();
+        const auto& src = legal_pos[it - free_locations.begin()];
+        it->reserve(src.size());
+        it->assign(src.begin(), src.end());
     }
 
 	initial_placement_blocks(free_locations);
