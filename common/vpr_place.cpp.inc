@@ -54,7 +54,7 @@
 ///* The maximum number of tries when trying to place a carry chain at a    *
 // * random location before trying exhaustive placement - find the fist     *
 // * legal position and place it during initial placement.                  */
-//#define MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY 4
+#define MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY 4
 
 /* Flags for the states of the bounding box.                              *
  * Stored as char for memory efficiency.                                  */
@@ -159,8 +159,7 @@ static std::vector<NetInfo*> ts_nets_to_update;
 
 ///* The pl_macros array stores all the carry chains placement macros.   *
 // * [0...num_pl_macros-1]                                               */
-//static t_pl_macro * pl_macros = nullptr;
-//static int num_pl_macros;
+static std::vector<t_pl_macro> pl_macros;
 
 /* These file-scoped variables keep track of the number of swaps       *
  * rejected, accepted or aborted. The total number of swap attempts    *
@@ -211,7 +210,7 @@ static void load_legal_placements();
 static int try_place_macro(/*int itype, int ipos, int imacro*/
         CellInfo* cell, const std::string& loc_name);
 
-static void initial_placement_pl_macros(/*int macros_max_num_tries, int * free_locations*/);
+static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<BelId>> &free_locations);
 
 static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type pad_loc_type*/
     std::vector<std::vector<BelId>> &free_locations);
@@ -2286,7 +2285,7 @@ static void alloc_and_load_placement_structs(
 
 	alloc_and_load_try_swap_structs();
 
-//	num_pl_macros = alloc_and_load_placement_macros(directs, num_directs, &pl_macros);
+	/*num_pl_macros =*/ alloc_and_load_placement_macros(/*directs, num_directs, &*/ pl_macros);
 }
 
 ///* Allocates and loads net_pin_indices array, this array allows us to quickly   *
@@ -2943,7 +2942,7 @@ static int try_place_macro(/*int itype, int ipos, int imacro*/
     return true;
 }
 
-static void initial_placement_pl_macros(/*int macros_max_num_tries, int * free_locations*/) {
+static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<BelId>> &free_locations) {
 
 //	int macro_placed;
 //	int imacro, itype, itry, ipos;
@@ -3168,7 +3167,7 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //		place_ctx.block_locs[blk_id].z = OPEN;
 //	}
 
-	initial_placement_pl_macros(/*MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY, free_locations*/);
+	initial_placement_pl_macros(MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY, free_locations);
 
 //	// All the macros are placed, update the legal_pos[][] array
 //	for (itype = 0; itype < device_ctx.num_block_types; itype++) {

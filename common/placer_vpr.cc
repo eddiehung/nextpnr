@@ -106,6 +106,14 @@ namespace vpr {
         void update() { update_budget(npnr_ctx); }
     };
     static SetupTimingInfo timing_info;
+    struct t_pl_macro_member {
+        t_pl_macro_member(CellInfo* blk_index, int x_offset, int y_offset, int z_offset) : blk_index(blk_index), x_offset(x_offset), y_offset(y_offset), z_offset(z_offset) {}
+        CellInfo* blk_index;
+        int x_offset;
+        int y_offset;
+        int z_offset;
+    };
+    typedef std::vector<t_pl_macro_member> t_pl_macro;
 
     // timing_util.cpp
     float calculate_clb_net_pin_criticality(/*timing_info, pin_lookup,*/ const PortRef& load, const NetInfo* net)
@@ -138,6 +146,59 @@ namespace vpr {
 #else
         return 1;
 #endif
+    }
+
+    // place_macro.cpp
+    int alloc_and_load_placement_macros(/*t_direct_inf* directs, int num_directs, t_pl_macro ** */ std::vector<t_pl_macro> &macros)
+    {
+        auto id_lc = npnr_ctx->id("ICESTORM_LC");
+        auto id_cin = npnr_ctx->id("CIN");
+        auto id_cout = npnr_ctx->id("COUT");
+
+        for (auto &cell_entry : npnr_ctx->cells) {
+            auto cell = cell_entry.second.get();
+            if (cell->type != id_lc) continue;
+
+            auto it = cell->ports.find(id_cin);
+            if (it == cell->ports.end()) continue;
+            auto net = it->second.net;
+            it = cell->ports.find(id_cout);
+            if (net) {
+                // If CIN is driven, check if it's by COUT
+                auto driver = net->driver;
+                if (driver.port == id_cout) break;
+            }
+            // Check that COUT is driven
+            if (it == cell->ports.end()) continue;
+            net = it->second.net;
+
+            t_pl_macro entry;
+            entry.emplace_back(cell, 0, 0, 0);
+
+            while (net) {
+                NPNR_ASSERT(net->users.size() > 0);
+                CellInfo* sink_cell = nullptr;
+                for (const auto& load : net->users) {
+                    if (sink_cell && load.cell != sink_cell) {
+                        sink_cell = nullptr;
+                        break;
+                    }
+                    sink_cell = load.cell;
+                }
+                if (!sink_cell) break;
+
+                entry.emplace_back(sink_cell, 0, entry.size(), 0);
+                auto it = sink_cell->ports.find(id_cout);
+                if (it == sink_cell->ports.end()) break;
+                net = it->second.net;
+            };
+
+            if (!entry.empty()) {
+                log_info("Cell %s is a carry with open CIN and %d dependents\n", cell->name.c_str(npnr_ctx), entry.size());
+                macros.emplace_back(std::move(entry));
+            }
+        }
+        return macros.size();
     }
     
     #define VTR_ASSERT NPNR_ASSERT
