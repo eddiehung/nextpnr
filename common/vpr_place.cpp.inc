@@ -3169,27 +3169,14 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 
 	initial_placement_pl_macros(MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY, free_locations);
 
-//	// All the macros are placed, update the legal_pos[][] array
-//	for (itype = 0; itype < device_ctx.num_block_types; itype++) {
-//		VTR_ASSERT(free_locations[itype] >= 0);
-//		for (ipos = 0; ipos < free_locations[itype]; ipos++) {
-//			x = legal_pos[itype][ipos].x;
-//			y = legal_pos[itype][ipos].y;
-//			z = legal_pos[itype][ipos].z;
-//
-//			// Check if that location is occupied.  If it is, remove from legal_pos
-//			if (place_ctx.grid_blocks[x][y].blocks[z] != EMPTY_BLOCK_ID && place_ctx.grid_blocks[x][y].blocks[z] != INVALID_BLOCK_ID) {
-//				legal_pos[itype][ipos] = legal_pos[itype][free_locations[itype] - 1];
-//				free_locations[itype]--;
-//
-//				// After the move, I need to check this particular entry again
-//				ipos--;
-//				continue;
-//			}
-//		}
-//	} // Finish updating the legal_pos[][] and free_locations[] array
-
+	// All the macros are placed, update the legal_pos[][] array
     for (auto it = free_locations.begin(); it != free_locations.end(); it++) {
+        it->erase(remove_if(it->begin(), it->end(), [](BelId bel) {
+                auto cell_name = npnr_ctx->getBoundBelCell(bel);
+                return cell_name != IdString();
+            }), it->end());
+    }
+    for (auto it = legal_locations.begin(); it != legal_locations.end(); it++) {
         it->erase(remove_if(it->begin(), it->end(), [](BelId bel) {
                 auto cell_name = npnr_ctx->getBoundBelCell(bel);
                 return cell_name != IdString();
@@ -3198,10 +3185,12 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 
 	initial_placement_blocks(free_locations);
 
+    // All constraints (including user pads) are placed during
+    //   initial_placement_pl_macros() above
 //	if (pad_loc_type == USER) {
 //		read_user_pad_loc(pad_loc_file);
 //	}
-//
+
 //	/* Restore legal_pos */
 //	load_legal_placements();
 //
