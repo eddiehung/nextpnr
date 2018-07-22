@@ -1389,12 +1389,11 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
         return ABORTED; //No movable block found
     }
 
-	int x_from /*= place_ctx.block_locs[b_from].x*/;
-	int y_from /*= place_ctx.block_locs[b_from].y*/;
-//	int z_from = place_ctx.block_locs[b_from].z;
+    auto loc = npnr_ctx->getBelLocation(b_from->bel);
 
-    bool gb;
-    npnr_ctx->estimatePosition(b_from->bel, x_from, y_from, gb);
+	int x_from = loc.x /*place_ctx.block_locs[b_from].x*/;
+	int y_from = loc.y /*place_ctx.block_locs[b_from].y*/;
+	int z_from = loc.z /*place_ctx.block_locs[b_from].z*/;
 
 //    int x_to = OPEN;
 //    int y_to = OPEN;
@@ -1697,19 +1696,16 @@ static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const
 //        int pin_width_offset = blk_type->pin_width_offset[iblk_pin];
 //        int pin_height_offset = blk_type->pin_height_offset[iblk_pin];
 
-        int xold, yold;
-        int xnew, ynew;
-        bool gb;
-        npnr_ctx->estimatePosition(bel_from, xold, yold, gb);
-        npnr_ctx->estimatePosition(blk->bel, xnew, ynew, gb);
+        auto loc_old = npnr_ctx->getBelLocation(bel_from);
+        auto loc_new = npnr_ctx->getBelLocation(blk->bel);
 
         //Incremental bounding box update
         update_bb(net, &ts_bb_coord_new[net->udata],
                 &ts_bb_edge_new[net->udata],
-                /*blocks_affected.moved_blocks[iblk].xold + pin_width_offset*/ xold,
-                /*blocks_affected.moved_blocks[iblk].yold + pin_height_offset*/ yold,
-                /*blocks_affected.moved_blocks[iblk].xnew + pin_width_offset*/ xnew,
-                /*blocks_affected.moved_blocks[iblk].ynew + pin_height_offset*/ ynew);
+                loc_old.x /* + pin_width_offset*/,
+                loc_old.y /* + pin_height_offset*/,
+                loc_new.x /* + pin_width_offset*/,
+                loc_new.y /* + pin_height_offset*/);
     }
 
 }
@@ -1817,8 +1813,9 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
             continue;
         }
 
-        bool gb;
-        npnr_ctx->estimatePosition(bel_to, px_to, py_to, gb);
+        auto loc = npnr_ctx->getBelLocation(bel_to);
+        px_to = loc.x;
+        py_to = loc.y;
 
 		if((x_from == px_to) && (y_from == py_to)) {
 			is_legal = false;
@@ -2352,13 +2349,11 @@ static void get_bb_from_scratch(/*ClusterNetId*/ NetInfo *net_id, t_bb *coords,
     auto& device_ctx = g_vpr_ctx.device();
 	auto& grid = device_ctx.grid;
 
-//	ClusterBlockId bnum = cluster_ctx.clb_nlist.net_driver_block(net_id);
-//	pnum = cluster_ctx.clb_nlist.net_pin_physical_index(net_id, 0);
-//	x = place_ctx.block_locs[bnum].x + cluster_ctx.clb_nlist.block_type(bnum)->pin_width_offset[pnum];
-//	y = place_ctx.block_locs[bnum].y + cluster_ctx.clb_nlist.block_type(bnum)->pin_height_offset[pnum];
     auto bnum = net_id->driver.cell;
-    bool gb;
-    npnr_ctx->estimatePosition(bnum->bel, x, y, gb);
+//	pnum = cluster_ctx.clb_nlist.net_pin_physical_index(net_id, 0);
+    auto loc = npnr_ctx->getBelLocation(bnum->bel);
+	x = loc.x /*+ cluster_ctx.clb_nlist.block_type(bnum)->pin_width_offset[pnum]*/;
+	y = loc.y /*+ cluster_ctx.clb_nlist.block_type(bnum)->pin_height_offset[pnum]*/;
 
 	x = std::max(std::min<int>(x, grid.width() - 2), 1);
 	y = std::max(std::min<int>(y, grid.height() - 2), 1);
@@ -2375,9 +2370,9 @@ static void get_bb_from_scratch(/*ClusterNetId*/ NetInfo *net_id, t_bb *coords,
     for (auto pin_id : net_id->users) {
 		bnum = pin_id.cell;
 		//pnum = cluster_ctx.clb_nlist.pin_physical_index(pin_id);
-		//x = place_ctx.block_locs[bnum].x + cluster_ctx.clb_nlist.block_type(bnum)->pin_width_offset[pnum];
-		//y = place_ctx.block_locs[bnum].y + cluster_ctx.clb_nlist.block_type(bnum)->pin_height_offset[pnum];
-        npnr_ctx->estimatePosition(bnum->bel, x, y, gb);
+        auto loc = npnr_ctx->getBelLocation(bnum->bel);
+        x = loc.x /*+ cluster_ctx.clb_nlist.block_type(bnum)->pin_width_offset[pnum]*/;
+        y = loc.y /*+ cluster_ctx.clb_nlist.block_type(bnum)->pin_height_offset[pnum]*/;
 
 		/* Code below counts IO blocks as being within the 1..grid.width()-2, 1..grid.height()-2 clb array. *
 		 * This is because channels do not go out of the 0..grid.width()-2, 0..grid.height()-2 range, and   *
@@ -2522,10 +2517,10 @@ static void get_non_updateable_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coo
 
 	auto bnum = net_id->driver.cell;
 //	pnum = cluster_ctx.clb_nlist.net_pin_physical_index(net_id, 0);
-//	x = place_ctx.block_locs[bnum].x + cluster_ctx.clb_nlist.block_type(bnum)->pin_width_offset[pnum];
-//	y = place_ctx.block_locs[bnum].y + cluster_ctx.clb_nlist.block_type(bnum)->pin_height_offset[pnum];
-    bool gb;
-    npnr_ctx->estimatePosition(bnum->bel, x, y, gb);
+    auto loc = npnr_ctx->getBelLocation(bnum->bel);
+    x = loc.x /*+ cluster_ctx.clb_nlist.block_type(bnum)->pin_width_offset[pnum]*/;
+    y = loc.y /*+ cluster_ctx.clb_nlist.block_type(bnum)->pin_height_offset[pnum]*/;
+
 
 	xmin = x;
 	ymin = y;
@@ -2535,9 +2530,9 @@ static void get_non_updateable_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coo
 	for (auto pin_id : net_id->users) {
 		bnum = pin_id.cell;
 		//pnum = cluster_ctx.clb_nlist.pin_physical_index(pin_id);
-		//x = place_ctx.block_locs[bnum].x + cluster_ctx.clb_nlist.block_type(bnum)->pin_width_offset[pnum];
-		//y = place_ctx.block_locs[bnum].y + cluster_ctx.clb_nlist.block_type(bnum)->pin_height_offset[pnum];
-        npnr_ctx->estimatePosition(bnum->bel, x, y, gb);
+        auto loc = npnr_ctx->getBelLocation(bnum->bel);
+        x = loc.x /*+ cluster_ctx.clb_nlist.block_type(bnum)->pin_width_offset[pnum]*/;
+        y = loc.y /*+ cluster_ctx.clb_nlist.block_type(bnum)->pin_height_offset[pnum]*/;
 
 		if (x < xmin) {
 			xmin = x;
@@ -2851,11 +2846,16 @@ static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x,
 		member_y = y + pl_macros[imacro]/*.members*/[imember].y_offset;
 		member_z = z + pl_macros[imacro]/*.members*/[imember].z_offset;
 
+        volatile auto mx = member_x;
+        volatile auto my = member_y;
+        volatile auto mz = member_z;
+
 		// Check whether the location could accept block of this type
 		// Then check whether the location could still accomodate more blocks
 		// Also check whether the member position is valid, that is the member's location
 		// still within the chip's dimemsion and the member_z is allowed at that location on the grid
-		if (member_x < device_ctx.grid.width() && member_y < device_ctx.grid.height()
+		if (member_x < device_ctx.grid.width() && member_y < device_ctx.grid.height() 
+                && member_z < device_ctx.grid[member_x][member_y].size()
                 && npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[member_x][member_y][member_z])).index == itype
                 && npnr_ctx->checkBelAvail(device_ctx.grid[member_x][member_y][member_z])
 				&& npnr_ctx->isValidBelForCell(pl_macros[imacro][imember].blk_index, device_ctx.grid[member_x][member_y][member_z])) {
@@ -2884,9 +2884,10 @@ static int try_place_macro(int itype, int ipos, /*int*/ CellInfo* imacro) {
 
 	// Choose a random position for the head
     auto bel = legal_pos[itype][ipos];
-    bool gb;
-    npnr_ctx->estimatePosition(bel, x, y, gb);
-    z = 0;
+    auto loc = npnr_ctx->getBelLocation(bel);
+    x = loc.x;
+    y = loc.y;
+    z = loc.z;
 
 	// If that location is occupied, do nothing.
 	if (!npnr_ctx->checkBelAvail(bel)) {
@@ -2931,7 +2932,7 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 //	ClusterBlockId blk_id;
 
     auto& cluster_ctx = g_vpr_ctx.clustering();
-    auto& device_ctx = g_vpr_ctx.device();
+//    auto& device_ctx = g_vpr_ctx.device();
 
 	/* Macros are harder to place.  Do them first */
 //	for (imacro = 0; imacro < num_pl_macros; imacro++) {

@@ -251,15 +251,15 @@ class VPRPlacer
         int max_y = 0;
         auto &grid = vpr::g_vpr_ctx.device.grid;
         for (auto bel : ctx->getBels()) {
-            int x, y;
-            bool gb;
-            ctx->estimatePosition(bel, x, y, gb);
-            if (x >= int(grid._bels.size()))
-                grid._bels.resize(x+1);
-            max_y = std::max(y, max_y);
-            if (max_y >= int(grid._bels[x].size()))
-                grid._bels[x].resize(max_y+1);
-            grid._bels[x][y].push_back(bel);
+            auto loc = ctx->getBelLocation(bel);
+            if (loc.x >= int(grid._bels.size()))
+                grid._bels.resize(loc.x+1);
+            max_y = std::max(loc.y, max_y);
+            if (max_y >= int(grid._bels[loc.x].size()))
+                grid._bels[loc.x].resize(max_y+1);
+            if (loc.z >= int(grid._bels[loc.x][loc.y].size()))
+                grid._bels[loc.x][loc.y].resize(loc.z+1);
+            grid._bels[loc.x][loc.y][loc.z] = bel;
         }
         for (auto& c : grid._bels)
             c.resize(max_y+1);
