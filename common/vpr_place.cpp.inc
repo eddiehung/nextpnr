@@ -118,8 +118,8 @@ static std::vector<char> bb_updated_before;
 static std::vector<float *> point_to_point_timing_cost;
 static std::vector<float *> temp_point_to_point_timing_cost;
 
-///* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]. What is the value of the delay */
-///* for each connection in the circuit */
+/* [0..cluster_ctx.clb_nlist.nets().size()-1][1..num_pins-1]. What is the value of the delay */
+/* for each connection in the circuit */
 static std::vector<float *> point_to_point_delay_cost;
 static std::vector<float *> temp_point_to_point_delay_cost;
 
@@ -151,15 +151,15 @@ static std::vector<std::pair<CellInfo*,BelId>> blocks_affected;
 // */
 //static float** chanx_place_cost_fac; //[0...device_ctx.grid.width()-2]
 //static float** chany_place_cost_fac; //[0...device_ctx.grid.height()-2]
-//
-///* The following arrays are used by the try_swap function for speed.   */
+
+/* The following arrays are used by the try_swap function for speed.   */
 ///* [0...cluster_ctx.clb_nlist.nets().size()-1] */
 static std::vector<t_bb> ts_bb_coord_new, ts_bb_edge_new;
 static std::vector<NetInfo*> ts_nets_to_update;
 
-///* The pl_macros array stores all the carry chains placement macros.   *
-// * [0...num_pl_macros-1]                                               */
-static std::vector<t_pl_macro> pl_macros;
+/* The pl_macros array stores all the carry chains placement macros.   *
+ * [0...num_pl_macros-1]                                               */
+static std::unordered_map<CellInfo*, t_pl_macro> pl_macros;
 
 /* These file-scoped variables keep track of the number of swaps       *
  * rejected, accepted or aborted. The total number of swap attempts    *
@@ -202,13 +202,12 @@ static void free_placement_structs(t_placer_opts placer_opts);
 //
 //static void alloc_legal_placements();
 static void load_legal_placements();
-//
-//static void free_legal_placements();
-//
-//static int check_macro_can_be_placed(int imacro, int itype, int x, int y, int z);
 
-static int try_place_macro(/*int itype, int ipos, int imacro*/
-        CellInfo* cell, const std::string& loc_name);
+//static void free_legal_placements();
+
+static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x, int y, int z);
+
+static int try_place_macro(int itype, int ipos, /*int*/ CellInfo* macro);
 
 static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<BelId>> &free_locations);
 
@@ -2832,190 +2831,171 @@ static void load_legal_placements() {
 //	free(legal_pos); /* Free the mapping list */
 //	free(num_legal_pos);
 //}
-//
-//
-//
-//static int check_macro_can_be_placed(int imacro, int itype, int x, int y, int z) {
-//
-//	int imember;
-//	size_t member_x, member_y, member_z;
-//
-//    auto& device_ctx = g_vpr_ctx.device();
+
+
+
+static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x, int y, int z) {
+
+	int imember;
+	size_t member_x, member_y, member_z;
+
+    auto& device_ctx = g_vpr_ctx.device();
 //    auto& place_ctx = g_vpr_ctx.placement();
-//
-//	// Every macro can be placed until proven otherwise
-//	int macro_can_be_placed = true;
-//
-//	// Check whether all the members can be placed
-//	for (imember = 0; imember < pl_macros[imacro].num_blocks; imember++) {
-//		member_x = x + pl_macros[imacro].members[imember].x_offset;
-//		member_y = y + pl_macros[imacro].members[imember].y_offset;
-//		member_z = z + pl_macros[imacro].members[imember].z_offset;
-//
-//		// Check whether the location could accept block of this type
-//		// Then check whether the location could still accomodate more blocks
-//		// Also check whether the member position is valid, that is the member's location
-//		// still within the chip's dimemsion and the member_z is allowed at that location on the grid
-//		if (member_x < device_ctx.grid.width() && member_y < device_ctx.grid.height()
-//				&& device_ctx.grid[member_x][member_y].type->index == itype
-//				&& place_ctx.grid_blocks[member_x][member_y].blocks[member_z] == EMPTY_BLOCK_ID) {
-//			// Can still accomodate blocks here, check the next position
-//			continue;
-//		} else {
-//			// Cant be placed here - skip to the next try
-//			macro_can_be_placed = false;
-//			break;
-//		}
-//	}
-//
-//	return (macro_can_be_placed);
-//}
+
+	// Every macro can be placed until proven otherwise
+	int macro_can_be_placed = true;
+
+	// Check whether all the members can be placed
+	for (imember = 0; imember < pl_macros[imacro].size(); imember++) {
+		member_x = x + pl_macros[imacro]/*.members*/[imember].x_offset;
+		member_y = y + pl_macros[imacro]/*.members*/[imember].y_offset;
+		member_z = z + pl_macros[imacro]/*.members*/[imember].z_offset;
+
+		// Check whether the location could accept block of this type
+		// Then check whether the location could still accomodate more blocks
+		// Also check whether the member position is valid, that is the member's location
+		// still within the chip's dimemsion and the member_z is allowed at that location on the grid
+		if (member_x < device_ctx.grid.width() && member_y < device_ctx.grid.height()
+                && npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[member_x][member_y][member_z])).index == itype
+                && npnr_ctx->checkBelAvail(device_ctx.grid[member_x][member_y][member_z])
+				&& npnr_ctx->isValidBelForCell(pl_macros[imacro][imember].blk_index, device_ctx.grid[member_x][member_y][member_z])) {
+			// Can still accomodate blocks here, check the next position
+			continue;
+		} else {
+			// Cant be placed here - skip to the next try
+			macro_can_be_placed = false;
+			break;
+		}
+	}
+
+	return (macro_can_be_placed);
+}
 
 
-static int try_place_macro(/*int itype, int ipos, int imacro*/
-        CellInfo* cell, const std::string& loc_name) {
+static int try_place_macro(int itype, int ipos, /*int*/ CellInfo* imacro) {
 
-//	int x, y, z, member_x, member_y, member_z, imember;
-//
+	int x, y, z, member_x, member_y, member_z, imember;
+
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
-//
-//	int macro_placed = false;
-//
-//	// Choose a random position for the head
-//	x = legal_pos[itype][ipos].x;
-//	y = legal_pos[itype][ipos].y;
-//	z = legal_pos[itype][ipos].z;
-//
-//	// If that location is occupied, do nothing.
-//	if (place_ctx.grid_blocks[x][y].blocks[z] != EMPTY_BLOCK_ID) {
-//		return (macro_placed);
-//	}
-//
-//	int macro_can_be_placed = check_macro_can_be_placed(imacro, itype, x, y, z);
-//
-//	if (macro_can_be_placed) {
-//
-//		// Place down the macro
-//		macro_placed = true;
-//		for (imember = 0; imember < pl_macros[imacro].num_blocks; imember++) {
-//
-//			member_x = x + pl_macros[imacro].members[imember].x_offset;
-//			member_y = y + pl_macros[imacro].members[imember].y_offset;
-//			member_z = z + pl_macros[imacro].members[imember].z_offset;
-//
-//            ClusterBlockId iblk = pl_macros[imacro].members[imember].blk_index;
-//			place_ctx.block_locs[iblk].x = member_x;
-//			place_ctx.block_locs[iblk].y = member_y;
-//			place_ctx.block_locs[iblk].z = member_z;
-//
-//			place_ctx.grid_blocks[member_x][member_y].blocks[member_z] = pl_macros[imacro].members[imember].blk_index;
-//			place_ctx.grid_blocks[member_x][member_y].usage++;
-//
-//			// Could not ensure that the randomiser would not pick this location again
-//			// So, would have to do a lazy removal - whenever I come across a block that could not be placed,
-//			// go ahead and remove it from the legal_pos[][] array
-//
-//		} // Finish placing all the members in the macro
-//
-//	} // End of this choice of legal_pos
-//
-//	return (macro_placed);
+    auto& device_ctx = g_vpr_ctx.device();
+	auto& grid = device_ctx.grid;
 
-    auto bel = npnr_ctx->getBelByName(npnr_ctx->id(loc_name));
-    if (bel == BelId()) {
-        log_error("No Bel named \'%s\' located for "
-                  "this chip (processing BEL attribute on \'%s\')\n",
-                  loc_name.c_str(), cell->name.c_str(npnr_ctx));
-    }
+	int macro_placed = false;
 
-    auto bel_type = npnr_ctx->getBelType(bel);
-    if (bel_type != npnr_ctx->belTypeFromId(cell->type)) {
-        log_error("Bel \'%s\' of type \'%s\' does not match cell "
-                  "\'%s\' of type \'%s\'",
-                  loc_name.c_str(), npnr_ctx->belTypeToId(bel_type).c_str(npnr_ctx), cell->name.c_str(npnr_ctx),
-                  cell->type.c_str(npnr_ctx));
-    }
+	// Choose a random position for the head
+    auto bel = legal_pos[itype][ipos];
+    bool gb;
+    npnr_ctx->estimatePosition(bel, x, y, gb);
+    z = 0;
 
-    npnr_ctx->bindBel(bel, cell->name, STRENGTH_USER);
-    //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel));
+	// If that location is occupied, do nothing.
+	if (!npnr_ctx->checkBelAvail(bel)) {
+		return (macro_placed);
+	}
 
-    return true;
+    if (!npnr_ctx->isValidBelForCell(imacro, bel))
+        return macro_placed;
+
+	int macro_can_be_placed = check_macro_can_be_placed(imacro, itype, x, y, z);
+
+	if (macro_can_be_placed) {
+
+		// Place down the macro
+		macro_placed = true;
+		for (imember = 0; imember < pl_macros[imacro].size(); imember++) {
+
+			member_x = x + pl_macros[imacro]/*.members*/[imember].x_offset;
+			member_y = y + pl_macros[imacro]/*.members*/[imember].y_offset;
+			member_z = z + pl_macros[imacro]/*.members*/[imember].z_offset;
+
+            auto iblk = pl_macros[imacro]/*.members*/[imember].blk_index;
+            auto bel = grid[member_x][member_y][member_z];
+
+            npnr_ctx->bindBel(bel, imacro->name, STRENGTH_WEAK);
+
+			// Could not ensure that the randomiser would not pick this location again
+			// So, would have to do a lazy removal - whenever I come across a block that could not be placed,
+			// go ahead and remove it from the legal_pos[][] array
+
+		} // Finish placing all the members in the macro
+
+	} // End of this choice of legal_pos
+
+	return (macro_placed);
 }
 
 static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<BelId>> &free_locations) {
 
-//	int macro_placed;
-//	int imacro, itype, itry, ipos;
+	int macro_placed;
+	int /*imacro,*/ itype, itry, ipos;
 //	ClusterBlockId blk_id;
-//
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
-//    auto& device_ctx = g_vpr_ctx.device();
+
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+    auto& device_ctx = g_vpr_ctx.device();
 
 	/* Macros are harder to place.  Do them first */
 //	for (imacro = 0; imacro < num_pl_macros; imacro++) {
-    for (auto &cell_entry : npnr_ctx->cells) {
-        auto cell = cell_entry.second.get();
+    for (auto &b : cluster_ctx.clb_nlist.blocks()) {
+        auto imacro = b.second.get();
 
-//		// Every macro are not placed in the beginnning
-//		macro_placed = false;
-//
-//		// Assume that all the blocks in the macro are of the same type
-//		blk_id = pl_macros[imacro].members[0].blk_index;
-//		itype = cluster_ctx.clb_nlist.block_type(blk_id)->index;
-//		if (free_locations[itype] < pl_macros[imacro].num_blocks) {
-//			vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//					"Initial placement failed.\n"
-//					"Could not place macro length %d with head block %s (#%zu); not enough free locations of type %s (#%d).\n"
-//					"VPR cannot auto-size for your circuit, please resize the FPGA manually.\n",
-//					pl_macros[imacro].num_blocks, cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id), device_ctx.block_types[itype].name, itype);
-//		}
-//
-//		// Try to place the macro first, if can be placed - place them, otherwise try again
-//		for (itry = 0; itry < macros_max_num_tries && macro_placed == false; itry++) {
-//
-//			// Choose a random position for the head
-//			ipos = vtr::irand(free_locations[itype] - 1);
-//
-//			// Try to place the macro
-//			macro_placed = try_place_macro(itype, ipos, imacro);
-//
-//		} // Finished all tries
+        // If not part of macro, ignore
+        if (!pl_macros.count(imacro)) continue;
 
-        auto loc = cell->attrs.find(npnr_ctx->id("BEL"));
-        if (loc == cell->attrs.end()) 
-            continue;
+		// Every macro are not placed in the beginnning
+		macro_placed = false;
 
-        try_place_macro(cell, loc->second);
+        auto blk_id = imacro;
 
-//		if (macro_placed == false){
-//			// if a macro still could not be placed after macros_max_num_tries times,
-//			// go through the chip exhaustively to find a legal placement for the macro
-//			// place the macro on the first location that is legal
-//			// then set macro_placed = true;
-//			// if there are no legal positions, error out
-//
-//			// Exhaustive placement of carry macros
-//			for (ipos = 0; ipos < free_locations[itype] && macro_placed == false; ipos++) {
-//
-//				// Try to place the macro
-//				macro_placed = try_place_macro(itype, ipos, imacro);
-//
-//			} // Exhausted all the legal placement position for this macro
-//
-//			// If macro could not be placed after exhaustive placement, error out
-//			if (macro_placed == false) {
-//				// Error out
-//				vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
-//						"Initial placement failed.\n"
-//						"Could not place macro length %d with head block %s (#%zu); not enough free locations of type %s (#%d).\n"
-//						"Please manually size the FPGA because VPR can't do this yet.\n",
-//						pl_macros[imacro].num_blocks, cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id), device_ctx.block_types[itype].name, itype);
-//			}
-//
-//		} else {
-//			// This macro has been placed successfully, proceed to place the next macro
-//			continue;
-//		}
+		// Assume that all the blocks in the macro are of the same type
+		itype = cluster_ctx.clb_nlist.block_type(blk_id).index;
+		if (free_locations[itype].size() < pl_macros[imacro].size()) {
+			vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+					"Initial placement failed.\n"
+					"Could not place macro length %d with head block %s (#%zu); not enough free locations of type %s (#%d).\n"
+					"VPR cannot auto-size for your circuit, please resize the FPGA manually.\n",
+					pl_macros[imacro].size(), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id->udata), cluster_ctx.clb_nlist.block_type(blk_id).c_str(npnr_ctx), itype);
+		}
+
+		// Try to place the macro first, if can be placed - place them, otherwise try again
+		for (itry = 0; itry < macros_max_num_tries && macro_placed == false; itry++) {
+
+			// Choose a random position for the head
+			ipos = vtr::irand(free_locations[itype].size() - 1);
+
+			// Try to place the macro
+			macro_placed = try_place_macro(itype, ipos, imacro);
+
+		} // Finished all tries
+
+		if (macro_placed == false){
+			// if a macro still could not be placed after macros_max_num_tries times,
+			// go through the chip exhaustively to find a legal placement for the macro
+			// place the macro on the first location that is legal
+			// then set macro_placed = true;
+			// if there are no legal positions, error out
+
+			// Exhaustive placement of carry macros
+			for (ipos = 0; ipos < free_locations[itype].size() && macro_placed == false; ipos++) {
+
+				// Try to place the macro
+				macro_placed = try_place_macro(itype, ipos, imacro);
+
+			} // Exhausted all the legal placement position for this macro
+
+			// If macro could not be placed after exhaustive placement, error out
+			if (macro_placed == false) {
+				// Error out
+				vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
+						"Initial placement failed.\n"
+						"Could not place macro length %d with head block %s (#%zu); not enough free locations of type %s (#%d).\n"
+						"Please manually size the FPGA because VPR can't do this yet.\n",
+						pl_macros[imacro].size(), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id), imacro->type.c_str(npnr_ctx), itype);
+			}
+
+		} else {
+			// This macro has been placed successfully, proceed to place the next macro
+			continue;
+		}
 	} // Finish placing all the pl_macros successfully
 }
 
@@ -3137,35 +3117,8 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //    auto& device_ctx = g_vpr_ctx.device();
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
-//
-//	free_locations = (int *) vtr::malloc(device_ctx.num_block_types * sizeof(int));
-//	for (itype = 0; itype < device_ctx.num_block_types; itype++) {
-//		free_locations[itype] = num_legal_pos[itype];
-//	}
 
     std::vector<std::vector<BelId>> free_locations(legal_pos.begin(), legal_pos.end());
-
-//	/* We'll use the grid to record where everything goes. Initialize to the grid has no
-//	 * blocks placed anywhere.
-//	 */
-//	for (size_t i = 0; i < device_ctx.grid.width(); i++) {
-//		for (size_t j = 0; j < device_ctx.grid.height(); j++) {
-//			place_ctx.grid_blocks[i][j].usage = 0;
-//			itype = device_ctx.grid[i][j].type->index;
-//			for (int k = 0; k < device_ctx.block_types[itype].capacity; k++) {
-//				if (place_ctx.grid_blocks[i][j].blocks[k] != INVALID_BLOCK_ID) {
-//					place_ctx.grid_blocks[i][j].blocks[k] = EMPTY_BLOCK_ID;
-//				}
-//			}
-//		}
-//	}
-//
-//	/* Similarly, mark all blocks as not being placed yet. */
-//	for (auto blk_id : cluster_ctx.clb_nlist.blocks()) {
-//		place_ctx.block_locs[blk_id].x = OPEN;
-//		place_ctx.block_locs[blk_id].y = OPEN;
-//		place_ctx.block_locs[blk_id].z = OPEN;
-//	}
 
 	initial_placement_pl_macros(MAX_NUM_TRIES_TO_PLACE_MACROS_RANDOMLY, free_locations);
 
@@ -3176,7 +3129,7 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
                 return cell_name != IdString();
             }), it->end());
     }
-    for (auto it = legal_locations.begin(); it != legal_locations.end(); it++) {
+    for (auto it = legal_pos.begin(); it != legal_pos.end(); it++) {
         it->erase(remove_if(it->begin(), it->end(), [](BelId bel) {
                 auto cell_name = npnr_ctx->getBoundBelCell(bel);
                 return cell_name != IdString();
@@ -3185,8 +3138,8 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 
 	initial_placement_blocks(free_locations);
 
-    // All constraints (including user pads) are placed during
-    //   initial_placement_pl_macros() above
+    // All constraints (including user pads) are placed
+    //   before try_place()
 //	if (pad_loc_type == USER) {
 //		read_user_pad_loc(pad_loc_file);
 //	}

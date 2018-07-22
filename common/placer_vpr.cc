@@ -83,6 +83,8 @@ namespace vpr {
                     throw;
                 }
                 std::unordered_map<IdString, std::unique_ptr<nextpnr_ice40::CellInfo>>& blocks() const { return npnr_ctx->cells; }
+                IdString block_type(const CellInfo* cell) const { return cell->type; }
+                std::string block_name(const CellInfo* cell) const { return cell->name.str(npnr_ctx); }
             } clb_nlist;
             t_clustering& operator()() { return *this; }
         } clustering;
@@ -149,7 +151,7 @@ namespace vpr {
     }
 
     // place_macro.cpp
-    int alloc_and_load_placement_macros(/*t_direct_inf* directs, int num_directs, t_pl_macro ** */ std::vector<t_pl_macro> &macros)
+    int alloc_and_load_placement_macros(/*t_direct_inf* directs, int num_directs, t_pl_macro ** */ std::unordered_map<CellInfo*, t_pl_macro> &macros)
     {
         auto id_lc = npnr_ctx->id("ICESTORM_LC");
         auto id_cin = npnr_ctx->id("CIN");
@@ -195,7 +197,7 @@ namespace vpr {
 
             if (!entry.empty()) {
                 log_info("Cell %s is a carry with open CIN and %d dependents\n", cell->name.c_str(npnr_ctx), entry.size());
-                macros.emplace_back(std::move(entry));
+                macros.emplace(cell, std::move(entry));
             }
         }
         return macros.size();
@@ -229,6 +231,8 @@ namespace vpr {
         inline void printf(const char* fmt, Args... args) {
             log_info(fmt, std::forward<Args>(args)...);
         }
+
+        int irand(int imax) { return npnr_ctx->rng(imax+1); }
     }
 
     #include "vpr_types.h"
@@ -267,6 +271,26 @@ class VPRPlacer
                 vpr::npnr_cells.push_back(cell.second.get());
             }
             ci->udata = cell_idx++;
+
+            auto loc = ci->attrs.find(ctx->id("BEL"));
+            if (loc != ci->attrs.end()) {
+                const std::string& loc_name = loc->second;
+                auto bel = ctx->getBelByName(ctx->id(loc_name));
+                if (bel == BelId()) {
+                    log_error("No Bel named \'%s\' located for "
+                            "this chip (processing BEL attribute on \'%s\')\n",
+                            loc_name.c_str(), ci->name.c_str(ctx));
+                }
+
+                auto bel_type = ctx->getBelType(bel);
+                if (bel_type != ctx->belTypeFromId(ci->type)) {
+                    log_error("Bel \'%s\' of type \'%s\' does not match cell "
+                            "\'%s\' of type \'%s\'",
+                            loc_name.c_str(), ctx->belTypeToId(bel_type).c_str(ctx), ci->name.c_str(ctx),
+                            ci->type.c_str(ctx));
+                }
+                ctx->bindBel(bel, ci->name, STRENGTH_USER);
+            }
         }
         int32_t net_idx = 0;
         for (auto &net : ctx->nets) {
