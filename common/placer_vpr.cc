@@ -189,7 +189,7 @@ namespace vpr {
                 }
                 if (!sink_cell) break;
 
-                entry.emplace_back(sink_cell, 0, entry.size(), 0);
+                entry.emplace_back(sink_cell, 0, entry.size() / 8, entry.size() % 8);
                 auto it = sink_cell->ports.find(id_cout);
                 if (it == sink_cell->ports.end()) break;
                 net = it->second.net;
