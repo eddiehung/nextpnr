@@ -234,6 +234,8 @@ namespace vpr {
 
         int irand(int imax) { return npnr_ctx->rng(imax+1); }
     }
+    
+    #define OPEN -1
 
     #include "vpr_types.h"
     #include "vpr_timing_place.cpp.inc"

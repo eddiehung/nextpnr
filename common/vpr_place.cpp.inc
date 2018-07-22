@@ -225,9 +225,9 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 
 static float comp_bb_cost(e_cost_methods method);
 
-static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to, int y_to, int z_to*/ BelId bel_to);
+static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, int y_to, int z_to);
 
-static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to, int y_to, int z_to*/ BelId bel_to);
+static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, int y_to, int z_to);
 
 static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timing_cost,
 		float rlim,
@@ -276,12 +276,11 @@ static e_swap_result assess_swap(float delta_c, float t);
 
 static bool find_to(/*t_type_ptr type,*/ float rlim,
 		int x_from, int y_from,
-		/*int *px_to, int *py_to, int *pz_to*/
-        CellInfo* cell_from, BelId& bel_to);
+		int *px_to, int *py_to, int *pz_to,
+        CellInfo* cell_from);
 static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 		int x_from, int y_from,
-		/*int *px_to, int *py_to, int *pz_to*/
-        BelId &bel_to);
+		int *px_to, int *py_to, int *pz_to);
 
 static void get_non_updateable_bb(/*ClusterNetId*/ NetInfo* net_id, t_bb *bb_coord_new);
 
@@ -1181,7 +1180,7 @@ static float starting_t(float *cost_ptr, float *bb_cost_ptr,
 }
 
 
-static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to, int y_to, int z_to*/ BelId bel_to) {
+static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, int y_to, int z_to) {
 
 	/* Find all the blocks affected when b_from is swapped with b_to.
 	 * Returns abort_swap.                  */
@@ -1192,12 +1191,9 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to
 	int abort_swap = false;
 
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
-//
-//	x_from = place_ctx.block_locs[b_from].x;
-//	y_from = place_ctx.block_locs[b_from].y;
-//	z_from = place_ctx.block_locs[b_from].z;
 
     auto bel_from = b_from->bel;
+    auto bel_to = g_vpr_ctx.device().grid[x_to][y_to][z_to];
 
 //	b_to = place_ctx.grid_blocks[x_to][y_to].blocks[z_to];
     auto b_to_id = npnr_ctx->getBoundBelCell(bel_to);
@@ -1289,43 +1285,48 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to
 
 }
 
-static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to, int y_to, int z_to*/ BelId bel_to) {
+static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, int y_to, int z_to) {
 
 	/* Finds and set ups the affected_blocks array.
 	 * Returns abort_swap. */
 
-//	int imacro, imember;
-//	int x_swap_offset, y_swap_offset, z_swap_offset, x_from, y_from, z_from;
-//	ClusterBlockId curr_b_from;
-//	int curr_x_from, curr_y_from, curr_z_from, curr_x_to, curr_y_to, curr_z_to;
+	int /*imacro,*/ imember;
+	int x_swap_offset, y_swap_offset, z_swap_offset, x_from, y_from, z_from;
+	/*ClusterBlockId*/ CellInfo* curr_b_from;
+	int curr_x_from, curr_y_from, curr_z_from, curr_x_to, curr_y_to, curr_z_to;
 	int abort_swap = false;
 
 //    auto& place_ctx = g_vpr_ctx.placement();
-//    auto& device_ctx = g_vpr_ctx.device();
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
+    auto& device_ctx = g_vpr_ctx.device();
+    auto& cluster_ctx = g_vpr_ctx.clustering();
 
-//	x_from = place_ctx.block_locs[b_from].x;
-//	y_from = place_ctx.block_locs[b_from].y;
-//	z_from = place_ctx.block_locs[b_from].z;
-//
+    auto loc_from = npnr_ctx->getBelLocation(b_from->bel);
+	x_from = loc_from.x;
+	y_from = loc_from.y;
+	z_from = loc_from.z;
+
+
 //	get_imacro_from_iblk(&imacro, b_from, pl_macros, num_pl_macros);
 //	if ( imacro != -1) {
+    if (pl_macros.count(b_from)) {
 //		// b_from is part of a macro, I need to swap the whole macro
+//        auto imacro = b_from;
 //
 //		// Record down the relative position of the swap
 //		x_swap_offset = x_to - x_from;
 //		y_swap_offset = y_to - y_from;
 //		z_swap_offset = z_to - z_from;
 //
-//		for (imember = 0; imember < pl_macros[imacro].num_blocks && abort_swap == false; imember++) {
+//		for (imember = 0; imember < pl_macros[imacro].size() && abort_swap == false; imember++) {
 //
 //			// Gets the new from and to info for every block in the macro
 //			// cannot use the old from and to info
-//			curr_b_from = pl_macros[imacro].members[imember].blk_index;
+//			curr_b_from = pl_macros[imacro]/*.members*/[imember].blk_index;
 //
-//			curr_x_from = place_ctx.block_locs[curr_b_from].x;
-//			curr_y_from = place_ctx.block_locs[curr_b_from].y;
-//			curr_z_from = place_ctx.block_locs[curr_b_from].z;
+//            auto loc_from = npnr_ctx->getBelLocation(curr_b_from->bel);
+//			curr_x_from = loc_from.x /*place_ctx.block_locs[curr_b_from].x*/;
+//			curr_y_from = loc_from.y /*place_ctx.block_locs[curr_b_from].y*/;
+//			curr_z_from = loc_from.z /*place_ctx.block_locs[curr_b_from].z*/;
 //
 //			curr_x_to = curr_x_from + x_swap_offset;
 //			curr_y_to = curr_y_from + y_swap_offset;
@@ -1342,17 +1343,18 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, /*int x_to,
 //                || curr_y_to < 1 || curr_y_to >= int(device_ctx.grid.height())
 //                || curr_z_to < 0
 //                || device_ctx.grid[curr_x_to][curr_y_to].type != cluster_ctx.clb_nlist.block_type(curr_b_from)) {
-//				abort_swap = true;
+				abort_swap = true;
 //			} else {
 //				abort_swap = setup_blocks_affected(curr_b_from, curr_x_to, curr_y_to, curr_z_to);
 //			}
 //		} // Finish going through all the blocks in the macro
-//
-//	} else {
-		// This is not a macro - I could use the from and to info from before
-		abort_swap = setup_blocks_affected(b_from, /*x_to, y_to, z_to*/ bel_to);
 
-//	} // Finish handling cases for blocks in macro and otherwise
+	} else {
+		// This is not a macro - I could use the from and to info from before
+
+		abort_swap = setup_blocks_affected(b_from, x_to, y_to, z_to);
+
+	} // Finish handling cases for blocks in macro and otherwise
 
 	return (abort_swap);
 
@@ -1395,17 +1397,16 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 	int y_from = loc.y /*place_ctx.block_locs[b_from].y*/;
 	int z_from = loc.z /*place_ctx.block_locs[b_from].z*/;
 
-//    int x_to = OPEN;
-//    int y_to = OPEN;
-//    int z_to = OPEN;
+    int x_to = OPEN;
+    int y_to = OPEN;
+    int z_to = OPEN;
 
 //    auto cluster_from_type = cluster_ctx.clb_nlist.block_type(b_from);
 //    auto grid_from_type = g_vpr_ctx.device().grid[x_from][y_from].type;
 //    VTR_ASSERT(cluster_from_type == grid_from_type);
 
-    BelId bel_to;
-	if (!find_to(/*cluster_ctx.clb_nlist.block_type(b_from),*/ rlim, x_from, y_from, /*&x_to, &y_to, &z_to*/
-                 b_from, bel_to))
+	if (!find_to(/*cluster_ctx.clb_nlist.block_type(b_from),*/ rlim, x_from, y_from, &x_to, &y_to, &z_to,
+            b_from))
 		return REJECTED;
 
 #if 0
@@ -1430,7 +1431,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 //	 * of the blocks. Abort the swap if the to_block is part of a  *
 //	 * macro (not supported yet).                                  */
 
-	bool abort_swap = find_affected_blocks(b_from, /*x_to, y_to, z_to*/ bel_to);
+	bool abort_swap = find_affected_blocks(b_from, x_to, y_to, z_to);
 
 	if (abort_swap == false) {
 
@@ -1751,8 +1752,8 @@ static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*C
 
 static bool find_to(/*t_type_ptr type,*/ float rlim,
 		int x_from, int y_from,
-		/*int *px_to, int *py_to, int *pz_to*/
-        CellInfo* cell_from, BelId& bel_to) {
+		int *px_to, int *py_to, int *pz_to,
+        CellInfo* cell_from) {
 
 	/* Returns the point to which I want to swap, properly range limited.
 	 * rlim must always be between 1 and device_ctx.grid.width() - 2 (inclusive) for this routine
@@ -1764,6 +1765,7 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 	int active_area;
 	bool is_legal;
 //	int itype;
+    BelId bel_to;
 
     auto& grid = g_vpr_ctx.device().grid;
 //    auto& place_ctx = g_vpr_ctx.placement();
@@ -1791,8 +1793,6 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 	num_tries = 0;
 //	itype = type->index;
 
-    int px_to, py_to;
-
 	do { /* Until legal */
 		is_legal = true;
 
@@ -1804,35 +1804,24 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 			num_tries++;
 		}
 
-		find_to_location(type, rlim, x_from, y_from/*,
-				px_to, py_to, pz_to*/,
-                bel_to);
+		find_to_location(type, rlim, x_from, y_from,
+				px_to, py_to, pz_to);
 
-        if (bel_to == BelId()) {
+        if (px_to < 0) {
             is_legal = false;
             continue;
         }
+        bel_to = grid[*px_to][*py_to][*pz_to];
 
-        auto loc = npnr_ctx->getBelLocation(bel_to);
-        px_to = loc.x;
-        py_to = loc.y;
-
-		if((x_from == px_to) && (y_from == py_to)) {
+		if((x_from == *px_to) && (y_from == *py_to)) {
 			is_legal = false;
-		} else if(px_to > max_x || px_to < min_x || py_to > max_y || py_to < min_y) {
+		} else if(*px_to > max_x || *px_to < min_x || *py_to > max_y || *py_to < min_y) {
 			is_legal = false;
 		} else if(type != npnr_ctx->belTypeToId(npnr_ctx->getBelType(bel_to))) {
 			is_legal = false;
 		} else {
 			/* Find z_to and test to validate that the "to" block is *not* fixed */
-			//*pz_to = 0;
-			//if (grid[*px_to][*py_to].type->capacity > 1) {
-			//	*pz_to = vtr::irand(grid[*px_to][*py_to].type->capacity - 1);
-			//}
-			//ClusterBlockId b_to = place_ctx.grid_blocks[*px_to][*py_to].blocks[*pz_to];
-			//if ((b_to != EMPTY_BLOCK_ID) && (place_ctx.block_locs[b_to].is_fixed == true)) {
-			//	is_legal = false;
-			//}
+            //  *pz_to already set by find_to_location
 
             if (!npnr_ctx->isValidBelForCell(cell_from, bel_to)) {
                 is_legal = false;
@@ -1851,11 +1840,11 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
             }
 		}
 
-		VTR_ASSERT(px_to >= 0 && px_to < int(grid.width()));
-		VTR_ASSERT(py_to >= 0 && py_to < int(grid.height()));
+		VTR_ASSERT(*px_to >= 0 && *px_to < int(grid.width()));
+		VTR_ASSERT(*py_to >= 0 && *py_to < int(grid.height()));
 	} while (is_legal == false);
 
-	if (px_to < 0 || px_to > int(grid.width() - 1) || py_to < 0 || py_to > int(grid.height() - 1)) {
+	if (*px_to < 0 || *px_to > int(grid.width() - 1) || *py_to < 0 || *py_to > int(grid.height() - 1)) {
 		vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,"in routine find_to: (x_to,y_to) = (%d,%d)\n", px_to, py_to);
 	}
 
@@ -1864,9 +1853,8 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 }
 
 static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
-		int x_from, int y_from/*,
-		int *px_to, int *py_to, int *pz_to*/,
-        BelId &bel_to) {
+		int x_from, int y_from,
+		int *px_to, int *py_to, int *pz_to) {
 
     auto& device_ctx = g_vpr_ctx.device();
     auto& grid = device_ctx.grid;
@@ -1883,21 +1871,27 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 	int min_y = std::max<float>(0, y_from - rly);
 	int max_y = std::min<float>(grid.height() - 1, y_from + rly);
 
-//	*pz_to = 0;
+	*pz_to = 0;
 	if (int(grid.width() / 4) < rlx || int(grid.height() / 4) < rly || legal_pos[itype].size() < active_area) {
 		int ipos = npnr_ctx->rng(legal_pos[itype].size());
-        bel_to = legal_pos[itype][ipos];
+        auto bel = legal_pos[itype][ipos];
+        auto loc = npnr_ctx->getBelLocation(bel);
+        *px_to = loc.x;
+        *py_to = loc.y;
+        *pz_to = loc.z;
 	} else {
 		int x_rel = npnr_ctx->rng(std::max(0, max_x - min_x)+1); // +1 because rng() uses %
 		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y)+1); // +1 because rng() uses %
-		int px_to = min_x + x_rel;
-		int py_to = min_y + y_rel;
-        if (!grid[px_to][py_to].empty()) {
-            int pz_to = npnr_ctx->rng(grid[px_to][py_to].size());
-            bel_to = grid[px_to][py_to][pz_to];
+		*px_to = min_x + x_rel;
+		*py_to = min_y + y_rel;
+        if (!grid[*px_to][*py_to].empty()) {
+            *pz_to = npnr_ctx->rng(grid[*px_to][*py_to].size());
         }
-        else
-            bel_to = BelId();
+        else {
+            *px_to = -1;
+            *py_to = -1;
+            *pz_to = -1;
+        }
 	}
 }
 
