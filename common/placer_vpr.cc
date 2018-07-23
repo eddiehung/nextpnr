@@ -167,9 +167,6 @@ namespace vpr {
             }
             macros.emplace(head, std::move(entry));
         }
-
-        assign_budget(npnr_ctx);
-
         return macros.size();
     }
 
@@ -245,6 +242,7 @@ class VPRPlacer
             c.resize(max_y+1);
 
         carries = prepare_and_find_carries(ctx);
+        assign_budget(ctx);
 
         int32_t cell_idx = 0;
         for (auto &cell : ctx->cells) {
