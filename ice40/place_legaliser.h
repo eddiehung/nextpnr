@@ -25,6 +25,7 @@
 NEXTPNR_NAMESPACE_BEGIN
 
 bool legalise_design(Context *ctx);
+std::vector<std::vector<CellInfo*>> prepare_and_find_carries(Context *ctx);
 
 NEXTPNR_NAMESPACE_END
 

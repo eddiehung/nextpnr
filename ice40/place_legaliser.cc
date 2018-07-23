@@ -131,6 +131,15 @@ class PlacementLegaliser
         return legalised_carries && replaced_cells;
     }
 
+    std::vector<std::vector<CellInfo*>> prepare_and_find_carries()
+    {
+        std::vector<std::vector<CellInfo*>> ret;
+        std::vector<CellChain> all_chains = prepare_carries(false /* midpoint */);
+        for (auto &c : all_chains)
+            ret.emplace_back(c.cells);
+        return ret;
+    }
+
   private:
     void init_logic_cells()
     {
@@ -153,7 +162,7 @@ class PlacementLegaliser
         }
     }
 
-    bool legalise_carries()
+    std::vector<CellChain> prepare_carries(bool midpoint=true)
     {
         std::vector<CellChain> carry_chains =
                 find_chains(ctx, [](const Context *ctx, const CellInfo *cell) { return is_lc(ctx, cell); },
@@ -195,7 +204,6 @@ class PlacementLegaliser
                 carry_chains.push_back(sChain);
             }
         }
-        bool success = true;
         // Find midpoints for all chains, before we start tearing them up
         std::vector<CellChain> all_chains;
         for (auto &base_chain : carry_chains) {
@@ -207,10 +215,17 @@ class PlacementLegaliser
             }
             std::vector<CellChain> split_chains = split_carry_chain(base_chain);
             for (auto &chain : split_chains) {
-                get_chain_midpoint(ctx, chain, chain.mid_x, chain.mid_y);
+                if (midpoint) get_chain_midpoint(ctx, chain, chain.mid_x, chain.mid_y);
                 all_chains.push_back(chain);
             }
         }
+        return all_chains;
+    }
+
+    bool legalise_carries()
+    {
+        bool success = true;
+        std::vector<CellChain> all_chains = prepare_carries();
         // Actual chain placement
         for (auto &chain : all_chains) {
             if (ctx->verbose)
@@ -512,6 +527,12 @@ bool legalise_design(Context *ctx)
 {
     PlacementLegaliser lg(ctx);
     return lg.legalise();
+}
+
+std::vector<std::vector<CellInfo*>> prepare_and_find_carries(Context *ctx)
+{
+    PlacementLegaliser lg(ctx);
+    return lg.prepare_and_find_carries();
 }
 
 NEXTPNR_NAMESPACE_END
