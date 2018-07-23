@@ -2978,7 +2978,7 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 						"Initial placement failed.\n"
 						"Could not place macro length %d with head block %s (#%zu); not enough free locations of type %s (#%d).\n"
 						"Please manually size the FPGA because VPR can't do this yet.\n",
-						pl_macros[imacro].size(), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id), imacro->type.c_str(npnr_ctx), itype);
+						pl_macros[imacro].size(), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id->udata), imacro->type.c_str(npnr_ctx), itype);
 			}
 
 		} else {
@@ -3044,7 +3044,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 // 			}
 
             if (npnr_ctx->isIO(blk_id))
-                npnr_ctx->bindBel(grid[x][y][z], blk_id->name, /*STRENGTH_LOCKED*/STRENGTH_STRONG);
+                npnr_ctx->bindBel(grid[x][y][z], blk_id->name, STRENGTH_USER);
             else
                 npnr_ctx->bindBel(grid[x][y][z], blk_id->name, STRENGTH_WEAK);
             //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel));
@@ -3124,15 +3124,21 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
     for (auto it = legal_pos.begin(); it != legal_pos.end(); it++) {
         it->erase(remove_if(it->begin(), it->end(), [&grid](const Loc& loc) {
                 auto cell_name = npnr_ctx->getBoundBelCell(grid[loc.x][loc.y][loc.z]);
-                return cell_name != IdString();
+                if (cell_name == IdString()) return false;
+                auto cell = npnr_ctx->cells.at(cell_name).get();
+                return cell->belStrength > STRENGTH_WEAK;
             }), it->end());
     }
     for (auto it = free_locations.begin(); it != free_locations.end(); it++) {
-        const auto& src = legal_pos[it - free_locations.begin()];
+        const auto& src = legal_pos.at(it - free_locations.begin());
         if (src.empty()) continue;
         it->clear();
         it->reserve(src.size());
-        it->assign(src.begin(), src.end());
+        for (auto& loc : src) {
+            auto cell_name = npnr_ctx->getBoundBelCell(grid[loc.x][loc.y][loc.z]);
+            if (cell_name == IdString())
+                it->push_back(loc);
+        }
         npnr_ctx->shuffle(*it);
     }
 
