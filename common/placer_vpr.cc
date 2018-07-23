@@ -113,6 +113,7 @@ namespace vpr {
         delay_t best_slack;
         float slack_spread = 0;
         void update() { 
+#if 0
             update_budget(npnr_ctx); 
 
             worst_slack = std::numeric_limits<decltype(worst_slack)>::max();
@@ -149,6 +150,7 @@ namespace vpr {
 
             slack_spread = best_slack - worst_slack;
         }
+#endif
     };
     static SetupTimingInfo timing_info;
     struct t_pl_macro_member {
@@ -165,7 +167,7 @@ namespace vpr {
     {
         NPNR_ASSERT(npnr_ctx->timing_driven);
 
-#if 1
+#if 0
         int driver_x, driver_y;
         bool driver_gb;
         CellInfo *driver_cell = net->driver.cell;
