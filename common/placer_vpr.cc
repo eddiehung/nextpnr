@@ -195,7 +195,7 @@ namespace vpr {
                 net = it->second.net;
             };
 
-            if (!entry.empty()) {
+            if (entry.size() > 1) {
                 log_info("Cell %s is a carry with open CIN and %d dependents\n", cell->name.c_str(npnr_ctx), entry.size());
                 macros.emplace(cell, std::move(entry));
             }
