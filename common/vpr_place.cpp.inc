@@ -1344,13 +1344,29 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 			if (   curr_x_to < 1 || curr_x_to >= int(device_ctx.grid.width())
                 || curr_y_to < 1 || curr_y_to >= int(device_ctx.grid.height())
                 || curr_z_to < 0 || curr_z_to >= int(device_ctx.grid[curr_x_to][curr_y_to].size())
-                || npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) != curr_b_from->type
-				|| !npnr_ctx->isValidBelForCell(pl_macros[imacro][imember].blk_index, device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) {
+                || npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) != curr_b_from->type) {
 				abort_swap = true;
 			} else {
-				abort_swap = setup_blocks_affected(curr_b_from, curr_x_to, curr_y_to, curr_z_to);
-			}
+                auto bel_to = device_ctx.grid[curr_x_to][curr_y_to][curr_z_to];
+				if (!npnr_ctx->isValidBelForCell(pl_macros[imacro][imember].blk_index, bel_to)) {
+                    abort_swap = true;
+                }
+                else {
+                    auto cell_name = npnr_ctx->getBoundBelCell(bel_to);
+                    if (cell_name != IdString()) {
+                        auto cell_to = npnr_ctx->cells[cell_name].get();
+                        if (cell_to->belStrength > STRENGTH_WEAK) {
+			                abort_swap = true;
+                        }
+                        else if (!npnr_ctx->isValidBelForCell(cell_to, pl_macros[imacro][imember].blk_index->bel)) {
+                            abort_swap = true;
+                        }
+                    }
+                }
 
+                if (!abort_swap)
+                    abort_swap = setup_blocks_affected(curr_b_from, curr_x_to, curr_y_to, curr_z_to);
+			}
 		} // Finish going through all the blocks in the macro
 	} else {
 		// This is not a macro - I could use the from and to info from before
