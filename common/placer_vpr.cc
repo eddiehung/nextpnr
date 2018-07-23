@@ -53,8 +53,8 @@ namespace vpr {
     std::vector<CellInfo *> npnr_cells;
 
     struct DeviceGrid {
-        inline int width() const { return _bels.size(); }
-        inline int height() const { return _bels.front().size(); }
+        inline size_t width() const { return _bels.size(); }
+        inline size_t height() const { return _bels.front().size(); }
         inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
         std::vector<std::vector<std::vector<BelId>>> _bels;
     };
@@ -159,14 +159,26 @@ namespace vpr {
     {
         for (auto &chain : carries) {
             t_pl_macro entry;
-            for (int z = 0; z < int(chain.size()); z++)
-                entry.emplace_back(chain.at(z), 0, z / 8, z % 8);
-            macros.emplace(chain.front(), std::move(entry));
+            auto head = chain.front();
+            for (int z = 0; z < int(chain.size()); z++) {
+                auto cell = chain.at(z);
+                entry.emplace_back(cell, 0, z / 8, z % 8);
+                cell->attrs.emplace(npnr_ctx->id("carry_head"), head->name.str(npnr_ctx));
+            }
+            macros.emplace(head, std::move(entry));
         }
 
         assign_budget(npnr_ctx);
 
         return macros.size();
+    }
+
+    void get_imacro_from_iblk(/*int **/ CellInfo **imacro, /*ClusterBlockId*/ CellInfo *iblk /*, t_pl_macro *macros, int num_macros*/) {
+        auto it = iblk->attrs.find(npnr_ctx->id("carry_head"));
+        if (it != iblk->attrs.end())
+            *imacro = npnr_ctx->cells.at(npnr_ctx->id(it->second)).get();
+        else
+            *imacro = nullptr;
     }
     
     #define VTR_ASSERT NPNR_ASSERT
