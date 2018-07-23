@@ -1226,7 +1226,7 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, 
 
 		// Does not allow a swap with a macro yet
 		get_imacro_from_iblk(&imacro, b_to /*, pl_macros, num_pl_macros*/);
-		if (imacro != nullptr) {
+		if (imacro) {
 			abort_swap = true;
 			return (abort_swap);
 		}
@@ -1303,46 +1303,55 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 	z_from = loc_from.z;
 
 	get_imacro_from_iblk(&imacro, b_from /*, pl_macros, num_pl_macros*/);
-	if ( imacro != nullptr) {
-//		// b_from is part of a macro, I need to swap the whole macro
-//
-//		// Record down the relative position of the swap
-//		x_swap_offset = x_to - x_from;
-//		y_swap_offset = y_to - y_from;
-//		z_swap_offset = z_to - z_from;
-//
-//		for (imember = 0; imember < int(pl_macros[imacro].size()) && abort_swap == false; imember++) {
-//
-//			// Gets the new from and to info for every block in the macro
-//			// cannot use the old from and to info
-//			curr_b_from = pl_macros[imacro]/*.members*/[imember].blk_index;
-//
-//            auto loc_from = npnr_ctx->getBelLocation(curr_b_from->bel);
-//			curr_x_from = loc_from.x /*place_ctx.block_locs[curr_b_from].x*/;
-//			curr_y_from = loc_from.y /*place_ctx.block_locs[curr_b_from].y*/;
-//			curr_z_from = loc_from.z /*place_ctx.block_locs[curr_b_from].z*/;
-//
-//			curr_x_to = curr_x_from + x_swap_offset;
-//			curr_y_to = curr_y_from + y_swap_offset;
-//			curr_z_to = curr_z_from + z_swap_offset;
-//
-//			//Make sure that the swap_to location is valid
-//            //It must be:
-//            // * chip, and
-//            // * match the correct block type
-//            //
-//            //Note that we need to explicitly check that the types match, since the device floorplan is not
-//            //(neccessarily) translationally invariant for an arbitrary macro
-//			if (   curr_x_to < 1 || curr_x_to >= int(device_ctx.grid.width())
-//                || curr_y_to < 1 || curr_y_to >= int(device_ctx.grid.height())
-//                || curr_z_to < 0 || curr_z_to >= int(device_ctx.grid[curr_x_to][curr_y_to].size())
-//                || npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) != curr_b_from->type) {
-				abort_swap = true;
-//			} else {
-//				abort_swap = setup_blocks_affected(curr_b_from, curr_x_to, curr_y_to, curr_z_to);
-//			}
-//		} // Finish going through all the blocks in the macro
+	if (imacro) {
+		// b_from is part of a macro, I need to swap the whole macro
 
+		// Record down the relative position of the swap
+		x_swap_offset = x_to - x_from;
+		y_swap_offset = y_to - y_from;
+		z_swap_offset = z_to - z_from;
+
+		// HACK HACK HACK
+		//   Do not allow overlapping swaps
+		if (x_swap_offset == 0
+		    && (y_swap_offset < int(pl_macros[imacro].size() / 8)
+		        || (y_swap_offset == int(pl_macros[imacro].size() / 8) && z_swap_offset < int(pl_macros[imacro].size() % 8)))) {
+		    abort_swap = true;
+		}
+
+		for (imember = 0; imember < int(pl_macros[imacro].size()) && abort_swap == false; imember++) {
+
+			// Gets the new from and to info for every block in the macro
+			// cannot use the old from and to info
+			curr_b_from = pl_macros[imacro]/*.members*/[imember].blk_index;
+
+            auto loc_from = npnr_ctx->getBelLocation(curr_b_from->bel);
+			curr_x_from = loc_from.x /*place_ctx.block_locs[curr_b_from].x*/;
+			curr_y_from = loc_from.y /*place_ctx.block_locs[curr_b_from].y*/;
+			curr_z_from = loc_from.z /*place_ctx.block_locs[curr_b_from].z*/;
+
+			curr_x_to = curr_x_from + x_swap_offset;
+			curr_y_to = curr_y_from + y_swap_offset;
+			curr_z_to = curr_z_from + z_swap_offset;
+
+			//Make sure that the swap_to location is valid
+            //It must be:
+            // * chip, and
+            // * match the correct block type
+            //
+            //Note that we need to explicitly check that the types match, since the device floorplan is not
+            //(neccessarily) translationally invariant for an arbitrary macro
+			if (   curr_x_to < 1 || curr_x_to >= int(device_ctx.grid.width())
+                || curr_y_to < 1 || curr_y_to >= int(device_ctx.grid.height())
+                || curr_z_to < 0 || curr_z_to >= int(device_ctx.grid[curr_x_to][curr_y_to].size())
+                || npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) != curr_b_from->type
+				|| !npnr_ctx->isValidBelForCell(pl_macros[imacro][imember].blk_index, device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) {
+				abort_swap = true;
+			} else {
+				abort_swap = setup_blocks_affected(curr_b_from, curr_x_to, curr_y_to, curr_z_to);
+			}
+
+		} // Finish going through all the blocks in the macro
 	} else {
 		// This is not a macro - I could use the from and to info from before
 
@@ -1479,32 +1488,6 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
             // No need to update anything, as we've already done the swap
             //   in setup_blocks_affected
 
-//			/* Update clb data structures since we kept the move. */
-//			/* Swap physical location */
-//            for (int iblk = 0; iblk < blocks_affected.num_moved_blocks; iblk++) {
-//
-//				x_to = blocks_affected.moved_blocks[iblk].xnew;
-//				y_to = blocks_affected.moved_blocks[iblk].ynew;
-//				z_to = blocks_affected.moved_blocks[iblk].znew;
-//
-//				x_from = blocks_affected.moved_blocks[iblk].xold;
-//				y_from = blocks_affected.moved_blocks[iblk].yold;
-//				z_from = blocks_affected.moved_blocks[iblk].zold;
-//
-//				b_from = blocks_affected.moved_blocks[iblk].block_num;
-//
-//				place_ctx.grid_blocks[x_to][y_to].blocks[z_to] = b_from;
-//
-//				if (blocks_affected.moved_blocks[iblk].swapped_to_was_empty) {
-//					place_ctx.grid_blocks[x_to][y_to].usage++;
-//				}
-//				if (blocks_affected.moved_blocks[iblk].swapped_from_is_empty) {
-//					place_ctx.grid_blocks[x_from][y_from].usage--;
-//					place_ctx.grid_blocks[x_from][y_from].blocks[z_from] = EMPTY_BLOCK_ID;
-//				}
-//
-//			} // Finish updating clb for all blocks
-
 		} else { /* Move was rejected.  */
 
 			/* Reset the net cost function flags first. */
@@ -1513,52 +1496,56 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 				bb_updated_before[net_id->udata] = NOT_UPDATED_YET;
 			}
 
-//			/* Restore the place_ctx.block_locs data structures to their state before the move. */
+			/* Restore the place_ctx.block_locs data structures to their state before the move. */
 
             // Since we already swapped in setup_blocks_affected(), unswap here;
             //   to prevent npnr assertions firing, unplace all bels first
             for (const auto &b : blocks_affected) {
-                auto blk = b.first;
-                npnr_ctx->unbindBel(blk->bel);
+                auto b_from = b.first;
+                npnr_ctx->unbindBel(b_from->bel);
             }
             for (const auto &b : blocks_affected) {
-                auto blk = b.first;
+                auto b_from = b.first;
                 auto bel = b.second;
 
-//				b_from = blocks_affected.moved_blocks[iblk].block_num;
-//
-//				place_ctx.block_locs[b_from].x = blocks_affected.moved_blocks[iblk].xold;
-//				place_ctx.block_locs[b_from].y = blocks_affected.moved_blocks[iblk].yold;
-//				place_ctx.block_locs[b_from].z = blocks_affected.moved_blocks[iblk].zold;
-                
-                npnr_ctx->bindBel(bel, blk->name, STRENGTH_WEAK);
-                //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel));
+                npnr_ctx->bindBel(bel, b_from->name, STRENGTH_WEAK);
 			}
 		}
 
-//		/* Resets the num_moved_blocks, but do not free blocks_moved array. Defensive Coding */
+		/* Resets the num_moved_blocks, but do not free blocks_moved array. Defensive Coding */
         blocks_affected.clear();
         ts_nets_to_update.clear();
 
 #if 0
         //Check that each accepted swap yields a valid placement
-        check_place(*bb_cost, *timing_cost, place_algorithm, *delay_cost);
+        check_place(*bb_cost, *timing_cost, /*place_algorithm,*/ *delay_cost);
 #endif
 
 		return (keep_switch);
 	} else {
+		/* Restore the place_ctx.block_locs data structures to their state before the move. */
 
-//		/* Restore the place_ctx.block_locs data structures to their state before the move. */
-//		for (int iblk = 0; iblk < blocks_affected.num_moved_blocks; iblk++) {
-//			b_from = blocks_affected.moved_blocks[iblk].block_num;
-//
-//			place_ctx.block_locs[b_from].x = blocks_affected.moved_blocks[iblk].xold;
-//			place_ctx.block_locs[b_from].y = blocks_affected.moved_blocks[iblk].yold;
-//			place_ctx.block_locs[b_from].z = blocks_affected.moved_blocks[iblk].zold;
-//		}
-//
-//		/* Resets the num_moved_blocks, but do not free blocks_moved array. Defensive Coding */
-//		blocks_affected.num_moved_blocks = 0;
+        // Since we already swapped in setup_blocks_affected(), unswap here;
+        //   to prevent npnr assertions firing, unplace all bels first
+        for (const auto &b : blocks_affected) {
+            auto b_from = b.first;
+            npnr_ctx->unbindBel(b_from->bel);
+        }
+        for (const auto &b : blocks_affected) {
+            auto b_from = b.first;
+            auto bel = b.second;
+
+            npnr_ctx->bindBel(bel, b_from->name, STRENGTH_WEAK);
+		}
+
+		/* Resets the num_moved_blocks, but do not free blocks_moved array. Defensive Coding */
+        blocks_affected.clear();
+
+#if 0
+        //Check that each accepted swap yields a valid placement
+        check_place(*bb_cost, *timing_cost, /*place_algorithm,*/ *delay_cost);
+#endif
+
 
 		return ABORTED;
 	}
@@ -1801,10 +1788,18 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 		find_to_location(type, rlim, x_from, y_from,
 				px_to, py_to, pz_to);
 
-        if (*px_to < 0) {
+        if (*pz_to < 0) {
             is_legal = false;
             continue;
         }
+        // HACK HACK HACK
+        //   Macro heads must start at z = 0
+        else if (*pz_to > 0) {
+            CellInfo *imacro;
+            get_imacro_from_iblk(&imacro, cell_from /*, pl_macros, num_pl_macros*/);
+            if (imacro) *pz_to = 0;
+        }
+
         bel_to = grid[*px_to][*py_to][*pz_to];
         if (bel_to == BelId()) {
             is_legal = false;
@@ -1987,7 +1982,7 @@ static float comp_td_point_to_point_delay(/*ClusterNetId*/ NetInfo* net_id, int 
 	return (delay_source_to_sink);
 }
 
-////Recompute all point to point delays, updating point_to_point_delay_cost
+//Recompute all point to point delays, updating point_to_point_delay_cost
 static void comp_td_point_to_point_delays() {
 	auto& cluster_ctx = g_vpr_ctx.clustering();
 
@@ -2896,7 +2891,7 @@ static int try_place_macro(int itype, /*int*/ Loc ipos, /*int*/ CellInfo* imacro
             auto iblk = pl_macros[imacro]/*.members*/[imember].blk_index;
             auto bel = grid[member_x][member_y][member_z];
 
-            npnr_ctx->bindBel(bel, iblk->name, STRENGTH_STRONG);
+            npnr_ctx->bindBel(bel, iblk->name, STRENGTH_WEAK);
 
 			// Could not ensure that the randomiser would not pick this location again
 			// So, would have to do a lazy removal - whenever I come across a block that could not be placed,
@@ -3108,7 +3103,7 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
     free_locations.resize(legal_pos.size());
 
     // HACK HACK HACK
-    // Initially, populate free_locations with just z == 0 cells
+    //   Initially, populate free_locations with just z == 0 cells
     //   for carry chain placement
     for (auto it = legal_pos.begin(); it != legal_pos.end(); it++) {
         for (auto jt = it->begin(); jt != it->end(); jt++) {
