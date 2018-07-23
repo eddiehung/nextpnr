@@ -94,7 +94,7 @@ large enough to be on the order of timing costs for normal constraints. */
 /* Cost of a net, and a temporary cost of a net used during move assessment. */
 static std::vector<float> net_cost, temp_net_cost;
 
-static std::vector<std::vector<BelId>> legal_pos;
+static std::vector<std::vector<Loc>> legal_pos;
 //static int *num_legal_pos = nullptr; /* [0..num_legal_pos-1] */
 
 /* [0...cluster_ctx.clb_nlist.nets().size()-1]                                               *
@@ -207,18 +207,13 @@ static void load_legal_placements();
 
 static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x, int y, int z);
 
-static int try_place_macro(int itype, /*int*/ BelId ipos, /*int*/ CellInfo* macro);
+static int try_place_macro(int itype, /*int*/ Loc ipos, /*int*/ CellInfo* macro);
 
-static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<BelId>> &free_locations);
+static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<Loc>> &free_locations);
 
-static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type pad_loc_type*/
-    std::vector<std::vector<BelId>> &free_locations);
-
-static void initial_placement_location(/*int * free_locations, ClusterBlockId blk_id,
-		int *pipos, int *px, int *py, int *pz*/
-        std::vector<std::vector<BelId>> &free_locations,
-        CellInfo *cell,
-        BelId& bel);
+static void initial_placement_blocks(/*int * */ std::vector<std::vector<Loc>> &free_locations /*, enum e_pad_loc_type pad_loc_type*/);
+static void initial_placement_location(/*int **/ std::vector<std::vector<Loc>> &free_locations, /*ClusterBlockId*/ CellInfo* blk_id,
+		/*int *pipos,*/ int *px, int *py, int *pz);
 
 static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 		const char *pad_loc_file*/);
@@ -291,8 +286,8 @@ static int find_affected_nets_and_update_costs(/*e_place_algorithm place_algorit
 
 static void record_affected_net(/*const ClusterNetId*/ NetInfo *net, int& num_affected_nets);
 
-static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const ClusterBlockId blk, const ClusterPinId blk_pin*/
-        CellInfo* blk, BelId bel_from);
+static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const ClusterBlockId*/ CellInfo *blk, /*const ClusterPinId blk_pin*/
+         BelId bel_from);
 static void update_td_delta_costs(/*const ClusterNetId*/ NetInfo *net, const /*ClusterPinId*/ PortInfo &pin, float& delta_timing_cost, float& delta_delay_cost,
         CellInfo* blk);
 
@@ -1807,11 +1802,15 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 		find_to_location(type, rlim, x_from, y_from,
 				px_to, py_to, pz_to);
 
-        if (px_to < 0) {
+        if (*px_to < 0) {
             is_legal = false;
             continue;
         }
         bel_to = grid[*px_to][*py_to][*pz_to];
+        if (bel_to == BelId()) {
+            is_legal = false;
+            continue;
+        }
 
 		if((x_from == *px_to) && (y_from == *py_to)) {
 			is_legal = false;
@@ -1845,7 +1844,7 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 	} while (is_legal == false);
 
 	if (*px_to < 0 || *px_to > int(grid.width() - 1) || *py_to < 0 || *py_to > int(grid.height() - 1)) {
-		vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,"in routine find_to: (x_to,y_to) = (%d,%d)\n", px_to, py_to);
+		vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,"in routine find_to: (x_to,y_to) = (%d,%d)\n", *px_to, *py_to);
 	}
 
 	VTR_ASSERT(type == npnr_ctx->belTypeToId(npnr_ctx->getBelType(bel_to)));
@@ -1874,11 +1873,9 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 	*pz_to = 0;
 	if (int(grid.width() / 4) < rlx || int(grid.height() / 4) < rly || legal_pos[itype].size() < active_area) {
 		int ipos = npnr_ctx->rng(legal_pos[itype].size());
-        auto bel = legal_pos[itype][ipos];
-        auto loc = npnr_ctx->getBelLocation(bel);
-        *px_to = loc.x;
-        *py_to = loc.y;
-        *pz_to = loc.z;
+        *px_to = legal_pos[itype][ipos].x;
+        *py_to = legal_pos[itype][ipos].y;
+        *pz_to = legal_pos[itype][ipos].z;
 	} else {
 		int x_rel = npnr_ctx->rng(std::max(0, max_x - min_x)+1); // +1 because rng() uses %
 		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y)+1); // +1 because rng() uses %
@@ -2807,7 +2804,7 @@ static void load_legal_placements() {
         int itype = type.index;
         if (itype >= legal_pos.size())
             legal_pos.resize(itype+1);
-        legal_pos[itype].push_back(bel);
+        legal_pos[itype].push_back(npnr_ctx->getBelLocation(bel));
     }
 }
 
@@ -2862,7 +2859,7 @@ static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x,
 }
 
 
-static int try_place_macro(int itype, /*int*/ BelId ipos, /*int*/ CellInfo* imacro) {
+static int try_place_macro(int itype, /*int*/ Loc ipos, /*int*/ CellInfo* imacro) {
 
 	int x, y, z, member_x, member_y, member_z, imember;
 
@@ -2873,17 +2870,16 @@ static int try_place_macro(int itype, /*int*/ BelId ipos, /*int*/ CellInfo* imac
 	int macro_placed = false;
 
 	// Choose a random position for the head
-    auto loc = npnr_ctx->getBelLocation(ipos);
-    x = loc.x;
-    y = loc.y;
-    z = loc.z;
+    x = ipos.x;
+    y = ipos.y;
+    z = ipos.z;
 
 	// If that location is occupied, do nothing.
-	if (!npnr_ctx->checkBelAvail(ipos)) {
+	if (!npnr_ctx->checkBelAvail(grid[x][y][z])) {
 		return (macro_placed);
 	}
 
-    if (!npnr_ctx->isValidBelForCell(imacro, ipos))
+    if (!npnr_ctx->isValidBelForCell(imacro, grid[x][y][z]))
         return macro_placed;
 
 	int macro_can_be_placed = check_macro_can_be_placed(imacro, itype, x, y, z);
@@ -2914,12 +2910,12 @@ static int try_place_macro(int itype, /*int*/ BelId ipos, /*int*/ CellInfo* imac
 	return (macro_placed);
 }
 
-static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<BelId>> &free_locations) {
+static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<Loc>> &free_locations) {
 
 	int macro_placed;
 	int /*imacro,*/ itype, itry /*, ipos*/;
 //	ClusterBlockId blk_id;
-    BelId ipos;
+    Loc ipos;
 
     auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& device_ctx = g_vpr_ctx.device();
@@ -2966,7 +2962,7 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 			// if there are no legal positions, error out
 
 			// Exhaustive placement of carry macros
-            for (ipos : free_locations[itype]) {
+            for (auto ipos : free_locations[itype]) {
 
 				// Try to place the macro
 				macro_placed = try_place_macro(itype, ipos, imacro);
@@ -2995,20 +2991,21 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 /* Place blocks that are NOT a part of any macro.
 * We'll randomly place each block in the clustered netlist, one by one. */
 static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type pad_loc_type*/
-        std::vector<std::vector<BelId>>& free_locations) {
-//	int itype, ipos, x, y, z;
+        std::vector<std::vector<Loc>>& free_locations) {
+	int itype, /*ipos,*/ x, y, z;
     auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
-//    auto& device_ctx = g_vpr_ctx.device();
-//
-	for (auto& blk_id : cluster_ctx.clb_nlist.blocks()) {
-        auto cell = blk_id.second.get();
+    auto& device_ctx = g_vpr_ctx.device();
+    auto& grid = device_ctx.grid;
+
+	for (auto& b : cluster_ctx.clb_nlist.blocks()) {
+        auto blk_id = b.second.get();
 //		if (place_ctx.block_locs[blk_id].x != -1) { // -1 is a sentinel for an empty block
 //			// block placed.
 //			continue;
 //		}
 
-        if (cell->bel != BelId())
+        if (blk_id->bel != BelId())
             continue;
 
 //		/* Don't do IOs if the user specifies IOs; we'll read those locations later. */
@@ -3020,7 +3017,7 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 //			 * Choose one randomly and put blk_id there. Then we don't want to pick
 //			 * that location again, so remove it from the free_locations array.
 //			 */
-//			itype = cluster_ctx.clb_nlist.block_type(blk_id)->index;
+			itype = cluster_ctx.clb_nlist.block_type(blk_id).index;
 //			if (free_locations[itype] <= 0) {
 //				vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
 //						"Initial placement failed.\n"
@@ -3028,12 +3025,11 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 //						cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id), device_ctx.block_types[itype].name, itype);
 //			}
 //
-            BelId bel;
-            initial_placement_location(free_locations, /*blk_id, &ipos, &x, &y, &z*/ cell, bel);
+            initial_placement_location(free_locations, blk_id, /*&ipos,*/ &x, &y, &z);
 //
 //			// Make sure that the position is EMPTY_BLOCK before placing the block down
 //			VTR_ASSERT(place_ctx.grid_blocks[x][y].blocks[z] == EMPTY_BLOCK_ID);
-            VTR_ASSERT(npnr_ctx->checkBelAvail(bel));
+            VTR_ASSERT(npnr_ctx->checkBelAvail(grid[x][y][z]));
 
 //			place_ctx.grid_blocks[x][y].blocks[z] = blk_id;
 //			place_ctx.grid_blocks[x][y].usage++;
@@ -3047,10 +3043,10 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 //                place_ctx.block_locs[blk_id].is_fixed = true;
 // 			}
 
-            if (npnr_ctx->isIO(cell))
-                npnr_ctx->bindBel(bel, cell->name, /*STRENGTH_LOCKED*/STRENGTH_STRONG);
+            if (npnr_ctx->isIO(blk_id))
+                npnr_ctx->bindBel(grid[x][y][z], blk_id->name, /*STRENGTH_LOCKED*/STRENGTH_STRONG);
             else
-                npnr_ctx->bindBel(bel, cell->name, STRENGTH_WEAK);
+                npnr_ctx->bindBel(grid[x][y][z], blk_id->name, STRENGTH_WEAK);
             //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel));
 
 //			/* Ensure randomizer doesn't pick this location again, since it's occupied. Could shift all the
@@ -3060,34 +3056,31 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 //			legal_pos[itype][ipos] = legal_pos[itype][free_locations[itype] - 1]; /* overwrite used block position */
 //			free_locations[itype]--;
 
-            free_locations.at(cell->type.index).pop_back();
+            free_locations.at(itype).pop_back();
 
 //		}
 	}
 }
 
-static void initial_placement_location(/*int * free_locations, ClusterBlockId blk_id,
-		int *pipos, int *px, int *py, int *pz*/
-        std::vector<std::vector<BelId>> &free_locations,
-        CellInfo *cell,
-        BelId &bel) {
+static void initial_placement_location(/*int **/ std::vector<std::vector<Loc>> &free_locations, /*ClusterBlockId*/ CellInfo *blk_id,
+		/*int *pipos,*/ int *px, int *py, int *pz) {
 
-//    auto& cluster_ctx = g_vpr_ctx.clustering();
-//
-//	int itype = cluster_ctx.clb_nlist.block_type(blk_id)->index;
-//
-//	*pipos = vtr::irand(free_locations[itype] - 1);
-//	*px_to = legal_pos[itype][*pipos].x;
-//	*py_to = legal_pos[itype][*pipos].y;
-//	*pz_to = legal_pos[itype][*pipos].z;
+    auto& cluster_ctx = g_vpr_ctx.clustering();
+    auto& grid = g_vpr_ctx.device().grid;
 
-    auto it = free_locations.at(cell->type.index).rbegin();
-    auto ie = free_locations.at(cell->type.index).rend();
+	int itype = cluster_ctx.clb_nlist.block_type(blk_id).index;
+
+    auto it = free_locations.at(itype).rbegin();
+    auto ie = free_locations.at(itype).rend();
     for (; it != ie; ++it) {
-        if (!npnr_ctx->isValidBelForCell(cell, *it)) 
+        *px = it->x;
+        *py = it->y;
+        *pz = it->z;
+
+        if (!npnr_ctx->isValidBelForCell(blk_id, grid[*px][*py][*pz])) 
             continue;
-        bel = *it;
-        std::swap(*it, free_locations.at(cell->type.index).back());
+
+        std::swap(*it, free_locations.at(itype).back());
         return;
     }
     throw;
@@ -3107,10 +3100,11 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //						  * That is, this stores the number of entries in legal_pos[itype] that are worth considering
 //						  * as you look for a free location.
 //						  */
-    std::vector<std::vector<BelId>> free_locations;
-//    auto& device_ctx = g_vpr_ctx.device();
+    std::vector<std::vector<Loc>> free_locations;
+    auto& device_ctx = g_vpr_ctx.device();
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
+    auto& grid = device_ctx.grid;
 
     free_locations.resize(legal_pos.size());
 
@@ -3119,8 +3113,7 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
     //   for carry chain placement
     for (auto it = legal_pos.begin(); it != legal_pos.end(); it++) {
         for (auto jt = it->begin(); jt != it->end(); jt++) {
-            auto loc = npnr_ctx->getBelLocation(*jt);
-            if (loc.z == 0)
+            if (jt->z == 0)
                 free_locations[it - legal_pos.begin()].push_back(*jt);
         }
     }
@@ -3129,16 +3122,18 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 
 	// All the macros are placed, update the legal_pos[][] array
     for (auto it = legal_pos.begin(); it != legal_pos.end(); it++) {
-        it->erase(remove_if(it->begin(), it->end(), [](BelId bel) {
-                auto cell_name = npnr_ctx->getBoundBelCell(bel);
+        it->erase(remove_if(it->begin(), it->end(), [&grid](const Loc& loc) {
+                auto cell_name = npnr_ctx->getBoundBelCell(grid[loc.x][loc.y][loc.z]);
                 return cell_name != IdString();
             }), it->end());
     }
     for (auto it = free_locations.begin(); it != free_locations.end(); it++) {
-        it->clear();
         const auto& src = legal_pos[it - free_locations.begin()];
+        if (src.empty()) continue;
+        it->clear();
         it->reserve(src.size());
         it->assign(src.begin(), src.end());
+        npnr_ctx->shuffle(*it);
     }
 
 	initial_placement_blocks(free_locations);
