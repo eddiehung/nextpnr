@@ -181,7 +181,7 @@ void update_budget(Context *ctx, std::function<delay_t(Context*,WireId,WireId)> 
         if (driver_cell->bel == BelId())
             continue;
         ctx->estimatePosition(driver_cell->bel, driver_x, driver_y, driver_gb);
-        WireId drv_wire = ctx->getWireBelPin(driver_cell->bel, ctx->portPinFromId(net->driver.port));
+        WireId drv_wire = ctx->getBelPinWire(driver_cell->bel, ctx->portPinFromId(net->driver.port));
         if (driver_gb)
             continue;
         for (auto& load : net->users) {
@@ -190,7 +190,7 @@ void update_budget(Context *ctx, std::function<delay_t(Context*,WireId,WireId)> 
             CellInfo *load_cell = load.cell;
             if (load_cell->bel == BelId())
                 continue;
-            WireId user_wire = ctx->getWireBelPin(load_cell->bel, ctx->portPinFromId(load.port));
+            WireId user_wire = ctx->getBelPinWire(load_cell->bel, ctx->portPinFromId(load.port));
             delay_t raw_wl = delay_fn(ctx, drv_wire, user_wire);
             delays.emplace(&load_cell->ports.at(load.port), raw_wl);
         }

@@ -1969,8 +1969,8 @@ static float comp_td_point_to_point_delay(/*ClusterNetId*/ NetInfo* net_id, int 
 //		VTR_ASSERT_SAFE(cluster_ctx.clb_nlist.block_type(source_block) != nullptr);
 //		VTR_ASSERT_SAFE(cluster_ctx.clb_nlist.block_type(sink_block) != nullptr);
 
-        auto drv_wire = npnr_ctx->getWireBelPin(net_id->driver.cell->bel, npnr_ctx->portPinFromId(net_id->driver.port));
-        auto user_wire = npnr_ctx->getWireBelPin(net_id->users[ipin-1].cell->bel, npnr_ctx->portPinFromId(net_id->users[ipin-1].port));
+        auto drv_wire = npnr_ctx->getBelPinWire(net_id->driver.cell->bel, npnr_ctx->portPinFromId(net_id->driver.port));
+        auto user_wire = npnr_ctx->getBelPinWire(net_id->users[ipin-1].cell->bel, npnr_ctx->portPinFromId(net_id->users[ipin-1].port));
 
 //		int delta_x = abs(place_ctx.block_locs[sink_block].x - place_ctx.block_locs[source_block].x);
 //		int delta_y = abs(place_ctx.block_locs[sink_block].y - place_ctx.block_locs[source_block].y);

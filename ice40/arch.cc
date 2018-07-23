@@ -19,14 +19,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include "cells.h"
 #include "gfx.h"
 #include "log.h"
 #include "nextpnr.h"
 #include "placer1.h"
 #include "router1.h"
 #include "util.h"
-#include "cells.h"
 #include "placer_vpr.h"
+
 NEXTPNR_NAMESPACE_BEGIN
 
 // -----------------------------------------------------------------------
@@ -280,17 +281,11 @@ BelRange Arch::getBelsByTile(int x, int y) const
     // In iCE40 chipdb bels at the same tile are consecutive and dense z ordinates are used
     BelRange br;
 
-    Loc loc;
-    loc.x = x;
-    loc.y = y;
-    loc.z = 0;
-
-    br.b.cursor = Arch::getBelByLocation(loc).index;
+    br.b.cursor = Arch::getBelByLocation(Loc(x, y, 0)).index;
     br.e.cursor = br.b.cursor;
 
     if (br.e.cursor != -1) {
-        while (br.e.cursor < chip_info->num_bels &&
-               chip_info->bel_data[br.e.cursor].x == x &&
+        while (br.e.cursor < chip_info->num_bels && chip_info->bel_data[br.e.cursor].x == x &&
                chip_info->bel_data[br.e.cursor].y == y)
             br.e.cursor++;
     }
@@ -315,7 +310,21 @@ BelRange Arch::getBelsAtSameTile(BelId bel) const
     return br;
 }
 
-WireId Arch::getWireBelPin(BelId bel, PortPin pin) const
+PortType Arch::getBelPinType(BelId bel, PortPin pin) const
+{
+    NPNR_ASSERT(bel != BelId());
+
+    int num_bel_wires = chip_info->bel_data[bel.index].num_bel_wires;
+    const BelWirePOD *bel_wires = chip_info->bel_data[bel.index].bel_wires.get();
+
+    for (int i = 0; i < num_bel_wires; i++)
+        if (bel_wires[i].port == pin)
+            return PortType(bel_wires[i].type);
+
+    return PORT_INOUT;
+}
+
+WireId Arch::getBelPinWire(BelId bel, PortPin pin) const
 {
     WireId ret;
 
@@ -329,6 +338,21 @@ WireId Arch::getWireBelPin(BelId bel, PortPin pin) const
             ret.index = bel_wires[i].wire_index;
             break;
         }
+
+    return ret;
+}
+
+std::vector<PortPin> Arch::getBelPins(BelId bel) const
+{
+    std::vector<PortPin> ret;
+
+    NPNR_ASSERT(bel != BelId());
+
+    int num_bel_wires = chip_info->bel_data[bel.index].num_bel_wires;
+    const BelWirePOD *bel_wires = chip_info->bel_data[bel.index].bel_wires.get();
+
+    for (int i = 0; i < num_bel_wires; i++)
+        ret.push_back(bel_wires[i].port);
 
     return ret;
 }
@@ -512,7 +536,7 @@ bool Arch::place_vpr()
     for (auto bel : ctx->getBels()) {
         BelType type = ctx->getBelType(bel);
         if (type == TYPE_SB_GB) {
-            IdString glb_net = ctx->getWireName(ctx->getWireBelPin(bel, PIN_GLOBAL_BUFFER_OUTPUT));
+            IdString glb_net = ctx->getWireName(ctx->getBelPinWire(bel, PIN_GLOBAL_BUFFER_OUTPUT));
             int glb_id = std::stoi(std::string("") + glb_net.str(ctx).back());
             if (glb_id % 2 == 0)
                 gb_reset.push_back(bel);
@@ -574,9 +598,9 @@ DecalXY Arch::getWireDecal(WireId wire) const
 DecalXY Arch::getPipDecal(PipId pip) const
 {
     DecalXY decalxy;
-    // decalxy.decal.type = DecalId::TYPE_PIP;
-    // decalxy.decal.index = pip.index;
-    // decalxy.decal.active = pip_to_net.at(pip.index) != IdString();
+    decalxy.decal.type = DecalId::TYPE_PIP;
+    decalxy.decal.index = pip.index;
+    decalxy.decal.active = pip_to_net.at(pip.index) != IdString();
     return decalxy;
 };
 
