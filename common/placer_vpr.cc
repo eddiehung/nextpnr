@@ -149,8 +149,8 @@ namespace vpr {
             }
 
             slack_spread = best_slack - worst_slack;
-        }
 #endif
+        }
     };
     static SetupTimingInfo timing_info;
     struct t_pl_macro_member {
@@ -189,7 +189,7 @@ namespace vpr {
         delay_t slack = load.budget - raw_wl;
         if (timing_info.slack_spread == 0)
             return 1;
-        return (slack - timing_info.worst_slack) / timing_info.slack_spread;
+        return 1 - ((slack - timing_info.worst_slack) / timing_info.slack_spread);
 #else
         return 1;
 #endif
