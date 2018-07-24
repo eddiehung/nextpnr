@@ -617,6 +617,7 @@ bool router1(Context *ctx)
                 if (ctx->verbose)
                     log_info("routing queue contains %d jobs.\n", int(jobQueue.size()));
             } else {
+#if 1
                 static auto actual_delay = [](Context *ctx, WireId src, WireId dst) {
                     delay_t total_delay = 0;
                     WireId last = dst;
@@ -643,7 +644,6 @@ bool router1(Context *ctx)
                         total_delay += ctx->getWireDelay(last).maxDelay();
                     return total_delay;
                 };
-#if 0
                 update_budget(ctx, actual_delay);
 #endif
             }

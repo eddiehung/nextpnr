@@ -113,7 +113,7 @@ namespace vpr {
         delay_t best_slack;
         float slack_spread = 0;
         void update() { 
-#if 0
+#if 1
             update_budget(npnr_ctx); 
 
             worst_slack = std::numeric_limits<decltype(worst_slack)>::max();
@@ -131,7 +131,7 @@ namespace vpr {
                 if (driver_cell->bel == BelId())
                     continue;
                 npnr_ctx->estimatePosition(driver_cell->bel, driver_x, driver_y, driver_gb);
-                WireId drv_wire = npnr_ctx->getBelWirePin(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
+                WireId drv_wire = npnr_ctx->getBelPinWire(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
                 if (driver_gb)
                     continue;
                 for (auto& load : net->users) {
@@ -140,7 +140,7 @@ namespace vpr {
                     CellInfo *load_cell = load.cell;
                     if (load_cell->bel == BelId())
                         continue;
-                    WireId user_wire = npnr_ctx->getBelWirePin(load_cell->bel, npnr_ctx->portPinFromId(load.port));
+                    WireId user_wire = npnr_ctx->getBelPinWire(load_cell->bel, npnr_ctx->portPinFromId(load.port));
                     delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
                     delay_t slack = load.budget - raw_wl;
                     worst_slack = std::min(worst_slack, slack);
@@ -167,7 +167,7 @@ namespace vpr {
     {
         NPNR_ASSERT(npnr_ctx->timing_driven);
 
-#if 0
+#if 1
         int driver_x, driver_y;
         bool driver_gb;
         CellInfo *driver_cell = net->driver.cell;
@@ -176,7 +176,7 @@ namespace vpr {
         if (driver_cell->bel == BelId())
             return 0;
         npnr_ctx->estimatePosition(driver_cell->bel, driver_x, driver_y, driver_gb);
-        WireId drv_wire = npnr_ctx->getBelWirePin(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
+        WireId drv_wire = npnr_ctx->getBelPinWire(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
         if (driver_gb)
             return 0;
         if (load.cell == nullptr)
@@ -184,7 +184,7 @@ namespace vpr {
         CellInfo *load_cell = load.cell;
         if (load_cell->bel == BelId())
             return 0;
-        WireId user_wire = npnr_ctx->getBelWirePin(load_cell->bel, npnr_ctx->portPinFromId(load.port));
+        WireId user_wire = npnr_ctx->getBelPinWire(load_cell->bel, npnr_ctx->portPinFromId(load.port));
         delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
         delay_t slack = load.budget - raw_wl;
         if (timing_info.slack_spread == 0)
