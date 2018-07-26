@@ -1,8 +1,7 @@
 /*
  *  nextpnr -- Next Generation Place and Route
  *
- *  Copyright (C) 2018  Clifford Wolf <clifford@symbioticeda.com>
- *  Copyright (C) 2018  David Shah <dave@ds0.me>
+ *  Copyright (C) 2018  David Shah <david@symbioticeda.com>
  *
  *  Permission to use, copy, modify, and/or distribute this software for any
  *  purpose with or without fee is hereby granted, provided that the above
@@ -18,24 +17,53 @@
  *
  */
 
-#ifndef NO_PYTHON
+#ifndef IO_H
+#define IO_H
 
-#include "arch_pybindings.h"
 #include "nextpnr.h"
-#include "pybindings.h"
 
 NEXTPNR_NAMESPACE_BEGIN
 
-void arch_wrap_python()
+enum class IOVoltage
 {
-    using namespace PythonConversion;
-    auto arch_cls = class_<Arch, Arch *, bases<BaseCtx>, boost::noncopyable>("Arch", init<ArchArgs>());
-    auto ctx_cls = class_<Context, Context *, bases<Arch>, boost::noncopyable>("Context", no_init)
-                           .def("checksum", &Context::checksum)
-                           .def("pack", &Context::pack)
-                           .def("place", &Context::place)
-                           .def("route", &Context::route);
-}
+    VCC_3V3,
+    VCC_2V5,
+    VCC_1V8,
+    VCC_1V5,
+    VCC_1V35,
+    VCC_1V2
+};
+
+std::string iovoltage_to_str(IOVoltage v);
+IOVoltage iovoltage_from_str(const std::string &name);
+
+enum class IOType
+{
+    TYPE_NONE,
+#define X(t) t,
+#include "iotypes.inc"
+#undef X
+    TYPE_UNKNOWN,
+};
+
+enum class IOSide
+{
+    LEFT,
+    RIGHT,
+    TOP,
+    BOTTOM,
+};
+
+std::string iotype_to_str(IOType type);
+IOType ioType_from_str(const std::string &name);
+
+// IO related functions
+IOVoltage get_vccio(IOType type);
+bool is_strong_vccio_constraint(IOType type, PortType dir, IOSide side);
+bool is_differential(IOType type);
+bool is_referenced(IOType type);
+
+bool valid_loc_for_io(IOType type, PortType dir, IOSide side, int z);
 
 NEXTPNR_NAMESPACE_END
 

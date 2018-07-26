@@ -198,6 +198,8 @@ bool LineShader::compile(void)
 void LineShader::draw(const LineShaderData &line, const QColor &color, float thickness, const QMatrix4x4 &projection)
 {
     auto gl = QOpenGLContext::currentContext()->functions();
+    if (line.vertices.size() == 0)
+        return;
     vao_.bind();
     program_->bind();
 
@@ -246,7 +248,7 @@ FPGAViewWidget::FPGAViewWidget(QWidget *parent)
 {
     colors_.background = QColor("#000000");
     colors_.grid = QColor("#333");
-    colors_.frame = QColor("#d0d0d0");
+    colors_.frame = QColor("#808080");
     colors_.hidden = QColor("#606060");
     colors_.inactive = QColor("#303030");
     colors_.active = QColor("#f0f0f0");
@@ -289,6 +291,9 @@ FPGAViewWidget::~FPGAViewWidget() {}
 void FPGAViewWidget::newContext(Context *ctx)
 {
     ctx_ = ctx;
+    onSelectedArchItem(std::vector<DecalXY>());
+    for (int i = 0; i < 8; i++)
+        onHighlightGroupChanged(std::vector<DecalXY>(), i);
     pokeRenderer();
 }
 
@@ -324,7 +329,7 @@ void FPGAViewWidget::drawDecal(LineShaderData &out, const DecalXY &decal)
             line.build(out);
         }
 
-        if (el.type == GraphicElement::G_LINE) {
+        if (el.type == GraphicElement::G_LINE || el.type == GraphicElement::G_ARROW) {
             PolyLine(offsetX + scale * el.x1, offsetY + scale * el.y1, offsetX + scale * el.x2, offsetY + scale * el.y2)
                     .build(out);
         }
@@ -357,7 +362,7 @@ void FPGAViewWidget::drawDecal(LineShaderData out[], const DecalXY &decal)
             }
         }
 
-        if (el.type == GraphicElement::G_LINE) {
+        if (el.type == GraphicElement::G_LINE || el.type == GraphicElement::G_ARROW) {
             auto line = PolyLine(offsetX + scale * el.x1, offsetY + scale * el.y1, offsetX + scale * el.x2,
                                  offsetY + scale * el.y2);
             switch (el.style) {

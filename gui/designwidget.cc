@@ -35,6 +35,7 @@ class ElementTreeItem : public QTreeWidgetItem
     ElementTreeItem(ElementType t, QString str, QTreeWidgetItem *parent)
             : QTreeWidgetItem(parent, QStringList(str)), type(t)
     {
+        this->setFlags(this->flags() & ~Qt::ItemIsSelectable);
     }
     virtual ~ElementTreeItem(){};
 
@@ -49,6 +50,7 @@ class IdStringTreeItem : public ElementTreeItem
   public:
     IdStringTreeItem(IdString d, ElementType t, QString str, QTreeWidgetItem *parent) : ElementTreeItem(t, str, parent)
     {
+        this->setFlags(this->flags() | Qt::ItemIsSelectable);
         this->data = d;
     }
     virtual ~IdStringTreeItem(){};
@@ -68,6 +70,7 @@ DesignWidget::DesignWidget(QWidget *parent) : QWidget(parent), ctx(nullptr), net
     treeWidget->setColumnCount(1);
     treeWidget->setHeaderLabel("Items");
     treeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    treeWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     // Add property view
     variantManager = new QtVariantPropertyManager(this);
@@ -79,6 +82,7 @@ DesignWidget::DesignWidget(QWidget *parent) : QWidget(parent), ctx(nullptr), net
     propertyEditor->setPropertiesWithoutValueMarked(true);
     propertyEditor->show();
     propertyEditor->treeWidget()->setContextMenuPolicy(Qt::CustomContextMenu);
+    propertyEditor->treeWidget()->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     QLineEdit *lineEdit = new QLineEdit();
     lineEdit->setClearButtonEnabled(true);
@@ -229,6 +233,7 @@ void DesignWidget::addToHistory(QTreeWidgetItem *item)
 
 void DesignWidget::newContext(Context *ctx)
 {
+    highlightSelected.clear();
     treeWidget->clear();
     // reset pointers since they are not valid after clear
     nets_root = nullptr;
@@ -247,6 +252,7 @@ void DesignWidget::newContext(Context *ctx)
     QTreeWidgetItem *bel_root = new QTreeWidgetItem(treeWidget);
     QMap<QString, QTreeWidgetItem *> bel_items;
     bel_root->setText(0, "Bels");
+    bel_root->setFlags(bel_root->flags() & ~Qt::ItemIsSelectable);
     treeWidget->insertTopLevelItem(0, bel_root);
     if (ctx) {
         for (auto bel : ctx->getBels()) {
@@ -279,6 +285,7 @@ void DesignWidget::newContext(Context *ctx)
     QTreeWidgetItem *wire_root = new QTreeWidgetItem(treeWidget);
     QMap<QString, QTreeWidgetItem *> wire_items;
     wire_root->setText(0, "Wires");
+    wire_root->setFlags(wire_root->flags() & ~Qt::ItemIsSelectable);
     treeWidget->insertTopLevelItem(0, wire_root);
     if (ctx) {
         for (auto wire : ctx->getWires()) {
@@ -310,7 +317,9 @@ void DesignWidget::newContext(Context *ctx)
     QTreeWidgetItem *pip_root = new QTreeWidgetItem(treeWidget);
     QMap<QString, QTreeWidgetItem *> pip_items;
     pip_root->setText(0, "Pips");
+    pip_root->setFlags(pip_root->flags() & ~Qt::ItemIsSelectable);
     treeWidget->insertTopLevelItem(0, pip_root);
+#ifndef ARCH_ECP5    
     if (ctx) {
         for (auto pip : ctx->getPips()) {
             auto id = ctx->getPipName(pip);
@@ -337,54 +346,88 @@ void DesignWidget::newContext(Context *ctx)
     for (auto pip : nameToItem[2].toStdMap()) {
         pip_root->addChild(pip.second);
     }
+#endif    
+
+    nets_root = new QTreeWidgetItem(treeWidget);
+    nets_root->setText(0, "Nets");
+    nets_root->setFlags(nets_root->flags() & ~Qt::ItemIsSelectable);
+    treeWidget->insertTopLevelItem(0, nets_root);
+
+    cells_root = new QTreeWidgetItem(treeWidget);
+    cells_root->setText(0, "Cells");
+    cells_root->setFlags(cells_root->flags() & ~Qt::ItemIsSelectable);
+    treeWidget->insertTopLevelItem(0, cells_root);
+
     updateTree();
 }
 
 void DesignWidget::updateTree()
 {
-    clearProperties();
-    delete nets_root;
-    delete cells_root;
-    nameToItem[3].clear();
-    nameToItem[4].clear();
+    if (!ctx)
+        return;
 
+    clearProperties();
+
+    // treeWidget->setSortingEnabled(false);
+
+    // Remove nets not existing any more
+    QMap<QString, QTreeWidgetItem *>::iterator i = nameToItem[3].begin();
+    while (i != nameToItem[3].end()) {
+        QMap<QString, QTreeWidgetItem *>::iterator prev = i;
+        ++i;
+        if (ctx->nets.find(ctx->id(prev.key().toStdString())) == ctx->nets.end()) {
+            if (treeWidget->currentItem() == prev.value())
+                treeWidget->setCurrentItem(nets_root);
+            if (highlightSelected.contains(prev.value()))
+                highlightSelected.remove(prev.value());
+            delete prev.value();
+            nameToItem[3].erase(prev);
+        }
+    }
     // Add nets to tree
-    nets_root = new QTreeWidgetItem(treeWidget);
-    nets_root->setText(0, "Nets");
-    treeWidget->insertTopLevelItem(0, nets_root);
-    if (ctx) {
-        for (auto &item : ctx->nets) {
-            auto id = item.first;
-            QString name = QString(id.c_str(ctx));
+    for (auto &item : ctx->nets) {
+        auto id = item.first;
+        QString name = QString(id.c_str(ctx));
+        if (!nameToItem[3].contains(name)) {
             IdStringTreeItem *newItem = new IdStringTreeItem(id, ElementType::NET, name, nullptr);
+            nets_root->addChild(newItem);
             nameToItem[3].insert(name, newItem);
         }
     }
-    for (auto item : nameToItem[3].toStdMap()) {
-        nets_root->addChild(item.second);
-    }
 
+    // Remove cells not existing any more
+    i = nameToItem[4].begin();
+    while (i != nameToItem[4].end()) {
+        QMap<QString, QTreeWidgetItem *>::iterator prev = i;
+        ++i;
+        if (ctx->cells.find(ctx->id(prev.key().toStdString())) == ctx->cells.end()) {
+            if (treeWidget->currentItem() == prev.value())
+                treeWidget->setCurrentItem(cells_root);
+            if (highlightSelected.contains(prev.value()))
+                highlightSelected.remove(prev.value());
+            delete prev.value();
+            nameToItem[4].erase(prev);
+        }
+    }
     // Add cells to tree
-    cells_root = new QTreeWidgetItem(treeWidget);
-    cells_root->setText(0, "Cells");
-    treeWidget->insertTopLevelItem(0, cells_root);
-    if (ctx) {
-        for (auto &item : ctx->cells) {
-            auto id = item.first;
-            QString name = QString(id.c_str(ctx));
+    for (auto &item : ctx->cells) {
+        auto id = item.first;
+        QString name = QString(id.c_str(ctx));
+        if (!nameToItem[4].contains(name)) {
             IdStringTreeItem *newItem = new IdStringTreeItem(id, ElementType::CELL, name, nullptr);
+            cells_root->addChild(newItem);
             nameToItem[4].insert(name, newItem);
         }
     }
-    for (auto item : nameToItem[4].toStdMap()) {
-        cells_root->addChild(item.second);
-    }
+    // treeWidget->sortByColumn(0, Qt::AscendingOrder);
+    // treeWidget->setSortingEnabled(true);
 }
 QtProperty *DesignWidget::addTopLevelProperty(const QString &id)
 {
     QtProperty *topItem = groupManager->addProperty(id);
     propertyToId[topItem] = id;
     idToProperty[id] = topItem;
+    topItem->setSelectable(false);
     propertyEditor->addProperty(topItem);
     return topItem;
 }
@@ -452,12 +495,14 @@ void DesignWidget::addProperty(QtProperty *topItem, int propertyType, const QStr
     QtVariantProperty *item = readOnlyManager->addProperty(propertyType, name);
     item->setValue(value);
     item->setPropertyId(getElementTypeName(type));
+    item->setSelectable(type != ElementType::NONE);
     topItem->addSubProperty(item);
 }
 
 QtProperty *DesignWidget::addSubGroup(QtProperty *topItem, const QString &name)
 {
     QtProperty *item = groupManager->addProperty(name);
+    item->setSelectable(false);
     topItem->addSubProperty(item);
     return item;
 }
@@ -466,6 +511,19 @@ void DesignWidget::onItemSelectionChanged()
 {
     if (treeWidget->selectedItems().size() == 0)
         return;
+
+    if (treeWidget->selectedItems().size() > 1)
+    {
+        std::vector<DecalXY> decals;
+        for (auto clickItem : treeWidget->selectedItems()) {
+            IdString value = static_cast<IdStringTreeItem *>(clickItem)->getData();
+            ElementType type = static_cast<ElementTreeItem *>(clickItem)->getType();
+            std::vector<DecalXY> d = getDecals(type, value);
+            std::move(d.begin(), d.end(), std::back_inserter(decals));
+        }
+        Q_EMIT selected(decals);
+        return;
+    }
 
     QTreeWidgetItem *clickItem = treeWidget->selectedItems().at(0);
 
