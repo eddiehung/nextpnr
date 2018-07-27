@@ -26,3 +26,5 @@ build/
 CTestTestfile.cmake
 install_manifest.txt
 *.gdb_history
+/bbasm
+/ImportExecutables.cmake
