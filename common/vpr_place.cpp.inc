@@ -3170,6 +3170,8 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 //	}
 //#endif
 //	free(free_locations);
+
+    assign_budget(npnr_ctx);
 }
 
 //static void free_fast_cost_update() {

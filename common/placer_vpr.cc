@@ -123,14 +123,13 @@ namespace vpr {
             for (auto &n : npnr_ctx->nets) {
                 auto net = n.second.get();
 
-                int driver_x, driver_y;
                 bool driver_gb;
                 CellInfo *driver_cell = net->driver.cell;
                 if (!driver_cell)
                     continue;
                 if (driver_cell->bel == BelId())
                     continue;
-                npnr_ctx->estimatePosition(driver_cell->bel, driver_x, driver_y, driver_gb);
+                driver_gb = npnr_ctx->getBelGlobalBuf(driver_cell->bel);
                 WireId drv_wire = npnr_ctx->getBelPinWire(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
                 if (driver_gb)
                     continue;
@@ -168,14 +167,13 @@ namespace vpr {
         NPNR_ASSERT(npnr_ctx->timing_driven);
 
 #if 1
-        int driver_x, driver_y;
         bool driver_gb;
         CellInfo *driver_cell = net->driver.cell;
         if (!driver_cell)
             return 0;
         if (driver_cell->bel == BelId())
             return 0;
-        npnr_ctx->estimatePosition(driver_cell->bel, driver_x, driver_y, driver_gb);
+        driver_gb = npnr_ctx->getBelGlobalBuf(driver_cell->bel);
         WireId drv_wire = npnr_ctx->getBelPinWire(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
         if (driver_gb)
             return 0;
@@ -283,7 +281,6 @@ class VPRPlacer
             c.resize(max_y+1);
 
         carries = prepare_and_find_carries(ctx);
-        assign_budget(ctx);
 
         int32_t cell_idx = 0;
         for (auto &cell : ctx->cells) {
@@ -346,6 +343,7 @@ class VPRPlacer
                 }
             }
         }
+        compute_fmax(ctx, true /* print_fmax */);
         return true;
     }
 
