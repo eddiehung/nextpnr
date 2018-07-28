@@ -156,7 +156,9 @@ namespace vpr {
         int y_offset;
         int z_offset;
     };
-    typedef std::vector<t_pl_macro_member> t_pl_macro;
+    struct t_pl_macro {
+        std::vector<t_pl_macro_member> members;
+    };
 
     // timing_util.cpp
     float calculate_clb_net_pin_criticality(const SetupTimingInfo& timing_info, /*const ClusteredPinAtomPinsLookup& pin_lookup,*/ const PortRef& load, const NetInfo* net)
@@ -200,7 +202,7 @@ namespace vpr {
             auto head = chain.front();
             for (int z = 0; z < int(chain.size()); z++) {
                 auto cell = chain.at(z);
-                entry.emplace_back(cell, 0, z / 8, z % 8);
+                entry.members.emplace_back(cell, 0, z / 8, z % 8);
                 cell->attrs.emplace(npnr_ctx->id("carry_head"), head->name.str(npnr_ctx));
             }
             macros.emplace(head, std::move(entry));

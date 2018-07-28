@@ -1314,16 +1314,16 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 		// HACK HACK HACK
 		//   Do not allow overlapping swaps
 		if (x_swap_offset == 0
-		    && (y_swap_offset < int(pl_macros[imacro].size() / 8)
-		        || (y_swap_offset == int(pl_macros[imacro].size() / 8) && z_swap_offset < int(pl_macros[imacro].size() % 8)))) {
+		    && (y_swap_offset < int(pl_macros[imacro].members.size() / 8)
+		        || (y_swap_offset == int(pl_macros[imacro].members.size() / 8) && z_swap_offset < int(pl_macros[imacro].members.size() % 8)))) {
 		    abort_swap = true;
 		}
 
-		for (imember = 0; imember < int(pl_macros[imacro].size()) && abort_swap == false; imember++) {
+		for (imember = 0; imember < int(pl_macros[imacro].members.size()) && abort_swap == false; imember++) {
 
 			// Gets the new from and to info for every block in the macro
 			// cannot use the old from and to info
-			curr_b_from = pl_macros[imacro]/*.members*/[imember].blk_index;
+			curr_b_from = pl_macros[imacro].members[imember].blk_index;
 
             auto loc_from = npnr_ctx->getBelLocation(curr_b_from->bel);
 			curr_x_from = loc_from.x /*place_ctx.block_locs[curr_b_from].x*/;
@@ -1348,7 +1348,7 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 				abort_swap = true;
 			} else {
                 auto bel_to = device_ctx.grid[curr_x_to][curr_y_to][curr_z_to];
-				if (!npnr_ctx->isValidBelForCell(pl_macros[imacro][imember].blk_index, bel_to)) {
+				if (!npnr_ctx->isValidBelForCell(pl_macros[imacro].members[imember].blk_index, bel_to)) {
                     abort_swap = true;
                 }
                 else {
@@ -1358,7 +1358,7 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
                         if (cell_to->belStrength > STRENGTH_WEAK) {
 			                abort_swap = true;
                         }
-                        else if (!npnr_ctx->isValidBelForCell(cell_to, pl_macros[imacro][imember].blk_index->bel)) {
+                        else if (!npnr_ctx->isValidBelForCell(cell_to, pl_macros[imacro].members[imember].blk_index->bel)) {
                             abort_swap = true;
                         }
                     }
@@ -2842,10 +2842,10 @@ static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x,
 	int macro_can_be_placed = true;
 
 	// Check whether all the members can be placed
-	for (imember = 0; imember < int(pl_macros[imacro].size()); imember++) {
-		member_x = x + pl_macros[imacro]/*.members*/[imember].x_offset;
-		member_y = y + pl_macros[imacro]/*.members*/[imember].y_offset;
-		member_z = z + pl_macros[imacro]/*.members*/[imember].z_offset;
+	for (imember = 0; imember < int(pl_macros[imacro].members.size()); imember++) {
+		member_x = x + pl_macros[imacro].members[imember].x_offset;
+		member_y = y + pl_macros[imacro].members[imember].y_offset;
+		member_z = z + pl_macros[imacro].members[imember].z_offset;
 
 		// Check whether the location could accept block of this type
 		// Then check whether the location could still accomodate more blocks
@@ -2855,7 +2855,7 @@ static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x,
                 && member_z < device_ctx.grid[member_x][member_y].size()
                 && npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[member_x][member_y][member_z])).index == itype
                 && npnr_ctx->checkBelAvail(device_ctx.grid[member_x][member_y][member_z])
-				&& npnr_ctx->isValidBelForCell(pl_macros[imacro][imember].blk_index, device_ctx.grid[member_x][member_y][member_z])) {
+				&& npnr_ctx->isValidBelForCell(pl_macros[imacro].members[imember].blk_index, device_ctx.grid[member_x][member_y][member_z])) {
 			// Can still accomodate blocks here, check the next position
 			continue;
 		} else {
@@ -2898,13 +2898,13 @@ static int try_place_macro(int itype, /*int*/ Loc ipos, /*int*/ CellInfo* imacro
 
 		// Place down the macro
 		macro_placed = true;
-		for (imember = 0; imember < int(pl_macros[imacro].size()); imember++) {
+		for (imember = 0; imember < int(pl_macros[imacro].members.size()); imember++) {
 
-			member_x = x + pl_macros[imacro]/*.members*/[imember].x_offset;
-			member_y = y + pl_macros[imacro]/*.members*/[imember].y_offset;
-			member_z = z + pl_macros[imacro]/*.members*/[imember].z_offset;
+			member_x = x + pl_macros[imacro].members[imember].x_offset;
+			member_y = y + pl_macros[imacro].members[imember].y_offset;
+			member_z = z + pl_macros[imacro].members[imember].z_offset;
 
-            auto iblk = pl_macros[imacro]/*.members*/[imember].blk_index;
+            auto iblk = pl_macros[imacro].members[imember].blk_index;
             auto bel = grid[member_x][member_y][member_z];
 
             npnr_ctx->bindBel(bel, iblk->name, STRENGTH_WEAK);
@@ -2945,12 +2945,12 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 
 		// Assume that all the blocks in the macro are of the same type
 		itype = cluster_ctx.clb_nlist.block_type(blk_id).index;
-		if (free_locations[itype].size() < pl_macros[imacro].size()) {
+		if (free_locations[itype].size() < pl_macros[imacro].members.size()) {
 			vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
 					"Initial placement failed.\n"
 					"Could not place macro length %d with head block %s (#%zu); not enough free locations of type %s (#%d).\n"
 					"VPR cannot auto-size for your circuit, please resize the FPGA manually.\n",
-					int(pl_macros[imacro].size()), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id->udata), cluster_ctx.clb_nlist.block_type(blk_id).c_str(npnr_ctx), itype);
+					int(pl_macros[imacro].members.size()), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id->udata), cluster_ctx.clb_nlist.block_type(blk_id).c_str(npnr_ctx), itype);
 		}
 
 		// Try to place the macro first, if can be placed - place them, otherwise try again
@@ -2988,7 +2988,7 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 						"Initial placement failed.\n"
 						"Could not place macro length %d with head block %s (#%zu); not enough free locations of type %s (#%d).\n"
 						"Please manually size the FPGA because VPR can't do this yet.\n",
-						int(pl_macros[imacro].size()), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id->udata), imacro->type.c_str(npnr_ctx), itype);
+						int(pl_macros[imacro].members.size()), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id->udata), imacro->type.c_str(npnr_ctx), itype);
 			}
 
 		} else {
