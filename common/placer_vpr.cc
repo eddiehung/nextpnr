@@ -114,7 +114,7 @@ namespace vpr {
         delay_t max_req;
         delay_t worst_path_slack;
         void update() { 
-            update_budget(npnr_ctx);
+            assign_budget(npnr_ctx, true /* quiet */);
 
             sWNS = std::numeric_limits<decltype(sWNS)>::max();
             sTNS = 0;
