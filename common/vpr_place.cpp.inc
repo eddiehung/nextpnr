@@ -1591,7 +1591,7 @@ static /*ClusterBlockId*/ CellInfo* pick_from_block() {
         //   it is inefficient to sample randomly from that container.
         //   Instead, I've created a (global) randomly-accessible container 
         //   called npnr_cells that contains the same contents
-        auto b_from = npnr_cells.at(npnr_ctx->rng(npnr_cells.size()));
+        auto b_from = npnr_cells.at(vtr::irand(npnr_cells.size() - 1));
 
         //Record it as tried
         tried_from_blocks.insert(b_from);
@@ -1882,17 +1882,19 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 
 	*pz_to = 0;
 	if (int(grid.width() / 4) < rlx || int(grid.height() / 4) < rly || int(legal_pos[itype].size()) < active_area) {
-		int ipos = npnr_ctx->rng(legal_pos[itype].size());
+		int ipos = vtr::irand(legal_pos[itype].size() - 1);
         *px_to = legal_pos[itype][ipos].x;
         *py_to = legal_pos[itype][ipos].y;
         *pz_to = legal_pos[itype][ipos].z;
 	} else {
-		int x_rel = npnr_ctx->rng(std::max(0, max_x - min_x)+1); // +1 because rng() uses %
-		int y_rel = npnr_ctx->rng(std::max(0, max_y - min_y)+1); // +1 because rng() uses %
+		int x_rel = vtr::irand(std::max(0, max_x - min_x));
+		int y_rel = vtr::irand(std::max(0, max_y - min_y));
 		*px_to = min_x + x_rel;
 		*py_to = min_y + y_rel;
+        // Instead of computing z_to in the outer find_to function,
+        //   do it here so we have a fully valid location
         if (!grid[*px_to][*py_to].empty()) {
-            *pz_to = npnr_ctx->rng(grid[*px_to][*py_to].size());
+            *pz_to = vtr::irand(grid[*px_to][*py_to].size() - 1);
         }
         else {
             *px_to = -1;
@@ -1912,7 +1914,7 @@ static e_swap_result assess_swap(float delta_c, float t) {
 	if (delta_c <= 0) {
 
         /* Reduce variation in final solution due to round off */
-        fnum = npnr_ctx->rng() / float(0x3fffffff);
+        fnum = vtr::frand();
 
         accept = ACCEPTED;
         return (accept);
@@ -1921,7 +1923,7 @@ static e_swap_result assess_swap(float delta_c, float t) {
 	if (t == 0.)
 		return (REJECTED);
 
-    fnum = npnr_ctx->rng() / float(0x3fffffff);
+    fnum = vtr::frand();
 	prob_fac = exp(-delta_c / t);
 	if (prob_fac > fnum) {
 		accept = ACCEPTED;

@@ -248,6 +248,7 @@ namespace vpr {
         }
 
         int irand(int imax) { return npnr_ctx->rng(imax+1); }
+        float frand() { return npnr_ctx->rng() / float(0x3fffffff); }
     }
     
     #define OPEN -1
