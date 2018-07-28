@@ -746,7 +746,7 @@ void try_place(t_placer_opts placer_opts,
 
 //	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
 		if (placer_opts.enable_timing_computations) {
-        critical_path = timing_info->least_slack_critical_path();
+        critical_path = timing_info.least_slack_critical_path();
 //        sTNS = timing_info->setup_total_negative_slack();
 //        sWNS = timing_info->setup_worst_negative_slack();
     }
