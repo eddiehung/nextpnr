@@ -52,18 +52,21 @@ namespace vpr {
     static Context* npnr_ctx = NULL;
     std::vector<CellInfo *> npnr_cells;
 
+    // base/device_grid.h
     struct DeviceGrid {
         inline size_t width() const { return _bels.size(); }
         inline size_t height() const { return _bels.front().size(); }
         inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
         std::vector<std::vector<std::vector<BelId>>> _bels;
     };
+    // base/netlist_fwd.h
     enum PinType
     {
         DRIVER = PortType::PORT_OUT,
         SINK = PortType::PORT_IN,
     };
-    static struct {
+    // base/globals.h
+    static struct VprContext {
         struct t_clustering {
             struct {
                 std::unordered_map<IdString, std::unique_ptr<nextpnr_ice40::NetInfo>>& nets() const { return npnr_ctx->nets; }
@@ -97,9 +100,11 @@ namespace vpr {
             t_device& operator()() { return *this; }
         } device;
     } g_vpr_ctx;
+    // base/vpr_types.h
     static struct t_annealing_sched {
         const float inner_num = 10;
     } annealing_sched;
+    // base/vpr_types.h
     static struct t_placer_opts {
         bool enable_timing_computations;
         const int inner_loop_recompute_divider = 0;
@@ -108,7 +113,7 @@ namespace vpr {
         const float td_place_exp_last = 8.0;
         const float timing_tradeoff = 0.5;
     } placer_opts;
-
+    // libtatum
     namespace tatum {
         struct TimingPathInfo {
             TimingPathInfo(float delay=0) : _delay(delay) {}
@@ -116,12 +121,11 @@ namespace vpr {
             float _delay;
         };
     };
-
+    // timing/timing_info.h
     struct SetupTimingInfo {
         delay_t worst_slack;
         delay_t max_req;
         void update() { 
-#if 1
             update_budget(npnr_ctx);
 
             worst_slack = std::numeric_limits<decltype(worst_slack)>::max();
@@ -154,7 +158,6 @@ namespace vpr {
             }
 
             max_req = delay_t(1.0e12 / npnr_ctx->target_freq);
-#endif
         }
         tatum::TimingPathInfo least_slack_critical_path()
         {
@@ -164,6 +167,7 @@ namespace vpr {
         }
     };
     static SetupTimingInfo timing_info;
+    // place/place_macro.h
     struct t_pl_macro_member {
         t_pl_macro_member(CellInfo* blk_index, int x_offset, int y_offset, int z_offset) : blk_index(blk_index), x_offset(x_offset), y_offset(y_offset), z_offset(z_offset) {}
         CellInfo* blk_index;
@@ -171,16 +175,16 @@ namespace vpr {
         int y_offset;
         int z_offset;
     };
+    // place/place_macro.h
     struct t_pl_macro {
         std::vector<t_pl_macro_member> members;
     };
 
-    // timing_util.cpp
+    // timing/timing_util.h
     float calculate_clb_net_pin_criticality(const SetupTimingInfo& timing_info, /*const ClusteredPinAtomPinsLookup& pin_lookup,*/ const PortRef& load, const NetInfo* net)
     {
         NPNR_ASSERT(npnr_ctx->timing_driven);
 
-#if 1
         bool driver_gb;
         CellInfo *driver_cell = net->driver.cell;
         if (!driver_cell)
@@ -204,12 +208,9 @@ namespace vpr {
         crit = std::max<float>(0., crit);
         crit = std::min<float>(1., crit);
         return crit;
-#else
-        return 1;
-#endif
     }
 
-    // place_macro.cpp
+    // place/place_macro.cpp
     int alloc_and_load_placement_macros(/*t_direct_inf* directs, int num_directs, t_pl_macro ** */ std::unordered_map<CellInfo*, t_pl_macro> &macros)
     {
         for (auto &chain : carries) {
@@ -225,6 +226,7 @@ namespace vpr {
         return macros.size();
     }
 
+    // place/place_macro.cpp
     void get_imacro_from_iblk(/*int **/ CellInfo **imacro, /*ClusterBlockId*/ CellInfo *iblk /*, t_pl_macro *macros, int num_macros*/) {
         auto it = iblk->attrs.find(npnr_ctx->id("carry_head"));
         if (it != iblk->attrs.end())
@@ -266,11 +268,12 @@ namespace vpr {
         float frand() { return npnr_ctx->rng() / float(0x3fffffff); }
     }
     
+    // libarchfpga
     #define OPEN -1
 
-    #include "vpr_types.h"
-    #include "vpr_timing_place.cpp.inc"
-    #include "vpr_place.cpp.inc"
+    #include "vpr/base/vpr_types.h"
+    #include "vpr/place/timing_place.cpp"
+    #include "vpr/place/place.cpp"
 }
 
 NEXTPNR_NAMESPACE_BEGIN
