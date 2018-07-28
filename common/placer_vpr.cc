@@ -110,14 +110,12 @@ namespace vpr {
     } placer_opts;
     struct SetupTimingInfo {
         delay_t worst_slack;
-        delay_t best_slack;
-        float slack_spread = 0;
+        delay_t max_req;
         void update() { 
 #if 1
-            update_budget(npnr_ctx); 
+            update_budget(npnr_ctx);
 
             worst_slack = std::numeric_limits<decltype(worst_slack)>::max();
-            best_slack = std::numeric_limits<decltype(worst_slack)>::min();
 
             // Compute the delay for every pin on every net
             for (auto &n : npnr_ctx->nets) {
@@ -143,11 +141,10 @@ namespace vpr {
                     delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
                     delay_t slack = load.budget - raw_wl;
                     worst_slack = std::min(worst_slack, slack);
-                    best_slack = std::max(best_slack, slack);
                 }
             }
 
-            slack_spread = best_slack - worst_slack;
+            max_req = delay_t(1.0e12 / npnr_ctx->target_freq);
 #endif
         }
     };
@@ -185,9 +182,11 @@ namespace vpr {
         WireId user_wire = npnr_ctx->getBelPinWire(load_cell->bel, npnr_ctx->portPinFromId(load.port));
         delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
         delay_t slack = load.budget - raw_wl;
-        if (timing_info.slack_spread == 0)
-            return 1;
-        return 1 - ((slack - timing_info.worst_slack) / timing_info.slack_spread);
+        delay_t shift = timing_info.worst_slack < 0 ? -timing_info.worst_slack : 0;
+        float crit = 1 - (float(slack + shift) / (timing_info.max_req + shift));
+        crit = std::max<float>(0., crit);
+        crit = std::min<float>(1., crit);
+        return crit;
 #else
         return 1;
 #endif

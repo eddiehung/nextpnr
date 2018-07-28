@@ -421,7 +421,7 @@ void try_place(t_placer_opts placer_opts,
 //        placement_delay_calc = std::make_shared<PlacementDelayCalculator>(atom_ctx.nlist, atom_ctx.lookup, point_to_point_delay_cost);
 //        timing_info = make_setup_timing_info(placement_delay_calc);
 //
-//        timing_info->update();
+        timing_info.update();
 //        timing_info->set_warn_unconstrained(false); //Don't warn again about unconstrained nodes again during placement
 
         //Initial slack estimates
