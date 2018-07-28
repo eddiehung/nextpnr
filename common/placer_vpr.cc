@@ -100,19 +100,6 @@ namespace vpr {
             t_device& operator()() { return *this; }
         } device;
     } g_vpr_ctx;
-    // base/vpr_types.h
-    static struct t_annealing_sched {
-        const float inner_num = 10;
-    } annealing_sched;
-    // base/vpr_types.h
-    static struct t_placer_opts {
-        bool enable_timing_computations;
-        const int inner_loop_recompute_divider = 0;
-        const int recompute_crit_iter = 1;
-        const float td_place_exp_first = 1.0;
-        const float td_place_exp_last = 8.0;
-        const float timing_tradeoff = 0.5;
-    } placer_opts;
     // libtatum
     namespace tatum {
         struct TimingPathInfo {
@@ -271,7 +258,6 @@ namespace vpr {
     // libarchfpga
     #define OPEN -1
 
-    #include "vpr/base/vpr_types.h"
     #include "vpr/place/timing_place.cpp"
     #include "vpr/place/place.cpp"
 }
@@ -335,15 +321,26 @@ class VPRPlacer
             NetInfo *ni = net.second.get();
             ni->udata = net_idx++;
         }
-
-        vpr::placer_opts.enable_timing_computations = ctx->timing_driven;
     }
 
     bool place()
     {
         log_break();
 
-        vpr::try_place(vpr::placer_opts, vpr::annealing_sched);
+        vpr::t_placer_opts placer_opts;
+        placer_opts.place_algorithm = vpr::PATH_TIMING_DRIVEN_PLACE;
+        placer_opts.enable_timing_computations = ctx->timing_driven;
+        placer_opts.inner_loop_recompute_divider = 0;
+        placer_opts.recompute_crit_iter = 1;
+        placer_opts.td_place_exp_first = 1.0;
+        placer_opts.td_place_exp_last = 8.0;
+        placer_opts.timing_tradeoff = 0.5;
+
+        vpr::t_annealing_sched annealing_sched;
+        annealing_sched.type = vpr::AUTO_SCHED;
+        annealing_sched.inner_num = 10;
+
+        vpr::try_place(placer_opts, annealing_sched);
 
         // Final post-pacement validitiy check
         for (auto bel : ctx->getBels()) {

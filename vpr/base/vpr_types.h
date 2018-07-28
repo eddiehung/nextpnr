@@ -551,17 +551,17 @@
 //    std::string SDCFile;
 //    std::string slack_definition;
 //};
-//
-///***************************************************************************
-// * Placement and routing data types
-// ****************************************************************************/
-//
-///* Timing data structures end */
-//enum sched_type {
-//	AUTO_SCHED, USER_SCHED
-//};
-///* Annealing schedule */
-//
+
+/***************************************************************************
+ * Placement and routing data types
+ ****************************************************************************/
+
+/* Timing data structures end */
+enum sched_type {
+	AUTO_SCHED, USER_SCHED
+};
+/* Annealing schedule */
+
 //enum pic_type {
 //	NO_PICTURE, PLACEMENT, ROUTING
 //};
@@ -743,65 +743,65 @@ struct t_bb {
 //    std::string device_layout;
 //	std::string hmetis_input_file;
 //};
-//
-///* Annealing schedule information for the placer.  The schedule type      *
-// * is either USER_SCHED or AUTO_SCHED.  Inner_num is multiplied by        *
-// * num_blocks^4/3 to find the number of moves per temperature.  The       *
-// * remaining information is used only for USER_SCHED, and have the        *
-// * obvious meanings.                                                      */
-//struct t_annealing_sched {
-//	enum sched_type type;
-//	float inner_num;
-//	float init_t;
-//	float alpha_t;
-//	float exit_t;
-//};
-//
-///* Various options for the placer.                                           *
-// * place_algorithm:  BOUNDING_BOX_PLACE or PATH_TIMING_DRIVEN_PLACE          *
-// * timing_tradeoff:  When TIMING_DRIVEN_PLACE mode, what is the tradeoff     *
-// *                   timing driven and BOUNDING_BOX_PLACE.                   *
-// * place_cost_exp:  Power to which denominator is raised for linear_cong.    *
-// * place_chan_width:  The channel width assumed if only one placement is     *
-// *                    performed.                                             *
-// * pad_loc_type:  Are pins FREE, fixed randomly, or fixed from a file.       *
-// * pad_loc_file:  File to read pin locations form if pad_loc_type            *
-// *                     is USER.                                              *
-// * place_freq:  Should the placement be skipped, done once, or done for each *
-// *              channel width in the binary search.                          *
-// * recompute_crit_iter: how many temperature stages pass before we recompute *
-// *               criticalities based on average point to point delay         *
-// * enable_timing_computations: in bounding_box mode, normally, timing        *
-// *               information is not produced, this causes the information    *
-// *               to be computed. in *_TIMING_DRIVEN modes, this has no effect*
-// * inner_loop_crit_divider: (move_lim/inner_loop_crit_divider) determines how*
-// *               many inner_loop iterations pass before a recompute of       *
-// *               criticalities is done.                                      *
-// * td_place_exp_first: exponent that is used on the timing_driven criticlity *
-// *               it is the value that the exponent starts at.                *
-// * td_place_exp_last: value that the criticality exponent will be at the end *
-// * doPlacement: true if placement is supposed to be done in the CAD flow, false otherwise */
-//enum e_place_algorithm {
-//	BOUNDING_BOX_PLACE, PATH_TIMING_DRIVEN_PLACE
-//};
-//
-//struct t_placer_opts {
-//	enum e_place_algorithm place_algorithm;
-//	float timing_tradeoff;
-//	float place_cost_exp;
-//	int place_chan_width;
+
+/* Annealing schedule information for the placer.  The schedule type      *
+ * is either USER_SCHED or AUTO_SCHED.  Inner_num is multiplied by        *
+ * num_blocks^4/3 to find the number of moves per temperature.  The       *
+ * remaining information is used only for USER_SCHED, and have the        *
+ * obvious meanings.                                                      */
+struct t_annealing_sched {
+	enum sched_type type;
+	float inner_num;
+	float init_t;
+	float alpha_t;
+	float exit_t;
+};
+
+/* Various options for the placer.                                           *
+ * place_algorithm:  BOUNDING_BOX_PLACE or PATH_TIMING_DRIVEN_PLACE          *
+ * timing_tradeoff:  When TIMING_DRIVEN_PLACE mode, what is the tradeoff     *
+ *                   timing driven and BOUNDING_BOX_PLACE.                   *
+ * place_cost_exp:  Power to which denominator is raised for linear_cong.    *
+ * place_chan_width:  The channel width assumed if only one placement is     *
+ *                    performed.                                             *
+ * pad_loc_type:  Are pins FREE, fixed randomly, or fixed from a file.       *
+ * pad_loc_file:  File to read pin locations form if pad_loc_type            *
+ *                     is USER.                                              *
+ * place_freq:  Should the placement be skipped, done once, or done for each *
+ *              channel width in the binary search.                          *
+ * recompute_crit_iter: how many temperature stages pass before we recompute *
+ *               criticalities based on average point to point delay         *
+ * enable_timing_computations: in bounding_box mode, normally, timing        *
+ *               information is not produced, this causes the information    *
+ *               to be computed. in *_TIMING_DRIVEN modes, this has no effect*
+ * inner_loop_crit_divider: (move_lim/inner_loop_crit_divider) determines how*
+ *               many inner_loop iterations pass before a recompute of       *
+ *               criticalities is done.                                      *
+ * td_place_exp_first: exponent that is used on the timing_driven criticlity *
+ *               it is the value that the exponent starts at.                *
+ * td_place_exp_last: value that the criticality exponent will be at the end *
+ * doPlacement: true if placement is supposed to be done in the CAD flow, false otherwise */
+enum e_place_algorithm {
+	BOUNDING_BOX_PLACE, PATH_TIMING_DRIVEN_PLACE
+};
+
+struct t_placer_opts {
+	enum e_place_algorithm place_algorithm;
+	float timing_tradeoff;
+	float place_cost_exp;
+	int place_chan_width;
 //	enum e_pad_loc_type pad_loc_type;
-//    std::string pad_loc_file;
+    std::string pad_loc_file;
 //	enum pfreq place_freq;
-//	int recompute_crit_iter;
-//	bool enable_timing_computations;
-//	int inner_loop_recompute_divider;
-//	float td_place_exp_first;
-//	int seed;
-//	float td_place_exp_last;
+	int recompute_crit_iter;
+	bool enable_timing_computations;
+	int inner_loop_recompute_divider;
+	float td_place_exp_first;
+	int seed;
+	float td_place_exp_last;
 //	e_stage_action doPlacement;
-//};
-//
+};
+
 ///* All the parameters controlling the router's operation are in this        *
 // * structure.                                                               *
 // * first_iter_pres_fac:  Present sharing penalty factor used for the        *
