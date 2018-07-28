@@ -1310,6 +1310,7 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 		x_swap_offset = x_to - x_from;
 		y_swap_offset = y_to - y_from;
 		z_swap_offset = z_to - z_from;
+        NPNR_ASSERT(z_swap_offset == 0);
 
         // Split existing for loop into two passes
         //   -- first checks validity of entire swap
@@ -1862,11 +1863,17 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
             continue;
         }
         // HACK HACK HACK
-        //   Macro heads must start at z = 0
-        else if (*pz_to > 0) {
+        //   Since nextpnr operates with logic cells (not clusters)
+        //   ensure that carry chains are swapped to identical z
+        //   values, as find_affected_blocks() will take care of
+        //   the rest
+        else {
             CellInfo *imacro;
             get_imacro_from_iblk(&imacro, cell_from /*, pl_macros, num_pl_macros*/);
-            if (imacro) *pz_to = 0;
+            if (imacro) {
+                auto loc_from = npnr_ctx->getBelLocation(cell_from->bel);
+                *pz_to = loc_from.z;
+            }
         }
 
         bel_to = grid[*px_to][*py_to][*pz_to];
