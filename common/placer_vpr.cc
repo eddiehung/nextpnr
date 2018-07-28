@@ -110,12 +110,16 @@ namespace vpr {
     };
     // timing/timing_info.h
     struct SetupTimingInfo {
-        delay_t worst_slack;
+        delay_t sWNS, sTNS;
         delay_t max_req;
+        delay_t worst_path_slack;
         void update() { 
             update_budget(npnr_ctx);
 
-            worst_slack = std::numeric_limits<decltype(worst_slack)>::max();
+            sWNS = std::numeric_limits<decltype(sWNS)>::max();
+            sTNS = 0;
+            max_req = delay_t(1.0e12 / npnr_ctx->target_freq);
+            worst_path_slack = timing_analysis(npnr_ctx);
 
             // Compute the delay for every pin on every net
             for (auto &n : npnr_ctx->nets) {
@@ -140,20 +144,22 @@ namespace vpr {
                     WireId user_wire = npnr_ctx->getBelPinWire(load_cell->bel, npnr_ctx->portPinFromId(load.port));
                     delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
                     delay_t slack = load.budget - raw_wl;
-                    worst_slack = std::min(worst_slack, slack);
+                    sWNS = std::min(sWNS, slack);
+                    if (slack < 0)
+                        sTNS += slack;
                 }
             }
-
-            max_req = delay_t(1.0e12 / npnr_ctx->target_freq);
         }
         tatum::TimingPathInfo least_slack_critical_path()
         {
-            delay_t default_slack = delay_t(1.0e12 / npnr_ctx->target_freq);
-            delay_t min_slack = compute_fmax(npnr_ctx);
-            return tatum::TimingPathInfo(npnr_ctx->getDelayNS(default_slack - min_slack));
+            return tatum::TimingPathInfo(npnr_ctx->getDelayNS(max_req - worst_path_slack));
         }
+        float setup_total_negative_slack() { return npnr_ctx->getDelayNS(sTNS); }
+        float setup_worst_negative_slack() { return npnr_ctx->getDelayNS(sWNS); }
     };
-    static SetupTimingInfo timing_info;
+    std::unique_ptr<SetupTimingInfo> make_setup_timing_info(/*std::shared_ptr<DelayCalc> delay_calculator*/) {
+        return std::unique_ptr<SetupTimingInfo>(new SetupTimingInfo);
+    }
     // place/place_macro.h
     struct t_pl_macro_member {
         t_pl_macro_member(CellInfo* blk_index, int x_offset, int y_offset, int z_offset) : blk_index(blk_index), x_offset(x_offset), y_offset(y_offset), z_offset(z_offset) {}
@@ -190,7 +196,7 @@ namespace vpr {
         WireId user_wire = npnr_ctx->getBelPinWire(load_cell->bel, npnr_ctx->portPinFromId(load.port));
         delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
         delay_t slack = load.budget - raw_wl;
-        delay_t shift = timing_info.worst_slack < 0 ? -timing_info.worst_slack : 0;
+        delay_t shift = std::min(timing_info.sWNS, 0);
         float crit = 1 - (float(slack + shift) / (timing_info.max_req + shift));
         crit = std::max<float>(0., crit);
         crit = std::min<float>(1., crit);
@@ -360,7 +366,7 @@ class VPRPlacer
                 }
             }
         }
-        compute_fmax(ctx, true /* print_fmax */);
+        timing_analysis(ctx, true /* print_fmax */);
         return true;
     }
 

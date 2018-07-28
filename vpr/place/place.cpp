@@ -347,8 +347,8 @@ void try_place(t_placer_opts placer_opts,
 		oldt, crit_exponent,
 		first_rlim, final_rlim , inverse_delta_rlim;
     tatum::TimingPathInfo critical_path;
-//    float sTNS = NAN;
-//    float sWNS = NAN;
+    float sTNS = NAN;
+    float sWNS = NAN;
 
 	double std_dev;
 	char msg[vtr::bufsize];
@@ -360,7 +360,7 @@ void try_place(t_placer_opts placer_opts,
     auto& device_ctx = g_vpr_ctx.device();
     auto& cluster_ctx = g_vpr_ctx.clustering();
 
-//    std::shared_ptr<SetupTimingInfo> timing_info;
+    std::shared_ptr<SetupTimingInfo> timing_info;
 //    std::shared_ptr<PlacementDelayCalculator> placement_delay_calc;
 //
 //	/* Allocated here because it goes into timing critical code where each memory allocation is expensive */
@@ -419,15 +419,15 @@ void try_place(t_placer_opts placer_opts,
 //         */
 //        auto& atom_ctx = g_vpr_ctx.atom();
 //        placement_delay_calc = std::make_shared<PlacementDelayCalculator>(atom_ctx.nlist, atom_ctx.lookup, point_to_point_delay_cost);
-//        timing_info = make_setup_timing_info(placement_delay_calc);
+        timing_info = make_setup_timing_info(/*placement_delay_calc*/);
 //
-        timing_info.update();
+        timing_info->update();
 //        timing_info->set_warn_unconstrained(false); //Don't warn again about unconstrained nodes again during placement
 
         //Initial slack estimates
-        load_criticalities(timing_info, crit_exponent /*, netlist_pin_lookup*/);
+        load_criticalities(*timing_info, crit_exponent /*, netlist_pin_lookup*/);
 
-        critical_path = timing_info.least_slack_critical_path();
+        critical_path = timing_info->least_slack_critical_path();
 //
 //        //Write out the initial timing echo file
 //        if(isEchoFileEnabled(E_ECHO_INITIAL_PLACEMENT_TIMING_GRAPH)) {
@@ -487,18 +487,18 @@ void try_place(t_placer_opts placer_opts,
     //Initial pacement statistics
     vtr::printf_info("Initial placement cost: %g bb_cost: %g td_cost: %g delay_cost: %g\n",
             cost, bb_cost, timing_cost, delay_cost);
-//	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//        vtr::printf_info("Initial placement estimated Critical Path Delay (CPD): %g ns\n",
-//                1e9*critical_path.delay());
-//        vtr::printf_info("Initial placement estimated setup Total Negative Slack (sTNS): %g ns\n",
-//                1e9*timing_info->setup_total_negative_slack());
-//        vtr::printf_info("Initial placement estimated setup Worst Negative Slack (sWNS): %g ns\n",
-//                1e9*timing_info->setup_worst_negative_slack());
-//        vtr::printf_info("\n");
-//
+	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
+        vtr::printf_info("Initial placement estimated Critical Path Delay (CPD): %g ns\n",
+                /*1e9**/critical_path.delay());
+        vtr::printf_info("Initial placement estimated setup Total Negative Slack (sTNS): %g ns\n",
+                /*1e9**/timing_info->setup_total_negative_slack());
+        vtr::printf_info("Initial placement estimated setup Worst Negative Slack (sWNS): %g ns\n",
+                /*1e9**/timing_info->setup_worst_negative_slack());
+        vtr::printf_info("\n");
+
 //        vtr::printf_info("Initial placement estimated setup slack histogram:\n");
 //        print_histogram(create_setup_slack_histogram(*timing_info->setup_analyzer()));
-//    }
+    }
     vtr::printf_info("\n");
 
     //Table header
@@ -585,7 +585,7 @@ void try_place(t_placer_opts placer_opts,
             slacks,
             timing_inf,
 #endif
-            /***/timing_info);
+            *timing_info);
 
 		placement_inner_loop(t, rlim, placer_opts, inverse_prev_bb_cost, inverse_prev_timing_cost,
 			move_lim, crit_exponent, inner_recompute_limit, &stats,
@@ -595,7 +595,7 @@ void try_place(t_placer_opts placer_opts,
             timing_inf,
 #endif
             /*netlist_pin_lookup,*/
-            /***/timing_info);
+            *timing_info);
 
 		/* Lines below prevent too much round-off error from accumulating *
 		 * in the cost over many iterations.  This round-off can lead to  *
@@ -652,9 +652,9 @@ void try_place(t_placer_opts placer_opts,
 		update_t(&t, rlim, success_rat, annealing_sched);
 
         if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-            critical_path = timing_info.least_slack_critical_path();
-//            sTNS = timing_info->setup_total_negative_slack();
-//            sWNS = timing_info->setup_worst_negative_slack();
+            critical_path = timing_info->least_slack_critical_path();
+            sTNS = timing_info->setup_total_negative_slack();
+            sWNS = timing_info->setup_worst_negative_slack();
         }
 
         vtr::printf_info("%7.3f "
@@ -664,7 +664,7 @@ void try_place(t_placer_opts placer_opts,
                          "%9d %6.3f\n",
                          oldt,
                          stats.av_cost, stats.av_bb_cost, stats.av_timing_cost, stats.av_delay_cost,
-                         place_delay_value, /*1e9**/critical_path.delay(), /*1e9*sTNS*/ 0., /*1e9*sWNS*/ 0.,
+                         place_delay_value, /*1e9**/critical_path.delay(), /*1e9**/sTNS, /*1e9**/sWNS,
                          success_rat, std_dev, rlim, crit_exponent,
                          tot_iter, t / oldt);
 
@@ -707,7 +707,7 @@ void try_place(t_placer_opts placer_opts,
             slacks,
             timing_inf,
 #endif
-            /***/timing_info);
+            *timing_info);
 
 	t = 0; /* freeze out */
 
@@ -721,7 +721,7 @@ void try_place(t_placer_opts placer_opts,
             timing_inf,
 #endif
             /*netlist_pin_lookup,*/
-            /***/timing_info);
+            *timing_info);
 
 	tot_iter += move_lim;
 	success_rat = ((float) stats.success_sum) / move_lim;
@@ -740,9 +740,9 @@ void try_place(t_placer_opts placer_opts,
 	std_dev = get_std_dev(stats.success_sum, stats.sum_of_squares, stats.av_cost);
 
 	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-        critical_path = timing_info.least_slack_critical_path();
-//        sTNS = timing_info->setup_total_negative_slack();
-//        sWNS = timing_info->setup_worst_negative_slack();
+        critical_path = timing_info->least_slack_critical_path();
+        sTNS = timing_info->setup_total_negative_slack();
+        sWNS = timing_info->setup_worst_negative_slack();
     }
 
     vtr::printf_info("%7.3f "
@@ -752,7 +752,7 @@ void try_place(t_placer_opts placer_opts,
                      "%9d %6.3f\n",
                       t,
                       stats.av_cost, stats.av_bb_cost, stats.av_timing_cost, stats.av_delay_cost,
-                      place_delay_value, /*1e9**/critical_path.delay(), /*1e9*sTNS*/0., /*1e9*sWNS*/0.,
+                      place_delay_value, /*1e9**/critical_path.delay(), /*1e9**/sTNS, /*1e9**/sWNS,
                       success_rat, std_dev, rlim, crit_exponent,
                       tot_iter, 0.);
 
@@ -782,57 +782,57 @@ void try_place(t_placer_opts placer_opts,
 //		}
 //		comp_td_costs(&timing_cost, &delay_cost); /*computes point_to_point_delay_cost */
 //	}
-//
-//	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
-//			|| placer_opts.enable_timing_computations) {
-//
-//        //Final timing estimate
+
+	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
+			|| placer_opts.enable_timing_computations) {
+
+        //Final timing estimate
 //        VTR_ASSERT(timing_info);
-//        timing_info->update(); //Tatum
-//		critical_path = timing_info->least_slack_critical_path();
-//
+        timing_info->update(); //Tatum
+		critical_path = timing_info->least_slack_critical_path();
+
 //        if(isEchoFileEnabled(E_ECHO_FINAL_PLACEMENT_TIMING_GRAPH)) {
 //            auto& timing_ctx = g_vpr_ctx.timing();
 //
 //            tatum::write_echo(getEchoFileName(E_ECHO_FINAL_PLACEMENT_TIMING_GRAPH),
 //                    *timing_ctx.graph, *timing_ctx.constraints, *placement_delay_calc, timing_info->analyzer());
 //        }
-//
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//        //Old VPR analyzer
-//        load_timing_graph_net_delays(point_to_point_delay_cost);
-//		do_timing_analysis(slacks, timing_inf, false, true);
-//#endif
-//
-//
-//		/* Print critical path delay. */
-//		vtr::printf_info("\n");
-//		vtr::printf_info("Placement estimated critical path delay: %g ns",
-//                1e9*critical_path.delay(), get_critical_path_delay());
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//		vtr::printf_info(" (classic VPR STA %g ns)", get_critical_path_delay());
-//#endif
-//        vtr::printf("\n");
-//        vtr::printf_info("Placement estimated setup Total Negative Slack (sTNS): %g ns\n",
-//                1e9*timing_info->setup_total_negative_slack());
-//        vtr::printf_info("Placement estimated setup Worst Negative Slack (sWNS): %g ns\n",
-//                1e9*timing_info->setup_worst_negative_slack());
-//        vtr::printf_info("\n");
-//
+
+#ifdef ENABLE_CLASSIC_VPR_STA
+        //Old VPR analyzer
+        load_timing_graph_net_delays(point_to_point_delay_cost);
+		do_timing_analysis(slacks, timing_inf, false, true);
+#endif
+
+
+		/* Print critical path delay. */
+		vtr::printf_info("\n");
+		vtr::printf_info("Placement estimated critical path delay: %g ns",
+                1e9*critical_path.delay() /*, get_critical_path_delay()*/);
+#ifdef ENABLE_CLASSIC_VPR_STA
+		vtr::printf_info(" (classic VPR STA %g ns)", get_critical_path_delay());
+#endif
+        vtr::printf("\n");
+        vtr::printf_info("Placement estimated setup Total Negative Slack (sTNS): %g ns\n",
+                1e9*timing_info->setup_total_negative_slack());
+        vtr::printf_info("Placement estimated setup Worst Negative Slack (sWNS): %g ns\n",
+                1e9*timing_info->setup_worst_negative_slack());
+        vtr::printf_info("\n");
+
 //        vtr::printf_info("Placement estimated setup slack histogram:\n");
 //        print_histogram(create_setup_slack_histogram(*timing_info->setup_analyzer()));
 //        vtr::printf_info("\n");
-//
-//#ifdef ENABLE_CLASSIC_VPR_STA
-//        float cpd_diff_ns = std::abs(get_critical_path_delay() - 1e9*critical_path.delay());
-//        if(cpd_diff_ns > ERROR_TOL) {
-//            print_classic_cpds();
-//            print_tatum_cpds(timing_info->critical_paths());
-//
-//            vpr_throw(VPR_ERROR_TIMING, __FILE__, __LINE__, "Classic VPR and Tatum critical paths do not match (%g and %g respectively)", get_critical_path_delay(), 1e9*critical_path.delay());
-//        }
-//#endif
-//	}
+
+#ifdef ENABLE_CLASSIC_VPR_STA
+        float cpd_diff_ns = std::abs(get_critical_path_delay() - 1e9*critical_path.delay());
+        if(cpd_diff_ns > ERROR_TOL) {
+            print_classic_cpds();
+            print_tatum_cpds(timing_info->critical_paths());
+
+            vpr_throw(VPR_ERROR_TIMING, __FILE__, __LINE__, "Classic VPR and Tatum critical paths do not match (%g and %g respectively)", get_critical_path_delay(), 1e9*critical_path.delay());
+        }
+#endif
+	}
 
 	sprintf(msg, "Placement. Cost: %g  bb_cost: %g td_cost: %g Channel Factor: %d",
 			cost, bb_cost, timing_cost, /*width_fac*/ -1);
