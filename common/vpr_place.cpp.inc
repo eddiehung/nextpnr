@@ -1311,15 +1311,10 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 		y_swap_offset = y_to - y_from;
 		z_swap_offset = z_to - z_from;
 
-		// HACK HACK HACK
-		//   Do not allow overlapping swaps
-		if (x_swap_offset == 0
-		    && (y_swap_offset < int(pl_macros[imacro].members.size() / 8)
-		        || (y_swap_offset == int(pl_macros[imacro].members.size() / 8) && z_swap_offset < int(pl_macros[imacro].members.size() % 8)))) {
-		    abort_swap = true;
-		}
-
-		for (imember = 0; imember < int(pl_macros[imacro].members.size()) && abort_swap == false; imember++) {
+        // Split existing for loop into two passes
+        //   -- first checks validity of entire swap
+        //   -- second calls setup_blocks_affected
+        for (imember = 0; imember < int(pl_macros[imacro].members.size()) && abort_swap == false; imember++) {
 
 			// Gets the new from and to info for every block in the macro
 			// cannot use the old from and to info
@@ -1361,12 +1356,70 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
                         else if (!npnr_ctx->isValidBelForCell(cell_to, pl_macros[imacro].members[imember].blk_index->bel)) {
                             abort_swap = true;
                         }
+
+                        // Does not allow a swap with a macro yet
+                        CellInfo *imacro;
+                        get_imacro_from_iblk(&imacro, cell_to /*, pl_macros, num_pl_macros*/);
+                        if (imacro) {
+                            abort_swap = true;
+                        }
                     }
                 }
 
+                //if (!abort_swap)
+                //    abort_swap = setup_blocks_affected(curr_b_from, curr_x_to, curr_y_to, curr_z_to);
+			}
+		}
+
+		for (imember = 0; imember < int(pl_macros[imacro].members.size()) && abort_swap == false; imember++) {
+
+			// Gets the new from and to info for every block in the macro
+			// cannot use the old from and to info
+			curr_b_from = pl_macros[imacro].members[imember].blk_index;
+
+            auto loc_from = npnr_ctx->getBelLocation(curr_b_from->bel);
+			curr_x_from = loc_from.x /*place_ctx.block_locs[curr_b_from].x*/;
+			curr_y_from = loc_from.y /*place_ctx.block_locs[curr_b_from].y*/;
+			curr_z_from = loc_from.z /*place_ctx.block_locs[curr_b_from].z*/;
+
+			curr_x_to = curr_x_from + x_swap_offset;
+			curr_y_to = curr_y_from + y_swap_offset;
+			curr_z_to = curr_z_from + z_swap_offset;
+
+//			//Make sure that the swap_to location is valid
+//            //It must be:
+//            // * chip, and
+//            // * match the correct block type
+//            //
+//            //Note that we need to explicitly check that the types match, since the device floorplan is not
+//            //(neccessarily) translationally invariant for an arbitrary macro
+//			if (   curr_x_to < 1 || curr_x_to >= int(device_ctx.grid.width())
+//                || curr_y_to < 1 || curr_y_to >= int(device_ctx.grid.height())
+//                || curr_z_to < 0 || curr_z_to >= int(device_ctx.grid[curr_x_to][curr_y_to].size())
+//                || npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) != curr_b_from->type) {
+//				abort_swap = true;
+//			} else {
+//                auto bel_to = device_ctx.grid[curr_x_to][curr_y_to][curr_z_to];
+//				if (!npnr_ctx->isValidBelForCell(pl_macros[imacro].members[imember].blk_index, bel_to)) {
+//                    abort_swap = true;
+//                }
+//                else {
+//                    auto cell_name = npnr_ctx->getBoundBelCell(bel_to);
+//                    if (cell_name != IdString()) {
+//                        auto cell_to = npnr_ctx->cells[cell_name].get();
+//                        if (cell_to->belStrength > STRENGTH_WEAK) {
+//			                abort_swap = true;
+//                        }
+//                        else if (!npnr_ctx->isValidBelForCell(cell_to, pl_macros[imacro].members[imember].blk_index->bel)) {
+//                            abort_swap = true;
+//                        }
+//                    }
+//                }
+
                 if (!abort_swap)
                     abort_swap = setup_blocks_affected(curr_b_from, curr_x_to, curr_y_to, curr_z_to);
-			}
+                NPNR_ASSERT(!abort_swap);
+//			}
 		} // Finish going through all the blocks in the macro
 	} else {
 		// This is not a macro - I could use the from and to info from before
