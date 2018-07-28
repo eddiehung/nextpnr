@@ -108,6 +108,15 @@ namespace vpr {
         const float td_place_exp_last = 8.0;
         const float timing_tradeoff = 0.5;
     } placer_opts;
+
+    namespace tatum {
+        struct TimingPathInfo {
+            TimingPathInfo(float delay=0) : _delay(delay) {}
+            float delay() { return _delay; }
+            float _delay;
+        };
+    };
+
     struct SetupTimingInfo {
         delay_t worst_slack;
         delay_t max_req;
@@ -146,6 +155,12 @@ namespace vpr {
 
             max_req = delay_t(1.0e12 / npnr_ctx->target_freq);
 #endif
+        }
+        tatum::TimingPathInfo least_slack_critical_path()
+        {
+            delay_t default_slack = delay_t(1.0e12 / npnr_ctx->target_freq);
+            delay_t min_slack = compute_fmax(npnr_ctx);
+            return tatum::TimingPathInfo(npnr_ctx->getDelayNS(default_slack - min_slack));
         }
     };
     static SetupTimingInfo timing_info;
