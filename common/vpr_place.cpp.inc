@@ -1874,7 +1874,7 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
             get_imacro_from_iblk(&imacro, cell_from /*, pl_macros, num_pl_macros*/);
             if (imacro) {
                 auto loc_from = npnr_ctx->getBelLocation(cell_from->bel);
-                if (loc_from.z >= grid[*px_to][*py_to].size()) {
+                if (size_t(loc_from.z) >= grid[*px_to][*py_to].size()) {
                     is_legal = false;
                     continue;
                 }
