@@ -346,7 +346,7 @@ void try_place(t_placer_opts placer_opts,
 		delay_cost, new_delay_cost, place_delay_value, inverse_prev_bb_cost, inverse_prev_timing_cost,
 		oldt, crit_exponent,
 		first_rlim, final_rlim , inverse_delta_rlim;
-//    tatum::TimingPathInfo critical_path;
+    tatum::TimingPathInfo critical_path;
 //    float sTNS = NAN;
 //    float sWNS = NAN;
 
@@ -427,7 +427,7 @@ void try_place(t_placer_opts placer_opts,
         //Initial slack estimates
         load_criticalities(timing_info, crit_exponent /*, netlist_pin_lookup*/);
 
-//        critical_path = timing_info->least_slack_critical_path();
+        critical_path = timing_info.least_slack_critical_path();
 //
 //        //Write out the initial timing echo file
 //        if(isEchoFileEnabled(E_ECHO_INITIAL_PLACEMENT_TIMING_GRAPH)) {
@@ -655,10 +655,11 @@ void try_place(t_placer_opts placer_opts,
 		update_t(&t, rlim, success_rat /*, annealing_sched*/);
 
 //        if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//            critical_path = timing_info->least_slack_critical_path();
+		if (placer_opts.enable_timing_computations) {
+            critical_path = timing_info.least_slack_critical_path();
 //            sTNS = timing_info->setup_total_negative_slack();
 //            sWNS = timing_info->setup_worst_negative_slack();
-//        }
+        }
 
         vtr::printf_info("%7.3f "
                          "%7.4f %10.4f %-10.5g %-10.5g "
@@ -667,7 +668,7 @@ void try_place(t_placer_opts placer_opts,
                          "%9d %6.3f\n",
                          oldt,
                          stats.av_cost, stats.av_bb_cost, stats.av_timing_cost, stats.av_delay_cost,
-                         place_delay_value, /*1e9*critical_path.delay()*/ 0., /*1e9*sTNS*/ 0., /*1e9*sWNS*/ 0.,
+                         place_delay_value, /*1e9**/critical_path.delay(), /*1e9*sTNS*/ 0., /*1e9*sWNS*/ 0.,
                          success_rat, std_dev, rlim, crit_exponent,
                          tot_iter, t / oldt);
 
@@ -744,10 +745,11 @@ void try_place(t_placer_opts placer_opts,
 	std_dev = get_std_dev(stats.success_sum, stats.sum_of_squares, stats.av_cost);
 
 //	if (placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
-//        critical_path = timing_info->least_slack_critical_path();
+		if (placer_opts.enable_timing_computations) {
+        critical_path = timing_info->least_slack_critical_path();
 //        sTNS = timing_info->setup_total_negative_slack();
 //        sWNS = timing_info->setup_worst_negative_slack();
-//    }
+    }
 
     vtr::printf_info("%7.3f "
                      "%7.4f %10.4f %-10.5g %-10.5g "
@@ -756,7 +758,7 @@ void try_place(t_placer_opts placer_opts,
                      "%9d %6.3f\n",
                       t,
                       stats.av_cost, stats.av_bb_cost, stats.av_timing_cost, stats.av_delay_cost,
-                      place_delay_value, /*1e9*critical_path.delay()*/0., /*1e9*sTNS*/0., /*1e9*sWNS*/0.,
+                      place_delay_value, /*1e9**/critical_path.delay(), /*1e9*sTNS*/0., /*1e9*sWNS*/0.,
                       success_rat, std_dev, rlim, crit_exponent,
                       tot_iter, 0.);
 
@@ -1872,6 +1874,10 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
             get_imacro_from_iblk(&imacro, cell_from /*, pl_macros, num_pl_macros*/);
             if (imacro) {
                 auto loc_from = npnr_ctx->getBelLocation(cell_from->bel);
+                if (loc_from.z >= grid[*px_to][*py_to].size()) {
+                    is_legal = false;
+                    continue;
+                }
                 *pz_to = loc_from.z;
             }
         }
