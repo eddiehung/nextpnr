@@ -225,7 +225,7 @@ void update_budget(Context *ctx)
     }
 }
 
-void compute_fmax(Context *ctx, bool print_fmax, bool print_path)
+delay_t compute_fmax(Context *ctx, bool print_fmax, bool print_path)
 {
     delay_t default_slack = delay_t(1.0e12 / ctx->target_freq);
     PortRefList crit_path;
@@ -267,6 +267,7 @@ void compute_fmax(Context *ctx, bool print_fmax, bool print_path)
     }
     if (print_fmax)
         log_info("estimated Fmax = %.2f MHz\n", 1e6 / (default_slack - min_slack));
+    return min_slack;
 }
 
 NEXTPNR_NAMESPACE_END
