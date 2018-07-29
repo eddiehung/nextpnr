@@ -787,7 +787,7 @@ void try_place(t_placer_opts placer_opts,
 			|| placer_opts.enable_timing_computations) {
 
         //Final timing estimate
-//        VTR_ASSERT(timing_info);
+        VTR_ASSERT(timing_info);
         timing_info->update(); //Tatum
 		critical_path = timing_info->least_slack_critical_path();
 
@@ -1192,27 +1192,9 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, 
 	// Check whether the to_location is empty
 	if (b_to == NULL) {
 
-//		// Swap the block, dont swap the nets yet
-//		place_ctx.block_locs[b_from].x = x_to;
-//		place_ctx.block_locs[b_from].y = y_to;
-//		place_ctx.block_locs[b_from].z = z_to;
-
         npnr_ctx->unbindBel(bel_from);
         npnr_ctx->bindBel(bel_to, b_from->name, STRENGTH_WEAK);
         //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel_to));
-
-//		// Sets up the blocks moved
-//		imoved_blk = blocks_affected.num_moved_blocks;
-//		blocks_affected.moved_blocks[imoved_blk].block_num = b_from;
-//		blocks_affected.moved_blocks[imoved_blk].xold = x_from;
-//		blocks_affected.moved_blocks[imoved_blk].xnew = x_to;
-//		blocks_affected.moved_blocks[imoved_blk].yold = y_from;
-//		blocks_affected.moved_blocks[imoved_blk].ynew = y_to;
-//		blocks_affected.moved_blocks[imoved_blk].zold = z_from;
-//		blocks_affected.moved_blocks[imoved_blk].znew = z_to;
-//		blocks_affected.moved_blocks[imoved_blk].swapped_to_was_empty = true;
-//		blocks_affected.moved_blocks[imoved_blk].swapped_from_is_empty = true;
-//		blocks_affected.num_moved_blocks ++;
 
         blocks_affected.emplace_back(b_from, bel_from);
 
@@ -1225,46 +1207,10 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, 
 			return (abort_swap);
 		}
 
-//		// Swap the block, dont swap the nets yet
-//		place_ctx.block_locs[b_to].x = x_from;
-//		place_ctx.block_locs[b_to].y = y_from;
-//		place_ctx.block_locs[b_to].z = z_from;
-//
-//		place_ctx.block_locs[b_from].x = x_to;
-//		place_ctx.block_locs[b_from].y = y_to;
-//		place_ctx.block_locs[b_from].z = z_to;
-
         npnr_ctx->unbindBel(bel_to);
         npnr_ctx->unbindBel(bel_from);
         npnr_ctx->bindBel(bel_to, b_from->name, STRENGTH_WEAK);
         npnr_ctx->bindBel(bel_from, b_to->name, STRENGTH_WEAK);
-        //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel_to));
-        //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel_from));
-
-//		// Sets up the blocks moved
-//		imoved_blk = blocks_affected.num_moved_blocks;
-//		blocks_affected.moved_blocks[imoved_blk].block_num = b_from;
-//		blocks_affected.moved_blocks[imoved_blk].xold = x_from;
-//		blocks_affected.moved_blocks[imoved_blk].xnew = x_to;
-//		blocks_affected.moved_blocks[imoved_blk].yold = y_from;
-//		blocks_affected.moved_blocks[imoved_blk].ynew = y_to;
-//		blocks_affected.moved_blocks[imoved_blk].zold = z_from;
-//		blocks_affected.moved_blocks[imoved_blk].znew = z_to;
-//		blocks_affected.moved_blocks[imoved_blk].swapped_to_was_empty = false;
-//		blocks_affected.moved_blocks[imoved_blk].swapped_from_is_empty = false;
-//		blocks_affected.num_moved_blocks ++;
-//
-//		imoved_blk = blocks_affected.num_moved_blocks;
-//		blocks_affected.moved_blocks[imoved_blk].block_num = b_to;
-//		blocks_affected.moved_blocks[imoved_blk].xold = x_to;
-//		blocks_affected.moved_blocks[imoved_blk].xnew = x_from;
-//		blocks_affected.moved_blocks[imoved_blk].yold = y_to;
-//		blocks_affected.moved_blocks[imoved_blk].ynew = y_from;
-//		blocks_affected.moved_blocks[imoved_blk].zold = z_to;
-//		blocks_affected.moved_blocks[imoved_blk].znew = z_from;
-//		blocks_affected.moved_blocks[imoved_blk].swapped_to_was_empty = false;
-//		blocks_affected.moved_blocks[imoved_blk].swapped_from_is_empty = false;
-//		blocks_affected.num_moved_blocks ++;
 
         blocks_affected.emplace_back(b_from, bel_from);
         blocks_affected.emplace_back(b_to, bel_to);
@@ -2038,10 +1984,7 @@ static float comp_td_point_to_point_delay(/*ClusterNetId*/ NetInfo* net_id, int 
 //         *       In particular this aproach does not accurately capture the effect of fast
 //         *       carry-chain connections.
 //         */
-//        delay_source_to_sink = get_delta_delay(delta_x, delta_y);
-
           delay_source_to_sink = npnr_ctx->getDelayNS(npnr_ctx->estimateDelay(drv_wire, user_wire));
-          NPNR_ASSERT(delay_source_to_sink >= 0);
 
 //        if (delay_source_to_sink < 0) {
 //            vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,
