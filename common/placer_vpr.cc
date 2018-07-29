@@ -227,6 +227,12 @@ namespace vpr {
         else
             *imacro = nullptr;
     }
+    // draw/draw.h
+    void update_screen(/*ScreenUpdatePriority priority, const char *msg, enum pic_type pic_on_screen_val,
+                    std::shared_ptr<SetupTimingInfo> timing_info*/)
+    {
+        npnr_ctx->yield();
+    }
     
     #define VTR_ASSERT NPNR_ASSERT
     #define VTR_ASSERT_SAFE NPNR_ASSERT
@@ -332,6 +338,7 @@ class VPRPlacer
     bool place()
     {
         log_break();
+        ctx->lock();
 
         vpr::t_placer_opts placer_opts;
         placer_opts.place_algorithm = vpr::PATH_TIMING_DRIVEN_PLACE;
@@ -367,6 +374,7 @@ class VPRPlacer
             }
         }
         timing_analysis(ctx, true /* print_fmax */);
+        ctx->unlock();
         return true;
     }
 
