@@ -51,7 +51,7 @@ static delay_t follow_user_port(Context *ctx, PortRef &user, int path_length, de
         // Follow outputs of the user
         for (auto port : user.cell->ports) {
             if (port.second.type == PORT_OUT) {
-                delay_t comb_delay;
+                DelayInfo comb_delay;
                 // Look up delay through this path
                 bool is_path = ctx->getCellDelay(user.cell, user.port, port.first, comb_delay);
                 if (is_path) {
@@ -112,7 +112,7 @@ static delay_t walk_paths(Context *ctx, bool update, PortRefList *crit_path)
                     delay_t slack = default_slack; // TODO: clock constraints
                     delay_t clkToQ;
                     if (ctx->getCellDelay(cell.second.get(), clock_domain, port.first, clkToQ))
-                        slack -= clkToQ;
+                        slack -= clkToQ.maxDelay();
                     if (port.second.net)
                         follow_net(ctx, port.second.net, 0, slack, update, min_slack, &current_path, crit_path);
                 }

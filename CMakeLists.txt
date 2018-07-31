@@ -58,9 +58,9 @@ if (BUILD_GUI AND NOT BUILD_PYTHON)
     message(FATAL_ERROR "GUI requires Python to build")
 endif()
 
+find_package(PythonInterp 3.5 REQUIRED)
 if (BUILD_PYTHON)
     # TODO: sensible minimum Python version
-    find_package(PythonInterp 3.5 REQUIRED)
     find_package(PythonLibs 3.5 REQUIRED)
 else()
     add_definitions("-DNO_PYTHON")
@@ -182,12 +182,7 @@ foreach (family ${ARCH})
     add_executable(nextpnr-${family} ${COMMON_FILES} ${${ufamily}_FILES})
     install(TARGETS nextpnr-${family} RUNTIME DESTINATION bin)
     target_compile_definitions(nextpnr-${family} PRIVATE MAIN_EXECUTABLE)
-
-    if (BUILD_PYTHON)
-        # Add the importable Python module target
-        PYTHON_ADD_MODULE(nextpnrpy_${family} ${COMMON_FILES} ${${ufamily}_FILES})
-    endif()
-
+        
     # Add any new per-architecture targets here
     if (BUILD_TESTS)
         aux_source_directory(tests/${family}/ ${ufamily}_TEST_FILES)
@@ -208,10 +203,6 @@ foreach (family ${ARCH})
     
     if (BUILD_TESTS)
         set(family_targets ${family_targets} nextpnr-${family}-test)
-    endif()
-
-    if (BUILD_PYTHON)
-        set(family_targets ${family_targets} nextpnrpy_${family})
     endif()
 
     # Include the family-specific CMakeFile
