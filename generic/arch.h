@@ -122,7 +122,7 @@ struct Arch : BaseCtx
 
     Arch(ArchArgs args);
 
-    std::string getChipName() { return chipName; }
+    std::string getChipName() const { return chipName; }
 
     IdString archId() const { return id("generic"); }
     IdString archArgsToId(ArchArgs args) const { return id("none"); }
@@ -211,7 +211,7 @@ struct Arch : BaseCtx
     DecalXY getPipDecal(PipId pip) const;
     DecalXY getGroupDecal(GroupId group) const;
 
-    bool getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort, delay_t &delay) const;
+    bool getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort, DelayInfo &delay) const;
     IdString getPortClock(const CellInfo *cell, IdString port) const;
     bool isClockPort(const CellInfo *cell, IdString port) const;
 
