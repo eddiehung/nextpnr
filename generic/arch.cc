@@ -405,7 +405,7 @@ delay_t Arch::estimateDelay(WireId src, WireId dst) const
 
 delay_t Arch::predictDelay(const NetInfo *net_info, const PortRef &sink) const;
 {
-    const auto& driver = net_info->driver;
+    const auto &driver = net_info->driver;
     auto driver_loc = getBelLocation(driver.cell->bel);
     auto sink_loc = getBelLocation(sink.cell->bel);
 
@@ -414,7 +414,7 @@ delay_t Arch::predictDelay(const NetInfo *net_info, const PortRef &sink) const;
     return (dx + dy) * grid_distance_to_delay;
 }
 
-delay_t Arch::getBudgetOverride(NetInfo *net_info, int user_idx, delay_t budget) const { return budget; }
+delay_t getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay_t budget) const { return budget; }
 
 // ---------------------------------------------------------------
 
