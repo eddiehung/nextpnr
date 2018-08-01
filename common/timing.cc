@@ -57,7 +57,7 @@ static delay_t follow_user_port(Context *ctx, PortRef &user, int path_length, de
                 if (is_path) {
                     NetInfo *net = port.second.net;
                     if (net) {
-                        delay_t path_budget = follow_net(ctx, net, path_length, slack - comb_delay, update, min_slack,
+                        delay_t path_budget = follow_net(ctx, net, path_length, slack - comb_delay.maxDelay(), update, min_slack,
                                                          current_path, crit_path);
                         value = std::min(value, path_budget);
                     }
@@ -102,15 +102,14 @@ static delay_t walk_paths(Context *ctx, bool update, PortRefList *crit_path)
     PortRefList current_path;
 
     // Go through all clocked drivers and distribute the available path
-    //   slack evenly into the budget of every sink on the path ---
-    //   record this value into the UpdateMap
+    //   slack evenly into the budget of every sink on the path
     for (auto &cell : ctx->cells) {
         for (auto port : cell.second->ports) {
             if (port.second.type == PORT_OUT) {
                 IdString clock_domain = ctx->getPortClock(cell.second.get(), port.first);
                 if (clock_domain != IdString()) {
                     delay_t slack = default_slack; // TODO: clock constraints
-                    delay_t clkToQ;
+                    DelayInfo clkToQ;
                     if (ctx->getCellDelay(cell.second.get(), clock_domain, port.first, clkToQ))
                         slack -= clkToQ.maxDelay();
                     if (port.second.net)
@@ -158,11 +157,12 @@ void assign_budget(Context *ctx, bool quiet)
         }
     }
 
-    // If user has not specified a frequency, dynamically adjust the target 
-    //   frequency to be the current maximum
-    if (!ctx->user_freq) {
-        ctx->target_freq = 1e12 / (default_slack - 1.2 * min_slack);
-        if (ctx->verbose)
+    // For slack redistribution, if user has not specified a frequency
+    //   dynamically adjust the target frequency to be the currently
+    //   achieved maximum
+    if (!ctx->user_freq && ctx->slack_redist_iter > 0) {
+        ctx->target_freq = 1e12 / (default_slack - min_slack);
+        /*if (ctx->verbose)*/
             log_info("minimum slack for this assign = %d, target Fmax for next update = %.2f MHz\n", min_slack,
                      ctx->target_freq / 1e6);
     }
@@ -197,12 +197,12 @@ delay_t timing_analysis(Context *ctx, bool print_fmax, bool print_path)
                     ++i;
             auto &driver = net->driver;
             auto driver_cell = driver.cell;
-            delay_t comb_delay;
+            DelayInfo comb_delay;
             ctx->getCellDelay(sink_cell, last_port, driver.port, comb_delay);
-            total += comb_delay;
-            log_info("%4d %4d  Source %s.%s\n", comb_delay, total, driver_cell->name.c_str(ctx),
+            total += comb_delay.maxDelay();
+            log_info("%4d %4d  Source %s.%s\n", comb_delay.maxDelay(), total, driver_cell->name.c_str(ctx),
                      driver.port.c_str(ctx));
-            delay_t net_delay = ctx->getNetinfoRouteDelay(net, i);
+            auto net_delay = ctx->getNetinfoRouteDelay(net, i);
             total += net_delay;
             auto driver_loc = ctx->getBelLocation(driver_cell->bel);
             auto sink_loc = ctx->getBelLocation(sink_cell->bel);
