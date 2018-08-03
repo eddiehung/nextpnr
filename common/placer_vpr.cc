@@ -42,10 +42,6 @@
 #include "timing.h"
 #include "place_legaliser.h"
 
-namespace NEXTPNR_NAMESPACE {
-    std::vector<std::vector<CellInfo*>> carries;
-}
-
 namespace vpr {
     using namespace NEXTPNR_NAMESPACE;
 
@@ -65,6 +61,8 @@ namespace vpr {
         DRIVER = PortType::PORT_OUT,
         SINK = PortType::PORT_IN,
     };
+    // base/clustered_netlist_fwd.h
+    typedef size_t ClusterBlockId;
     // base/globals.h
     static struct VprContext {
         struct t_clustering {
@@ -160,19 +158,6 @@ namespace vpr {
     std::unique_ptr<SetupTimingInfo> make_setup_timing_info(/*std::shared_ptr<DelayCalc> delay_calculator*/) {
         return std::unique_ptr<SetupTimingInfo>(new SetupTimingInfo);
     }
-    // place/place_macro.h
-    struct t_pl_macro_member {
-        t_pl_macro_member(CellInfo* blk_index, int x_offset, int y_offset, int z_offset) : blk_index(blk_index), x_offset(x_offset), y_offset(y_offset), z_offset(z_offset) {}
-        CellInfo* blk_index;
-        int x_offset;
-        int y_offset;
-        int z_offset;
-    };
-    // place/place_macro.h
-    struct t_pl_macro {
-        std::vector<t_pl_macro_member> members;
-    };
-
     // timing/timing_util.h
     float calculate_clb_net_pin_criticality(const SetupTimingInfo& timing_info, /*const ClusteredPinAtomPinsLookup& pin_lookup,*/ const PortRef& load, const NetInfo* net)
     {
@@ -201,31 +186,6 @@ namespace vpr {
         crit = std::max<float>(0., crit);
         crit = std::min<float>(1., crit);
         return crit;
-    }
-
-    // place/place_macro.cpp
-    int alloc_and_load_placement_macros(/*t_direct_inf* directs, int num_directs, t_pl_macro ** */ std::unordered_map<CellInfo*, t_pl_macro> &macros)
-    {
-        for (auto &chain : carries) {
-            t_pl_macro entry;
-            auto head = chain.front();
-            for (int z = 0; z < int(chain.size()); z++) {
-                auto cell = chain.at(z);
-                entry.members.emplace_back(cell, 0, z / 8, z % 8);
-                cell->attrs.emplace(npnr_ctx->id("carry_head"), head->name.str(npnr_ctx));
-            }
-            macros.emplace(head, std::move(entry));
-        }
-        return macros.size();
-    }
-
-    // place/place_macro.cpp
-    void get_imacro_from_iblk(/*int **/ CellInfo **imacro, /*ClusterBlockId*/ CellInfo *iblk /*, t_pl_macro *macros, int num_macros*/) {
-        auto it = iblk->attrs.find(npnr_ctx->id("carry_head"));
-        if (it != iblk->attrs.end())
-            *imacro = npnr_ctx->cells.at(npnr_ctx->id(it->second)).get();
-        else
-            *imacro = nullptr;
     }
     // draw/draw.h
     void update_screen(/*ScreenUpdatePriority priority, const char *msg, enum pic_type pic_on_screen_val,
@@ -272,6 +232,7 @@ namespace vpr {
 
     #include "vpr/place/timing_place.cpp"
     #include "vpr/place/place.cpp"
+    #include "vpr/place/place_macro.cpp"
 }
 
 NEXTPNR_NAMESPACE_BEGIN
@@ -298,7 +259,18 @@ class VPRPlacer
         for (auto& c : grid._bels)
             c.resize(max_y+1);
 
-        carries = prepare_and_find_carries(ctx);
+        auto carries = prepare_and_find_carries(ctx);
+        for (auto &chain : carries) {
+            auto head = chain.front();
+            for (int z = 1; z < int(chain.size()); z++) {
+                auto cell = chain.at(z);
+                cell->constr_parent = head;
+                cell->constr_x = 0;
+                cell->constr_y = z / 8;
+                cell->constr_z = z % 8;
+            }
+            head->constr_children.assign(chain.begin() + 1, chain.end());
+        }
 
         int32_t cell_idx = 0;
         for (auto &cell : ctx->cells) {

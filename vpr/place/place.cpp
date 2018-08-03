@@ -26,7 +26,7 @@
 //#include "read_xml_arch_file.h"
 //#include "echo_files.h"
 //#include "vpr_utils.h"
-//#include "place_macro.h"
+#include "vpr/place/place_macro.h"
 //#include "histogram.h"
 //#include "place_util.h"
 //
@@ -159,7 +159,7 @@ static std::vector<NetInfo*> ts_nets_to_update;
 
 /* The pl_macros array stores all the carry chains placement macros.   *
  * [0...num_pl_macros-1]                                               */
-static std::unordered_map<CellInfo*, t_pl_macro> pl_macros;
+static std::vector<t_pl_macro> pl_macros;
 
 /* These file-scoped variables keep track of the number of swaps       *
  * rejected, accepted or aborted. The total number of swap attempts    *
@@ -205,9 +205,9 @@ static void load_legal_placements();
 
 //static void free_legal_placements();
 
-static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x, int y, int z);
+static int check_macro_can_be_placed(int imacro, int itype, int x, int y, int z);
 
-static int try_place_macro(int itype, /*int*/ Loc ipos, /*int*/ CellInfo* macro);
+static int try_place_macro(int itype, /*int*/ Loc ipos, int macro);
 
 static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<Loc>> &free_locations);
 
@@ -1174,10 +1174,9 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, 
 	/* Find all the blocks affected when b_from is swapped with b_to.
 	 * Returns abort_swap.                  */
 
-//	int imoved_blk, imacro;
-    CellInfo *imacro;
+	int /*imoved_blk,*/ imacro;
 //	int x_from, y_from, z_from;
-	/*ClusterBlockId*/ CellInfo* b_to;
+	/*ClusterBlockId*/ CellInfo *b_to;
 	int abort_swap = false;
 
 //    auto& place_ctx = g_vpr_ctx.mutable_placement();
@@ -1187,10 +1186,10 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, 
 
 //	b_to = place_ctx.grid_blocks[x_to][y_to].blocks[z_to];
     auto b_to_id = npnr_ctx->getBoundBelCell(bel_to);
-    b_to = (b_to_id == IdString() ? NULL : npnr_ctx->cells[b_to_id].get());
+    b_to = (b_to_id == IdString() ? nullptr : npnr_ctx->cells[b_to_id].get());
 
 	// Check whether the to_location is empty
-	if (b_to == NULL) {
+	if (b_to == /*EMPTY_BLOCK_ID*/ nullptr) {
 
         npnr_ctx->unbindBel(bel_from);
         npnr_ctx->bindBel(bel_to, b_from->name, STRENGTH_WEAK);
@@ -1198,11 +1197,11 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, 
 
         blocks_affected.emplace_back(b_from, bel_from);
 
-	} else if (b_to != /*INVALID_BLOCK_ID*/ NULL) {
+	} else /*if (b_to != INVALID_BLOCK_ID)*/ {
 
 		// Does not allow a swap with a macro yet
-		get_imacro_from_iblk(&imacro, b_to /*, pl_macros, num_pl_macros*/);
-		if (imacro) {
+		get_imacro_from_iblk(&imacro, b_to->udata, pl_macros /*, num_pl_macros*/);
+		if (imacro != -1) {
 			abort_swap = true;
 			return (abort_swap);
 		}
@@ -1226,8 +1225,7 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 	/* Finds and set ups the affected_blocks array.
 	 * Returns abort_swap. */
 
-	int /*imacro,*/ imember;
-    CellInfo *imacro;
+	int imacro, imember;
 	int x_swap_offset, y_swap_offset, z_swap_offset, x_from, y_from, z_from;
 	/*ClusterBlockId*/ CellInfo* curr_b_from;
 	int curr_x_from, curr_y_from, curr_z_from, curr_x_to, curr_y_to, curr_z_to;
@@ -1242,8 +1240,8 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 	y_from = loc_from.y;
 	z_from = loc_from.z;
 
-	get_imacro_from_iblk(&imacro, b_from /*, pl_macros, num_pl_macros*/);
-	if (imacro) {
+	get_imacro_from_iblk(&imacro, b_from->udata, pl_macros /*, num_pl_macros*/);
+	if (imacro != -1) {
 		// b_from is part of a macro, I need to swap the whole macro
 
 		// Record down the relative position of the swap
@@ -1299,9 +1297,8 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
                         }
 
                         // Does not allow a swap with a macro yet
-                        CellInfo *imacro;
-                        get_imacro_from_iblk(&imacro, cell_to /*, pl_macros, num_pl_macros*/);
-                        if (imacro) {
+                        get_imacro_from_iblk(&imacro, cell_to->udata, pl_macros /*, num_pl_macros*/);
+                        if (imacro != -1) {
                             abort_swap = true;
                         }
                     }
@@ -1805,9 +1802,9 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
         //   values, as find_affected_blocks() will take care of
         //   the rest
         else {
-            CellInfo *imacro;
-            get_imacro_from_iblk(&imacro, cell_from /*, pl_macros, num_pl_macros*/);
-            if (imacro) {
+            int imacro;
+            get_imacro_from_iblk(&imacro, cell_from->udata, pl_macros /*, num_pl_macros*/);
+            if (imacro != -1) {
                 auto loc_from = npnr_ctx->getBelLocation(cell_from->bel);
                 if (size_t(loc_from.z) >= grid[*px_to][*py_to].size()) {
                     is_legal = false;
@@ -2830,7 +2827,7 @@ static void load_legal_placements() {
 
 
 
-static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x, int y, int z) {
+static int check_macro_can_be_placed(int imacro, int itype, int x, int y, int z) {
 
 	int imember;
 	size_t member_x, member_y, member_z;
@@ -2869,7 +2866,7 @@ static int check_macro_can_be_placed(/*int*/ CellInfo* imacro, int itype, int x,
 }
 
 
-static int try_place_macro(int itype, /*int*/ Loc ipos, /*int*/ CellInfo* imacro) {
+static int try_place_macro(int itype, /*int*/ Loc ipos, int imacro) {
 
 	int x, y, z, member_x, member_y, member_z, imember;
 
@@ -2889,7 +2886,7 @@ static int try_place_macro(int itype, /*int*/ Loc ipos, /*int*/ CellInfo* imacro
 		return (macro_placed);
 	}
 
-    if (!npnr_ctx->isValidBelForCell(imacro, grid[x][y][z]))
+    if (!npnr_ctx->isValidBelForCell(pl_macros[imacro].members[0].blk_index, grid[x][y][z]))
         return macro_placed;
 
 	int macro_can_be_placed = check_macro_can_be_placed(imacro, itype, x, y, z);
@@ -2923,25 +2920,20 @@ static int try_place_macro(int itype, /*int*/ Loc ipos, /*int*/ CellInfo* imacro
 static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std::vector<std::vector<Loc>> &free_locations) {
 
 	int macro_placed;
-	int /*imacro,*/ itype, itry /*, ipos*/;
-//	ClusterBlockId blk_id;
+	int imacro, itype, itry /*, ipos*/;
+	/*ClusterBlockId*/ CellInfo *blk_id;
     Loc ipos;
 
     auto& cluster_ctx = g_vpr_ctx.clustering();
 //    auto& device_ctx = g_vpr_ctx.device();
 
 	/* Macros are harder to place.  Do them first */
-//	for (imacro = 0; imacro < num_pl_macros; imacro++) {
-    for (auto &b : cluster_ctx.clb_nlist.blocks()) {
-        auto imacro = b.second.get();
-
-        // If not part of macro, ignore
-        if (!pl_macros.count(imacro)) continue;
+	for (imacro = 0; imacro < int(pl_macros.size()); imacro++) {
 
 		// Every macro are not placed in the beginnning
 		macro_placed = false;
 
-        auto blk_id = imacro;
+        blk_id = pl_macros[imacro].members[0].blk_index;
 
 		// Assume that all the blocks in the macro are of the same type
 		itype = cluster_ctx.clb_nlist.block_type(blk_id).index;
@@ -2988,7 +2980,7 @@ static void initial_placement_pl_macros(int macros_max_num_tries, /*int * */ std
 						"Initial placement failed.\n"
 						"Could not place macro length %d with head block %s (#%zu); not enough free locations of type %s (#%d).\n"
 						"Please manually size the FPGA because VPR can't do this yet.\n",
-						int(pl_macros[imacro].members.size()), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id->udata), imacro->type.c_str(npnr_ctx), itype);
+						int(pl_macros[imacro].members.size()), cluster_ctx.clb_nlist.block_name(blk_id).c_str(), size_t(blk_id->udata), blk_id->type.c_str(npnr_ctx), itype);
 			}
 
 		} else {
