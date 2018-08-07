@@ -111,12 +111,14 @@ namespace vpr {
         delay_t max_req;
         delay_t worst_path_slack;
         void update() { 
-            assign_budget(npnr_ctx, true /* quiet */);
+            if (npnr_ctx->slack_redist_iter > 0)
+                worst_path_slack = assign_budget(npnr_ctx, true /* quiet */);
+            else
+                worst_path_slack = timing_analysis(npnr_ctx, false /* print_fmax */, false /* print_histogram */);
 
             sWNS = std::numeric_limits<decltype(sWNS)>::max();
             sTNS = 0;
             max_req = delay_t(1.0e12 / npnr_ctx->target_freq);
-            worst_path_slack = timing_analysis(npnr_ctx, false /* print_fmax */, false /* print_histogram */);
 
             // Compute the delay for every pin on every net
             for (auto &n : npnr_ctx->nets) {
