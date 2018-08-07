@@ -1661,8 +1661,8 @@ static void record_affected_net(/*const ClusterNetId*/ NetInfo *net, int& num_af
     }
 }
 
-static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const ClusterBlockId blk, const ClusterPinId blk_pin*/
-        CellInfo* blk, BelId bel_from) {
+static void update_net_bb(/*const ClusterNetId*/ NetInfo* net, /*int iblk, const ClusterBlockId*/ CellInfo* blk, /*const ClusterPinId blk_pin*/
+        BelId bel_from) {
 //    auto& cluster_ctx = g_vpr_ctx.clustering();
 
     if (net->users.size() < SMALL_NET) {
@@ -3273,11 +3273,11 @@ static void check_place(float bb_cost, float timing_cost,
 //
 //	vtr::vector<ClusterBlockId, int> bdone;
 	int error = 0;
-//	ClusterBlockId bnum, head_iblk, member_iblk;
+	/*ClusterBlockId*/ CellInfo* /*bnum,*/ head_iblk, *member_iblk;
 	float bb_cost_check;
 //	int usage_check;
 	float timing_cost_check, delay_cost_check;
-//	int imacro, imember, member_x, member_y, member_z;
+	int imacro, imember, member_x, member_y, member_z;
 
 	bb_cost_check = comp_bb_cost(CHECK);
 	//vtr::printf_info("bb_cost recomputed from scratch: %g\n", bb_cost_check);
@@ -3359,31 +3359,33 @@ static void check_place(float bb_cost, float timing_cost,
 //			error++;
 //		}
 //	bdone.clear();
-//
-//	/* Check the pl_macro placement are legal - blocks are in the proper relative position. */
-//	for (imacro = 0; imacro < num_pl_macros; imacro++) {
-//
-//		head_iblk = pl_macros[imacro].members[0].blk_index;
-//
-//		for (imember = 0; imember < pl_macros[imacro].num_blocks; imember++) {
-//
-//			member_iblk = pl_macros[imacro].members[imember].blk_index;
-//
-//			// Compute the suppossed member's x,y,z location
-//			member_x = place_ctx.block_locs[head_iblk].x + pl_macros[imacro].members[imember].x_offset;
-//			member_y = place_ctx.block_locs[head_iblk].y + pl_macros[imacro].members[imember].y_offset;
-//			member_z = place_ctx.block_locs[head_iblk].z + pl_macros[imacro].members[imember].z_offset;
-//
-//			// Check the place_ctx.block_locs data structure first
-//			if (place_ctx.block_locs[member_iblk].x != member_x
-//					|| place_ctx.block_locs[member_iblk].y != member_y
-//					|| place_ctx.block_locs[member_iblk].z != member_z) {
-//				vtr::printf_error(__FILE__, __LINE__,
-//						"Block %zu in pl_macro #%d is not placed in the proper orientation.\n",
-//						size_t(member_iblk), imacro);
-//				error++;
-//			}
-//
+
+	/* Check the pl_macro placement are legal - blocks are in the proper relative position. */
+	for (imacro = 0; imacro < int(pl_macros.size()); imacro++) {
+
+		head_iblk = pl_macros[imacro].members[0].blk_index;
+
+		for (imember = 0; imember < int(pl_macros[imacro].members.size()); imember++) {
+
+			member_iblk = pl_macros[imacro].members[imember].blk_index;
+
+			// Compute the suppossed member's x,y,z location
+            auto head_loc = npnr_ctx->getBelLocation(head_iblk->bel);
+			member_x = head_loc.x + pl_macros[imacro].members[imember].x_offset;
+			member_y = head_loc.y + pl_macros[imacro].members[imember].y_offset;
+			member_z = head_loc.z + pl_macros[imacro].members[imember].z_offset;
+
+			// Check the place_ctx.block_locs data structure first
+            auto member_loc = npnr_ctx->getBelLocation(member_iblk->bel);
+			if (member_loc.x != member_x
+					|| member_loc.y != member_y
+					|| member_loc.z != member_z) {
+				vtr::printf_error(__FILE__, __LINE__,
+						"Block %zu in pl_macro #%d is not placed in the proper orientation.\n",
+						size_t(member_iblk), imacro);
+				error++;
+			}
+
 //			// Then check the place_ctx.grid data structure
 //			if (place_ctx.grid_blocks[member_x][member_y].blocks[member_z] != member_iblk) {
 //				vtr::printf_error(__FILE__, __LINE__,
@@ -3391,8 +3393,8 @@ static void check_place(float bb_cost, float timing_cost,
 //						size_t(member_iblk), imacro);
 //				error++;
 //			}
-//		} // Finish going through all the members
-//	} // Finish going through all the macros
+		} // Finish going through all the members
+	} // Finish going through all the macros
 
 	if (error == 0) {
 		vtr::printf_info("\n");
