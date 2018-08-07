@@ -1423,8 +1423,6 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
 	vtr::printf_info( "swap [%d][%d][%d] %s \"%s\" <=> [%d][%d][%d] %s \"%s\"\n",
 		x_from, y_from, z_from, grid[x_from][y_from].type->name, (b_from != -1 ? cluster_ctx.blocks[b_from].name : ""),
 		x_to, y_to, z_to, grid[x_to][y_to].type->name, (b_to != -1 ? cluster_ctx.blocks[b_to].name : ""));
-#else
-    (void) z_from;
 #endif
 
 //	/* Make the switch in order to make computing the new bounding *
@@ -1890,7 +1888,7 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 		*py_to = min_y + y_rel;
         // Instead of computing z_to in the outer find_to function,
         //   do it here so we have a fully valid location
-        if (grid[*px_to][*py_to].size() > 0) {
+        if (!grid[*px_to][*py_to].empty()) {
             *pz_to = vtr::irand(grid[*px_to][*py_to].size() - 1);
         }
         else {
