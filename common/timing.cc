@@ -152,7 +152,7 @@ struct Timing
     }
 };
 
-void assign_budget(Context *ctx, bool quiet)
+delay_t assign_budget(Context *ctx, bool quiet)
 {
     if (!quiet) {
         log_break();
@@ -194,6 +194,8 @@ void assign_budget(Context *ctx, bool quiet)
 
     if (!quiet)
         log_info("Checksum: 0x%08x\n", ctx->checksum());
+
+    return timing.min_slack;
 }
 
 delay_t timing_analysis(Context *ctx, bool print_fmax, bool print_histogram, bool print_path)
