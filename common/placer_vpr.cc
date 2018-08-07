@@ -49,8 +49,8 @@ namespace vpr {
 
     // base/device_grid.h
     struct DeviceGrid {
-        inline size_t width() const { return _bels.size(); }
-        inline size_t height() const { return _bels.front().size(); }
+        inline size_t width() const { return npnr_ctx->chip_info->width; }
+        inline size_t height() const { return npnr_ctx->chip_info->height; }
         inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
         std::vector<std::vector<std::vector<BelId>>> _bels;
     };
