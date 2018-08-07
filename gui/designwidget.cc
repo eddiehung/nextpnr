@@ -34,7 +34,7 @@ DesignWidget::DesignWidget(QWidget *parent) : QWidget(parent), ctx(nullptr), sel
 {
     // Add tree view
     treeView = new QTreeView();
-    treeModel = new ContextTreeModel();
+    treeModel = new TreeModel::Model();
     treeView->setModel(treeModel);
     treeView->setContextMenuPolicy(Qt::CustomContextMenu);
     treeView->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -55,7 +55,7 @@ DesignWidget::DesignWidget(QWidget *parent) : QWidget(parent), ctx(nullptr), sel
     searchEdit->setClearButtonEnabled(true);
     searchEdit->addAction(QIcon(":/icons/resources/zoom.png"), QLineEdit::LeadingPosition);
     searchEdit->setPlaceholderText("Search...");
-    connect(searchEdit, SIGNAL(returnPressed()), this, SLOT(onSearchInserted()));
+    connect(searchEdit, &QLineEdit::returnPressed, this, &DesignWidget::onSearchInserted);
 
     actionFirst = new QAction("", this);
     actionFirst->setIcon(QIcon(":/icons/resources/resultset_first.png"));
@@ -162,8 +162,7 @@ DesignWidget::DesignWidget(QWidget *parent) : QWidget(parent), ctx(nullptr), sel
     connect(treeView, &QTreeView::customContextMenuRequested, this, &DesignWidget::prepareMenuTree);
     connect(treeView, &QTreeView::doubleClicked, this, &DesignWidget::onDoubleClicked);
     selectionModel = treeView->selectionModel();
-    connect(selectionModel, SIGNAL(selectionChanged(const QItemSelection &, const QItemSelection &)),
-            SLOT(onSelectionChanged(const QItemSelection &, const QItemSelection &)));
+    connect(selectionModel, &QItemSelectionModel::selectionChanged, this, &DesignWidget::onSelectionChanged);
 
     history_index = -1;
     history_ignore = false;
@@ -215,7 +214,11 @@ void DesignWidget::newContext(Context *ctx)
 
     highlightSelected.clear();
     this->ctx = ctx;
-    treeModel->loadData(ctx);
+    {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+        treeModel->loadContext(ctx);
+    }
     updateTree();
 }
 
@@ -223,9 +226,9 @@ void DesignWidget::updateTree()
 {
     clearProperties();
 
-    QMap<ContextTreeItem *, int>::iterator i = highlightSelected.begin();
+    QMap<TreeModel::Item *, int>::iterator i = highlightSelected.begin();
     while (i != highlightSelected.end()) {
-        QMap<ContextTreeItem *, int>::iterator prev = i;
+        QMap<TreeModel::Item *, int>::iterator prev = i;
         ++i;
         if (prev.key()->type() == ElementType::NET && ctx->nets.find(prev.key()->id()) == ctx->nets.end()) {
             highlightSelected.erase(prev);
@@ -235,7 +238,11 @@ void DesignWidget::updateTree()
         }
     }
 
-    treeModel->updateData(ctx);
+    {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+        treeModel->updateCellsNets(ctx);
+    }
 }
 QtProperty *DesignWidget::addTopLevelProperty(const QString &id)
 {
@@ -309,26 +316,53 @@ QtProperty *DesignWidget::addSubGroup(QtProperty *topItem, const QString &name)
 
 void DesignWidget::onClickedBel(BelId bel, bool keep)
 {
-    ContextTreeItem *item = treeModel->nodeForIdType(ElementType::BEL, ctx->getBelName(bel).c_str(ctx));
-    selectionModel->setCurrentIndex(treeModel->indexFromNode(item),
+    boost::optional<TreeModel::Item *> item;
+    {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
+        item = treeModel->nodeForIdType(ElementType::BEL, ctx->getBelName(bel));
+        if (!item)
+            return;
+
+        Q_EMIT selected(getDecals(ElementType::BEL, ctx->getBelName(bel)), keep);
+    }
+    selectionModel->setCurrentIndex(treeModel->indexFromNode(*item),
                                     keep ? QItemSelectionModel::Select : QItemSelectionModel::ClearAndSelect);
-    Q_EMIT selected(getDecals(ElementType::BEL, ctx->getBelName(bel)), keep);
 }
 
 void DesignWidget::onClickedWire(WireId wire, bool keep)
 {
-    ContextTreeItem *item = treeModel->nodeForIdType(ElementType::WIRE, ctx->getWireName(wire).c_str(ctx));
-    selectionModel->setCurrentIndex(treeModel->indexFromNode(item),
+    boost::optional<TreeModel::Item *> item;
+    {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
+        item = treeModel->nodeForIdType(ElementType::WIRE, ctx->getWireName(wire));
+        if (!item)
+            return;
+
+        Q_EMIT selected(getDecals(ElementType::WIRE, ctx->getWireName(wire)), keep);
+    }
+    selectionModel->setCurrentIndex(treeModel->indexFromNode(*item),
                                     keep ? QItemSelectionModel::Select : QItemSelectionModel::ClearAndSelect);
-    Q_EMIT selected(getDecals(ElementType::WIRE, ctx->getWireName(wire)), keep);
 }
 
 void DesignWidget::onClickedPip(PipId pip, bool keep)
 {
-    ContextTreeItem *item = treeModel->nodeForIdType(ElementType::PIP, ctx->getPipName(pip).c_str(ctx));
-    selectionModel->setCurrentIndex(treeModel->indexFromNode(item),
+    boost::optional<TreeModel::Item *> item;
+    {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
+        item = treeModel->nodeForIdType(ElementType::PIP, ctx->getPipName(pip));
+        if (!item)
+            return;
+
+        Q_EMIT selected(getDecals(ElementType::PIP, ctx->getPipName(pip)), keep);
+    }
+    selectionModel->setCurrentIndex(treeModel->indexFromNode(*item),
                                     keep ? QItemSelectionModel::Select : QItemSelectionModel::ClearAndSelect);
-    Q_EMIT selected(getDecals(ElementType::PIP, ctx->getPipName(pip)), keep);
 }
 
 void DesignWidget::onSelectionChanged(const QItemSelection &, const QItemSelection &)
@@ -339,7 +373,7 @@ void DesignWidget::onSelectionChanged(const QItemSelection &, const QItemSelecti
     if (selectionModel->selectedIndexes().size() > 1) {
         std::vector<DecalXY> decals;
         for (auto index : selectionModel->selectedIndexes()) {
-            ContextTreeItem *item = treeModel->nodeFromIndex(index);
+            TreeModel::Item *item = treeModel->nodeFromIndex(index);
             std::vector<DecalXY> d = getDecals(item->type(), item->id());
             std::move(d.begin(), d.end(), std::back_inserter(decals));
         }
@@ -349,7 +383,7 @@ void DesignWidget::onSelectionChanged(const QItemSelection &, const QItemSelecti
     QModelIndex index = selectionModel->selectedIndexes().at(0);
     if (!index.isValid())
         return;
-    ContextTreeItem *clickItem = treeModel->nodeFromIndex(index);
+    TreeModel::Item *clickItem = treeModel->nodeFromIndex(index);
 
     ElementType type = clickItem->type();
     if (type == ElementType::NONE)
@@ -364,14 +398,17 @@ void DesignWidget::onSelectionChanged(const QItemSelection &, const QItemSelecti
     Q_EMIT selected(getDecals(type, c), false);
 
     if (type == ElementType::BEL) {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
         BelId bel = ctx->getBelByName(c);
         QtProperty *topItem = addTopLevelProperty("Bel");
 
         addProperty(topItem, QVariant::String, "Name", c.c_str(ctx));
         addProperty(topItem, QVariant::String, "Type", ctx->belTypeToId(ctx->getBelType(bel)).c_str(ctx));
         addProperty(topItem, QVariant::Bool, "Available", ctx->checkBelAvail(bel));
-        addProperty(topItem, QVariant::String, "Bound Cell", ctx->getBoundBelCell(bel).c_str(ctx), ElementType::CELL);
-        addProperty(topItem, QVariant::String, "Conflicting Cell", ctx->getConflictingBelCell(bel).c_str(ctx),
+        addProperty(topItem, QVariant::String, "Bound Cell", ctx->nameOf(ctx->getBoundBelCell(bel)), ElementType::CELL);
+        addProperty(topItem, QVariant::String, "Conflicting Cell", ctx->nameOf(ctx->getConflictingBelCell(bel)),
                     ElementType::CELL);
 
         QtProperty *belpinsItem = addSubGroup(topItem, "Ports");
@@ -383,14 +420,17 @@ void DesignWidget::onSelectionChanged(const QItemSelection &, const QItemSelecti
             addProperty(portInfoItem, QVariant::String, "Wire", ctx->getWireName(wire).c_str(ctx), ElementType::WIRE);
         }
     } else if (type == ElementType::WIRE) {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
         WireId wire = ctx->getWireByName(c);
         QtProperty *topItem = addTopLevelProperty("Wire");
 
         addProperty(topItem, QVariant::String, "Name", c.c_str(ctx));
         addProperty(topItem, QVariant::String, "Type", ctx->getWireType(wire).c_str(ctx));
         addProperty(topItem, QVariant::Bool, "Available", ctx->checkWireAvail(wire));
-        addProperty(topItem, QVariant::String, "Bound Net", ctx->getBoundWireNet(wire).c_str(ctx), ElementType::NET);
-        addProperty(topItem, QVariant::String, "Conflicting Net", ctx->getConflictingWireNet(wire).c_str(ctx),
+        addProperty(topItem, QVariant::String, "Bound Net", ctx->nameOf(ctx->getBoundWireNet(wire)), ElementType::NET);
+        addProperty(topItem, QVariant::String, "Conflicting Net", ctx->nameOf(ctx->getConflictingWireNet(wire)),
                     ElementType::NET);
 
         DelayInfo delay = ctx->getWireDelay(wire);
@@ -435,14 +475,17 @@ void DesignWidget::onSelectionChanged(const QItemSelection &, const QItemSelecti
             }
         }
     } else if (type == ElementType::PIP) {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
         PipId pip = ctx->getPipByName(c);
         QtProperty *topItem = addTopLevelProperty("Pip");
 
         addProperty(topItem, QVariant::String, "Name", c.c_str(ctx));
         addProperty(topItem, QVariant::String, "Type", ctx->getPipType(pip).c_str(ctx));
         addProperty(topItem, QVariant::Bool, "Available", ctx->checkPipAvail(pip));
-        addProperty(topItem, QVariant::String, "Bound Net", ctx->getBoundPipNet(pip).c_str(ctx), ElementType::NET);
-        addProperty(topItem, QVariant::String, "Conflicting Net", ctx->getConflictingPipNet(pip).c_str(ctx),
+        addProperty(topItem, QVariant::String, "Bound Net", ctx->nameOf(ctx->getBoundPipNet(pip)), ElementType::NET);
+        addProperty(topItem, QVariant::String, "Conflicting Net", ctx->nameOf(ctx->getConflictingPipNet(pip)),
                     ElementType::NET);
         addProperty(topItem, QVariant::String, "Src Wire", ctx->getWireName(ctx->getPipSrcWire(pip)).c_str(ctx),
                     ElementType::WIRE);
@@ -457,6 +500,9 @@ void DesignWidget::onSelectionChanged(const QItemSelection &, const QItemSelecti
         addProperty(delayItem, QVariant::Double, "Min Fall", delay.minFallDelay());
         addProperty(delayItem, QVariant::Double, "Max Fall", delay.maxFallDelay());
     } else if (type == ElementType::NET) {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
         NetInfo *net = ctx->nets.at(c).get();
 
         QtProperty *topItem = addTopLevelProperty("Net");
@@ -505,6 +551,9 @@ void DesignWidget::onSelectionChanged(const QItemSelection &, const QItemSelecti
         }
 
     } else if (type == ElementType::CELL) {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
         CellInfo *cell = ctx->cells.at(c).get();
 
         QtProperty *topItem = addTopLevelProperty("Cell");
@@ -597,7 +646,7 @@ std::vector<DecalXY> DesignWidget::getDecals(ElementType type, IdString value)
     return decals;
 }
 
-void DesignWidget::updateHighlightGroup(QList<ContextTreeItem *> items, int group)
+void DesignWidget::updateHighlightGroup(QList<TreeModel::Item *> items, int group)
 {
     const bool shouldClear = items.size() == 1;
     for (auto item : items) {
@@ -622,7 +671,7 @@ void DesignWidget::updateHighlightGroup(QList<ContextTreeItem *> items, int grou
 void DesignWidget::prepareMenuProperty(const QPoint &pos)
 {
     QTreeWidget *tree = propertyEditor->treeWidget();
-    QList<ContextTreeItem *> items;
+    QList<TreeModel::Item *> items;
     for (auto itemContextMenu : tree->selectedItems()) {
         QtBrowserItem *browserItem = propertyEditor->itemToBrowserItem(itemContextMenu);
         if (!browserItem)
@@ -632,11 +681,14 @@ void DesignWidget::prepareMenuProperty(const QPoint &pos)
         if (type == ElementType::NONE)
             continue;
         IdString value = ctx->id(selectedProperty->valueText().toStdString());
-        items.append(treeModel->nodeForIdType(type, value.c_str(ctx)));
+        auto node = treeModel->nodeForIdType(type, value);
+        if (!node)
+            continue;
+        items.append(*node);
     }
     int selectedIndex = -1;
     if (items.size() == 1) {
-        ContextTreeItem *item = items.at(0);
+        TreeModel::Item *item = items.at(0);
         if (highlightSelected.contains(item))
             selectedIndex = highlightSelected[item];
     }
@@ -677,13 +729,13 @@ void DesignWidget::prepareMenuTree(const QPoint &pos)
     if (selectionModel->selectedIndexes().size() == 0)
         return;
 
-    QList<ContextTreeItem *> items;
+    QList<TreeModel::Item *> items;
     for (auto index : selectionModel->selectedIndexes()) {
-        ContextTreeItem *item = treeModel->nodeFromIndex(index);
+        TreeModel::Item *item = treeModel->nodeFromIndex(index);
         items.append(item);
     }
     if (items.size() == 1) {
-        ContextTreeItem *item = items.at(0);
+        TreeModel::Item *item = items.at(0);
         if (highlightSelected.contains(item))
             selectedIndex = highlightSelected[item];
     }
@@ -709,9 +761,9 @@ void DesignWidget::onItemDoubleClicked(QTreeWidgetItem *item, int column)
 {
     QtProperty *selectedProperty = propertyEditor->itemToBrowserItem(item)->property();
     ElementType type = getElementTypeByName(selectedProperty->propertyId());
-    ContextTreeItem *it = treeModel->nodeForIdType(type, selectedProperty->valueText());
+    auto it = treeModel->nodeForIdType(type, ctx->id(selectedProperty->valueText().toStdString()));
     if (it)
-        selectionModel->setCurrentIndex(treeModel->indexFromNode(it), QItemSelectionModel::ClearAndSelect);
+        selectionModel->setCurrentIndex(treeModel->indexFromNode(*it), QItemSelectionModel::ClearAndSelect);
 }
 
 void DesignWidget::onDoubleClicked(const QModelIndex &index) { Q_EMIT zoomSelected(); }
@@ -723,6 +775,9 @@ void DesignWidget::onSearchInserted()
         if (currentIndex >= currentSearchIndexes.size())
             currentIndex = 0;
     } else {
+        std::lock_guard<std::mutex> lock_ui(ctx->ui_mutex);
+        std::lock_guard<std::mutex> lock(ctx->mutex);
+
         currentSearch = searchEdit->text();
         currentSearchIndexes = treeModel->search(searchEdit->text());
         currentIndex = 0;

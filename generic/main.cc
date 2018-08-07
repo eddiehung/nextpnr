@@ -75,20 +75,23 @@ int main(int argc, char *argv[])
         }
 
         if (vm.count("help") || argc == 1) {
-            std::cout << boost::filesystem::basename(argv[0]) << " -- Next Generation Place and Route (git "
-                                                                 "sha1 " GIT_COMMIT_HASH_STR ")\n";
+            std::cout << boost::filesystem::basename(argv[0])
+                      << " -- Next Generation Place and Route (git "
+                         "sha1 " GIT_COMMIT_HASH_STR ")\n";
             std::cout << "\n";
             std::cout << options << "\n";
             return argc != 1;
         }
 
         if (vm.count("version")) {
-            std::cout << boost::filesystem::basename(argv[0]) << " -- Next Generation Place and Route (git "
-                                                                 "sha1 " GIT_COMMIT_HASH_STR ")\n";
+            std::cout << boost::filesystem::basename(argv[0])
+                      << " -- Next Generation Place and Route (git "
+                         "sha1 " GIT_COMMIT_HASH_STR ")\n";
             return 1;
         }
 
-        std::unique_ptr<Context> ctx = std::unique_ptr<Context>(new Context(ArchArgs{}));
+        ArchArgs chipArgs{};
+        std::unique_ptr<Context> ctx = std::unique_ptr<Context>(new Context(chipArgs));
 
         if (vm.count("verbose")) {
             ctx->verbose = true;
@@ -105,7 +108,7 @@ int main(int argc, char *argv[])
 #ifndef NO_GUI
         if (vm.count("gui")) {
             Application a(argc, argv);
-            MainWindow w(std::move(ctx));
+            MainWindow w(std::move(ctx), chipArgs);
             w.show();
 
             return a.exec();

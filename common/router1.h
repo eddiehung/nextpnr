@@ -24,7 +24,15 @@
 
 NEXTPNR_NAMESPACE_BEGIN
 
-extern bool router1(Context *ctx);
+struct Router1Cfg
+{
+    int maxIterCnt = 200;
+    bool cleanupReroute = true;
+    bool fullCleanupReroute = true;
+    bool useEstimate = true;
+};
+
+extern bool router1(Context *ctx, const Router1Cfg &cfg);
 
 NEXTPNR_NAMESPACE_END
 

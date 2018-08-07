@@ -40,31 +40,10 @@
 #include "log.h"
 #include "nextpnr.h"
 #include "pcf.h"
-#include "place_legaliser.h"
 #include "timing.h"
 #include "version.h"
 
 USING_NEXTPNR_NAMESPACE
-
-void svg_dump_decal(const Context *ctx, const DecalXY &decal)
-{
-    const float scale = 10.0, offset = 10.0;
-    const std::string style = "stroke=\"black\" stroke-width=\"0.1\" fill=\"none\"";
-
-    for (auto &el : ctx->getDecalGraphics(decal.decal)) {
-        if (el.type == GraphicElement::TYPE_BOX) {
-            std::cout << "<rect x=\"" << (offset + scale * (decal.x + el.x1)) << "\" y=\""
-                      << (offset + scale * (decal.y + el.y1)) << "\" height=\"" << (scale * (el.y2 - el.y1))
-                      << "\" width=\"" << (scale * (el.x2 - el.x1)) << "\" " << style << "/>\n";
-        }
-
-        if (el.type == GraphicElement::TYPE_LINE) {
-            std::cout << "<line x1=\"" << (offset + scale * (decal.x + el.x1)) << "\" y1=\""
-                      << (offset + scale * (decal.y + el.y1)) << "\" x2=\"" << (offset + scale * (decal.x + el.x2))
-                      << "\" y2=\"" << (offset + scale * (decal.y + el.y2)) << "\" " << style << "/>\n";
-        }
-    }
-}
 
 void conflicting_options(const boost::program_options::variables_map &vm, const char *opt1, const char *opt2)
 {
@@ -92,7 +71,6 @@ int main(int argc, char *argv[])
 #ifndef NO_GUI
         options.add_options()("gui", "start gui");
 #endif
-        options.add_options()("svg", "dump SVG file");
         options.add_options()("pack-only", "pack design only without placement or routing");
 
         po::positional_options_description pos;
@@ -107,6 +85,9 @@ int main(int argc, char *argv[])
         options.add_options()("seed", po::value<int>(), "seed value for random number generator");
         options.add_options()("slack_redist_iter", po::value<int>(),
                               "number of iterations between slack redistribution");
+        options.add_options()("cstrweight", po::value<float>(),
+                              "placer weighting for relative constraint satisfaction");
+
         options.add_options()("version,V", "show version");
         options.add_options()("tmfuzz", "run path delay estimate fuzzer");
         options.add_options()("test", "check architecture database integrity");
@@ -147,16 +128,18 @@ int main(int argc, char *argv[])
 #endif
         if (vm.count("help") || argc == 1) {
         help:
-            std::cout << boost::filesystem::basename(argv[0]) << " -- Next Generation Place and Route (git "
-                                                                 "sha1 " GIT_COMMIT_HASH_STR ")\n";
+            std::cout << boost::filesystem::basename(argv[0])
+                      << " -- Next Generation Place and Route (git "
+                         "sha1 " GIT_COMMIT_HASH_STR ")\n";
             std::cout << "\n";
             std::cout << options << "\n";
             return argc != 1;
         }
 
         if (vm.count("version")) {
-            std::cout << boost::filesystem::basename(argv[0]) << " -- Next Generation Place and Route (git "
-                                                                 "sha1 " GIT_COMMIT_HASH_STR ")\n";
+            std::cout << boost::filesystem::basename(argv[0])
+                      << " -- Next Generation Place and Route (git "
+                         "sha1 " GIT_COMMIT_HASH_STR ")\n";
             return 1;
         }
 
@@ -167,6 +150,11 @@ int main(int argc, char *argv[])
                 pt::read_json(filename, root);
                 log_info("Loading project %s...\n", filename.c_str());
                 log_break();
+
+                bool isLoadingGui = vm.count("gui") > 0;
+                std::string ascOutput;
+                if (vm.count("asc"))
+                    ascOutput = vm["asc"].as<std::string>();
                 vm.clear();
 
                 int version = root.get<int>("project.version");
@@ -198,6 +186,10 @@ int main(int argc, char *argv[])
                     if (params.count("seed"))
                         vm.insert(std::make_pair("seed", po::variable_value(params.get<int>("seed"), false)));
                 }
+                if (!ascOutput.empty())
+                    vm.insert(std::make_pair("asc", po::variable_value(ascOutput, false)));
+                if (isLoadingGui)
+                    vm.insert(std::make_pair("gui", po::variable_value()));
                 po::notify(vm);
             } catch (...) {
                 log_error("Error loading project file.\n");
@@ -307,74 +299,29 @@ int main(int argc, char *argv[])
 
         if (vm.count("slack_redist_iter")) {
             ctx->slack_redist_iter = vm["slack_redist_iter"].as<int>();
+            if (vm.count("freq") && vm["freq"].as<double>() == 0) {
+                ctx->auto_freq = true;
+#ifndef NO_GUI
+                if (!vm.count("gui"))
+#endif
+                    log_warning("Target frequency not specified. Will optimise for max frequency.\n");
+            }
         }
 
-        if (vm.count("svg")) {
-            std::cout << "<svg xmlns=\"http://www.w3.org/2000/svg\" "
-                         "xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n";
-            for (auto bel : ctx->getBels()) {
-                std::cout << "<!-- " << ctx->getBelName(bel).str(ctx.get()) << " -->\n";
-                svg_dump_decal(ctx.get(), ctx->getBelDecal(bel));
-            }
-            std::cout << "<!-- Frame -->\n";
-            svg_dump_decal(ctx.get(), ctx->getFrameDecal());
-            std::cout << "</svg>\n";
+        if (vm.count("cstrweight")) {
+            ctx->placer_constraintWeight = vm["cstrweight"].as<float>();
         }
 
         if (vm.count("test"))
             ctx->archcheck();
 
-        if (vm.count("tmfuzz")) {
-            std::vector<WireId> src_wires, dst_wires;
-
-            /*for (auto w : ctx->getWires())
-                src_wires.push_back(w);*/
-            for (auto b : ctx->getBels()) {
-                if (ctx->getBelType(b) == TYPE_ICESTORM_LC) {
-                    src_wires.push_back(ctx->getBelPinWire(b, PIN_O));
-                }
-                if (ctx->getBelType(b) == TYPE_SB_IO) {
-                    src_wires.push_back(ctx->getBelPinWire(b, PIN_D_IN_0));
-                }
-            }
-
-            for (auto b : ctx->getBels()) {
-                if (ctx->getBelType(b) == TYPE_ICESTORM_LC) {
-                    dst_wires.push_back(ctx->getBelPinWire(b, PIN_I0));
-                    dst_wires.push_back(ctx->getBelPinWire(b, PIN_I1));
-                    dst_wires.push_back(ctx->getBelPinWire(b, PIN_I2));
-                    dst_wires.push_back(ctx->getBelPinWire(b, PIN_I3));
-                    dst_wires.push_back(ctx->getBelPinWire(b, PIN_CEN));
-                    dst_wires.push_back(ctx->getBelPinWire(b, PIN_CIN));
-                }
-                if (ctx->getBelType(b) == TYPE_SB_IO) {
-                    dst_wires.push_back(ctx->getBelPinWire(b, PIN_D_OUT_0));
-                    dst_wires.push_back(ctx->getBelPinWire(b, PIN_OUTPUT_ENABLE));
-                }
-            }
-
-            ctx->shuffle(src_wires);
-            ctx->shuffle(dst_wires);
-
-            for (int i = 0; i < int(src_wires.size()) && i < int(dst_wires.size()); i++) {
-                delay_t actual_delay;
-                WireId src = src_wires[i], dst = dst_wires[i];
-                if (!ctx->getActualRouteDelay(src, dst, actual_delay))
-                    continue;
-                printf("%s %s %.3f %.3f %d %d %d %d %d %d\n", ctx->getWireName(src).c_str(ctx.get()),
-                       ctx->getWireName(dst).c_str(ctx.get()), ctx->getDelayNS(actual_delay),
-                       ctx->getDelayNS(ctx->estimateDelay(src, dst)), ctx->chip_info->wire_data[src.index].x,
-                       ctx->chip_info->wire_data[src.index].y, ctx->chip_info->wire_data[src.index].type,
-                       ctx->chip_info->wire_data[dst.index].x, ctx->chip_info->wire_data[dst.index].y,
-                       ctx->chip_info->wire_data[dst.index].type);
-            }
-        }
+        if (vm.count("tmfuzz"))
+            ice40DelayFuzzerMain(ctx.get());
 
         if (vm.count("freq")) {
-            ctx->target_freq = vm["freq"].as<double>() * 1e6;
-            ctx->user_freq = true;
-        } else {
-            log_warning("Target frequency not specified. Will optimise for max frequency.\n");
+            auto freq = vm["freq"].as<double>();
+            if (freq > 0)
+                ctx->target_freq = freq * 1e6;
         }
 
         ctx->timing_driven = true;
@@ -395,9 +342,11 @@ int main(int argc, char *argv[])
             if (vm.count("json")) {
                 std::string filename = vm["json"].as<std::string>();
                 std::string pcf = "";
-                if (vm.count("pcf"))
+                w.load_json(filename);
+                if (vm.count("pcf")) {
                     pcf = vm["pcf"].as<std::string>();
-                w.load_json(filename, pcf);
+                    w.load_pcf(pcf);
+                }
             }
             w.show();
 
@@ -418,6 +367,7 @@ int main(int argc, char *argv[])
 
             if (!ctx->pack() && !ctx->force)
                 log_error("Packing design failed.\n");
+            assign_budget(ctx.get());
             ctx->check();
             print_utilisation(ctx.get());
             if (!vm.count("pack-only")) {

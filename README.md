@@ -1,20 +1,27 @@
 nextpnr -- a portable FPGA place and route tool
 ===============================================
 
-nextpnr is an FPGA place and route tool with emphasis on supporting
-timing-driven place and route for a wide range of real-world FPGA devices.
-It currently supports Lattice iCE40 devices and Lattice ECP5 devices,
-as well as a "generic" back-end for user-defined architectures.
-(ECP5 and "generic" support are still experimental.)
+nextpnr aims to be a vendor neutral, timing driven, FOSS FPGA place and route
+tool.
 
-Currently nextpnr is beta software at best. But we aim at replacing
-arachne-pnr as official place-and-route tool for the icestorm flow soon.
+Currently nextpnr supports:
+ * Lattice iCE40 devices supported by [Project IceStorm](http://www.clifford.at/icestorm/)
+ * *(experimental)* Lattice ECP5 devices supported by [Project Trellis](https://github.com/SymbiFlow/prjtrellis)
+ * *(experimental)* a "generic" back-end for user-defined architectures
 
-Here is a screenshot of nextpnr for iCE40. Build instructions and getting
-started notes can be found below.
+We hope to see Xilinx 7 Series thanks to
+[Project X-Ray](https://github.com/SymbiFlow/prjxray) and even more FPGA families
+supported in the future. We would love your help in developing this
+awesome new project!
 
+Here is a screenshot of nextpnr for iCE40. Build instructions and
+[getting started notes](#getting-started) can be found below.
 
 <img src="https://i.imgur.com/0spmlBa.png" width="640"/>
+
+See also:
+- [F.A.Q.](docs/faq.md)
+- [Architecture API](docs/archapi.md)
 
 
 Prerequisites
@@ -77,15 +84,15 @@ For ECP5 support, you must download [Project Trellis](https://github.com/SymbiFl
 then follow its instructions to download the latest database and build _libtrellis_.
 
 ```
-cmake -DARCH=ecp5 .
+cmake -DARCH=ecp5 -DTRELLIS_ROOT=/path/to/prjtrellis .
 make -j$(nproc)
 sudo make install
 ```
 
- - For an ECP5 blinky, first synthesise using `yosys blinky.ys` in `ecp5/synth`.
-  - Then run ECP5 place-and route using `./nextpnr-ecp5 --json ecp5/synth/blinky.json --basecfg ecp5/synth/ulx3s_empty.config --bit ecp5/synth/ulx3s.bit`
+ - For an ECP5 blinky on the 45k ULX3S board, first synthesise using `yosys blinky.ys` in `ecp5/synth`.
+  - Then run ECP5 place-and route using `./nextpnr-ecp5 --json ecp5/synth/blinky.json --basecfg ecp5/synth/ulx3s_empty.config --textcfg ecp5/synth/ulx3s_out.config`
+  - Create a bitstream using `ecppack ulx3s_out.config ulx3s.bit`
   - Note that `ulx3s_empty.config` contains fixed/unknown bits to be copied to the output bitstream
-  - You can also use `--textcfg out.config` to write a text file describing the bitstream for debugging
 
  - More examples of the ECP5 flow for a range of boards can be found in the [Project Trellis Examples](https://github.com/SymbiFlow/prjtrellis/tree/master/examples).
 
@@ -94,7 +101,7 @@ sudo make install
 
 ### nextpnr-generic
 
-The generic target allows to run place and route for an arbitrary custom architecture.
+The generic target allows running placement and routing for arbitrary custom architectures.
 
 ```
 cmake -DARCH=generic .
@@ -122,8 +129,8 @@ make -j$(nproc)
 
 Notes for developers
 --------------------
- 
-- All code is formatted using `clang-format` according to the style rules in `.clang-format` (LLVM based with 
+
+- All code is formatted using `clang-format` according to the style rules in `.clang-format` (LLVM based with
   increased indent widths and brace wraps after classes).
 - To automatically format all source code, run `make clangformat`.
 - See the wiki for additional documentation on the architecture API.
@@ -163,7 +170,3 @@ Links and references
 - [Gaffe](https://github.com/kc8apf/gaffe)
 - [KinglerPAR](https://github.com/rqou/KinglerPAR)
 
-> SymbiFlow is working with the Verilog to Routing tool to extend the current
-research tool to support real architectures. VtR is strongly focused on
-architecture research but having support for real architectures might enable
-research nextpnr zu providing documentation and explanation.

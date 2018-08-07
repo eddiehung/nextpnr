@@ -134,12 +134,21 @@ tiletypes["DSP2"] = 7
 tiletypes["DSP3"] = 8
 tiletypes["IPCON"] = 9
 
-wiretypes["LOCAL"] = 1
-wiretypes["GLOBAL"] = 2
-wiretypes["SP4_VERT"] = 3
-wiretypes["SP4_HORZ"] = 4
-wiretypes["SP12_HORZ"] = 5
-wiretypes["SP12_VERT"] = 6
+wiretypes["NONE"]         = 0
+wiretypes["GLB2LOCAL"]    = 1
+wiretypes["GLB_NETWK"]    = 2
+wiretypes["LOCAL"]        = 3
+wiretypes["LUTFF_IN"]     = 4
+wiretypes["LUTFF_IN_LUT"] = 5
+wiretypes["LUTFF_LOUT"]   = 6
+wiretypes["LUTFF_OUT"]    = 7
+wiretypes["LUTFF_COUT"]   = 8
+wiretypes["LUTFF_GLOBAL"] = 9
+wiretypes["CARRY_IN_MUX"] = 10
+wiretypes["SP4_V"]        = 11
+wiretypes["SP4_H"]        = 12
+wiretypes["SP12_V"]       = 13
+wiretypes["SP12_H"]       = 14
 
 def maj_wire_name(name):
     if name[2].startswith("lutff_"):
@@ -179,40 +188,84 @@ def cmp_wire_names(newname, oldname):
 
 def wire_type(name):
     longname = name
-    name = name.split('/')[-1]
-    wt = None
+    name = name.split('/')
 
-    if name.startswith("glb_netwk_") or name.startswith("padin_"):
-        wt = "GLOBAL"
-    elif name.startswith("D_IN_") or name.startswith("D_OUT_"):
-        wt = "LOCAL"
-    elif name in ("OUT_ENB", "cen", "inclk", "latch", "outclk", "clk", "s_r", "carry_in", "carry_in_mux"):
-        wt = "LOCAL"
-    elif name in ("in_0", "in_1", "in_2", "in_3", "cout", "lout", "out", "fabout") or name.startswith("slf_op") or name.startswith("O_"):
-        wt = "LOCAL"
-    elif name.startswith("local_g") or name.startswith("glb2local_"):
-        wt = "LOCAL"
-    elif name.startswith("span4_horz_") or name.startswith("sp4_h_"):
-        wt = "SP4_HORZ"
-    elif name.startswith("span4_vert_") or name.startswith("sp4_v_") or name.startswith("sp4_r_v_"):
-        wt = "SP4_VERT"
-    elif name.startswith("span12_horz_") or name.startswith("sp12_h_"):
-        wt = "SP12_HORZ"
-    elif name.startswith("span12_vert_") or name.startswith("sp12_v_"):
-        wt = "SP12_VERT"
-    elif name.startswith("MASK_") or name.startswith("RADDR_") or name.startswith("WADDR_"):
-        wt = "LOCAL"
-    elif name.startswith("RDATA_")  or name.startswith("WDATA_") or name.startswith("neigh_op_"):
-        wt = "LOCAL"
-    elif name in ("WCLK", "WCLKE", "WE", "RCLK", "RCLKE", "RE"):
-        wt = "LOCAL"
-    elif name in ("PLLOUT_A", "PLLOUT_B"):
-        wt = "LOCAL"
+    if name[0].startswith("X") and name[1].startswith("Y"):
+        name = name[2:]
 
-    if wt is None:
-        print("No type for wire: %s (%s)" % (longname, name), file=sys.stderr)
-        assert 0
-    return wt
+    if name[0].startswith("sp4_v_") or name[0].startswith("sp4_r_v_") or name[0].startswith("span4_vert_"):
+        return "SP4_V"
+
+    if name[0].startswith("sp4_h_") or name[0].startswith("span4_horz_"):
+        return "SP4_H"
+
+    if name[0].startswith("sp12_v_") or name[0].startswith("span12_vert_"):
+        return "SP12_V"
+
+    if name[0].startswith("sp12_h_") or name[0].startswith("span12_horz_"):
+        return "SP12_H"
+
+    if name[0].startswith("glb2local"):
+        return "GLB2LOCAL"
+
+    if name[0].startswith("glb_netwk_"):
+        return "GLB_NETWK"
+
+    if name[0].startswith("local_"):
+        return "LOCAL"
+
+    if name[0].startswith("lutff_"):
+        if name[1].startswith("in_"):
+            return "LUTFF_IN_LUT" if name[1].endswith("_lut") else "LUTFF_IN"
+
+        if name[1] == "lout":
+            return "LUTFF_LOUT"
+        if name[1] == "out":
+            return "LUTFF_OUT"
+        if name[1] == "cout":
+            return "LUTFF_COUT"
+
+    if name[0] == "ram":
+        if name[1].startswith("RADDR_"):
+            return "LUTFF_IN"
+        if name[1].startswith("WADDR_"):
+            return "LUTFF_IN"
+        if name[1].startswith("WDATA_"):
+            return "LUTFF_IN"
+        if name[1].startswith("MASK_"):
+            return "LUTFF_IN"
+        if name[1].startswith("RDATA_"):
+            return "LUTFF_OUT"
+        if name[1] in ("WCLK", "WCLKE", "WE", "RCLK", "RCLKE", "RE"):
+            return "LUTFF_GLOBAL"
+
+    if name[0].startswith("io_"):
+        if name[1].startswith("D_IN_") or name[1] == "OUT_ENB":
+            return "LUTFF_IN"
+        if name[1].startswith("D_OUT_"):
+            return "LUTFF_OUT"
+    if name[0] == "fabout":
+        return "LUTFF_IN"
+
+    if name[0] == "lutff_global" or name[0] == "io_global":
+        return "LUTFF_GLOBAL"
+
+    if name[0] == "carry_in_mux":
+        return "CARRY_IN_MUX"
+
+    if name[0] == "carry_in":
+        return "LUTFF_COUT"
+
+    if name[0].startswith("neigh_op_"):
+        return "NONE"
+
+    if name[0].startswith("padin_"):
+        return "NONE"
+
+    # print("No type for wire: %s (%s)" % (longname, name), file=sys.stderr)
+    # assert 0
+
+    return "NONE"
 
 def pipdelay(src_idx, dst_idx, db):
     if db is None:
@@ -265,11 +318,24 @@ def pipdelay(src_idx, dst_idx, db):
     if src[2].startswith("local_") and dst[2] in ("io_0/D_OUT_0", "io_0/D_OUT_1", "io_0/OUT_ENB", "io_1/D_OUT_0", "io_1/D_OUT_1", "io_1/OUT_ENB"):
         return db["IoInMux.I.O"]
 
-    if re.match(r"lutff_\d+/in_\d+", dst[2]):
+    if re.match(r"lutff_\d+/in_\d+$", dst[2]):
         return db["InMux.I.O"]
+
+    if re.match(r"lutff_\d+/in_\d+_lut", dst[2]):
+        return 0
 
     if re.match(r"ram/(MASK|RADDR|WADDR|WDATA)_", dst[2]):
         return db["InMux.I.O"]
+
+    if re.match(r"lutff_\d+/out", dst[2]):
+        if re.match(r"lutff_\d+/in_0", src[2]):
+            return db["LogicCell40.in0.lcout"]
+        if re.match(r"lutff_\d+/in_1", src[2]):
+            return db["LogicCell40.in1.lcout"]
+        if re.match(r"lutff_\d+/in_2", src[2]):
+            return db["LogicCell40.in2.lcout"]
+        if re.match(r"lutff_\d+/in_3", src[2]):
+            return db["LogicCell40.in3.lcout"]
 
     print(src, dst, src_idx, dst_idx, src_type, dst_type, file=sys.stderr)
     assert 0
@@ -316,12 +382,12 @@ with open(args.filename, "r") as f:
 
         if line[0] == ".buffer":
             mode = ("buffer", int(line[3]), int(line[1]), int(line[2]))
-            switches.append((line[3], int(line[1]), int(line[2]), line[4:]))
+            switches.append((int(line[1]), int(line[2]), line[4:], -1))
             continue
 
         if line[0] == ".routing":
             mode = ("routing", int(line[3]), int(line[1]), int(line[2]))
-            switches.append((line[3], int(line[1]), int(line[2]), line[4:]))
+            switches.append((int(line[1]), int(line[2]), line[4:], -1))
             continue
 
         if line[0] == ".io_tile":
@@ -462,7 +528,7 @@ with open(args.filename, "r") as f:
                 wire_uphill[wire_b] = set()
             wire_downhill[wire_a].add(wire_b)
             wire_uphill[wire_b].add(wire_a)
-            pip_xy[(wire_a, wire_b)] = (mode[2], mode[3], int(line[0], 2), len(switches) - 1)
+            pip_xy[(wire_a, wire_b)] = (mode[2], mode[3], int(line[0], 2), len(switches) - 1, 0)
             continue
 
         if mode[0] == "bits":
@@ -498,6 +564,25 @@ def add_wire(x, y, name):
     wire_names[wname] = wire_idx
     wire_names_r[wire_idx] = wname
     wire_segments[wire_idx] = dict()
+    if ("TILE_WIRE_" + wname[2].upper().replace("/", "_")) in gfx_wire_ids:
+        wire_segments[wire_idx][(wname[0], wname[1])] = wname[2]
+    return wire_idx
+
+def add_switch(x, y, bel=-1):
+    switches.append((x, y, [], bel))
+
+def add_pip(src, dst, flags=0):
+    x, y, _, _ = switches[-1]
+
+    if src not in wire_downhill:
+        wire_downhill[src] = set()
+    wire_downhill[src].add(dst)
+
+    if dst not in wire_uphill:
+        wire_uphill[dst] = set()
+    wire_uphill[dst].add(src)
+
+    pip_xy[(src, dst)] = (x, y, 0, len(switches) - 1, flags)
 
 # Add virtual padin wires
 for i in range(8):
@@ -531,10 +616,11 @@ def add_bel_lc(x, y, z):
     else:
         wire_cin = wire_names[(x, y, "lutff_%d/cout" % (z-1))]
 
-    wire_in_0 = wire_names[(x, y, "lutff_%d/in_0" % z)]
-    wire_in_1 = wire_names[(x, y, "lutff_%d/in_1" % z)]
-    wire_in_2 = wire_names[(x, y, "lutff_%d/in_2" % z)]
-    wire_in_3 = wire_names[(x, y, "lutff_%d/in_3" % z)]
+    wire_in_0 = add_wire(x, y, "lutff_%d/in_0_lut" % z)
+    wire_in_1 = add_wire(x, y, "lutff_%d/in_1_lut" % z)
+    wire_in_2 = add_wire(x, y, "lutff_%d/in_2_lut" % z)
+    wire_in_3 = add_wire(x, y, "lutff_%d/in_3_lut" % z)
+
     wire_out  = wire_names[(x, y, "lutff_%d/out"  % z)]
     wire_cout = wire_names[(x, y, "lutff_%d/cout" % z)]
     wire_lout = wire_names[(x, y, "lutff_%d/lout" % z)] if z < 7 else None
@@ -554,6 +640,24 @@ def add_bel_lc(x, y, z):
 
     if wire_lout is not None:
         add_bel_output(bel, wire_lout, "LO")
+
+    # route-through LUTs
+    add_switch(x, y, bel)
+    add_pip(wire_in_0, wire_out, 1)
+    add_pip(wire_in_1, wire_out, 1)
+    add_pip(wire_in_2, wire_out, 1)
+    add_pip(wire_in_3, wire_out, 1)
+
+    # LUT permutation pips
+    for i in range(4):
+        add_switch(x, y, bel)
+        for j in range(4):
+            if (i == j) or ((i, j) == (1, 2)) or ((i, j) == (2, 1)):
+                flags = 0
+            else:
+                flags = 2
+            add_pip(wire_names[(x, y, "lutff_%d/in_%d" % (z, i))],
+                    wire_names[(x, y, "lutff_%d/in_%d_lut"  % (z, j))], flags)
 
 def add_bel_io(x, y, z):
     bel = len(bel_name)
@@ -662,6 +766,64 @@ def add_bel_ec(ec):
             add_bel_output(bel, wire_names[(x, y, z)], entry[0])
         else:
             extra_cell_config[bel].append(entry)
+
+cell_timings = {}
+tmport_to_portpin = {
+    "posedge:clk": "CLK",
+    "ce": "CEN",
+    "sr": "SR",
+    "in0": "I0",
+    "in1": "I1",
+    "in2": "I2",
+    "in3": "I3",
+    "carryin": "CIN",
+    "carryout": "COUT",
+    "lcout": "O",
+    "ltout": "LO",
+    "posedge:RCLK": "RCLK",
+    "posedge:WCLK": "WCLK",
+    "RCLKE": "RCLKE",
+    "RE": "RE",
+    "WCLKE": "WCLKE",
+    "WE": "WE",
+    "posedge:CLOCK": "CLOCK",
+    "posedge:SLEEP": "SLEEP",
+    "USERSIGNALTOGLOBALBUFFER": "USER_SIGNAL_TO_GLOBAL_BUFFER",
+    "GLOBALBUFFEROUTPUT": "GLOBAL_BUFFER_OUTPUT"
+}
+
+for i in range(16):
+    tmport_to_portpin["RDATA[%d]" % i] = "RDATA_%d" % i
+    tmport_to_portpin["WDATA[%d]" % i] = "WDATA_%d" % i
+    tmport_to_portpin["MASK[%d]" % i] = "MASK_%d" % i
+    tmport_to_portpin["DATAOUT[%d]" % i] = "DATAOUT_%d" % i
+
+for i in range(11):
+    tmport_to_portpin["RADDR[%d]" % i] = "RADDR_%d" % i
+    tmport_to_portpin["WADDR[%d]" % i] = "WADDR_%d" % i
+
+def add_cell_timingdata(bel_type, timing_cell, fast_db, slow_db):
+    timing_entries = []
+    database = slow_db if slow_db is not None else fast_db
+    for key in database.keys():
+        skey = key.split(".")
+        if skey[0] == timing_cell:
+            if skey[1] in tmport_to_portpin and skey[2] in tmport_to_portpin:
+                iport = tmport_to_portpin[skey[1]]
+                oport = tmport_to_portpin[skey[2]]
+                fastdel = fast_db[key] if fast_db is not None else 0
+                slowdel = slow_db[key] if slow_db is not None else 0
+                timing_entries.append((iport, oport, fastdel, slowdel))
+    cell_timings[bel_type] = timing_entries
+
+add_cell_timingdata("ICESTORM_LC", "LogicCell40", fast_timings, slow_timings)
+add_cell_timingdata("SB_GB", "ICE_GB", fast_timings, slow_timings)
+
+if dev_name != "384":
+    add_cell_timingdata("ICESTORM_RAM", "SB_RAM40_4K", fast_timings, slow_timings)
+if dev_name == "5k":
+    add_cell_timingdata("SPRAM", "SB_SPRAM256KA", fast_timings, slow_timings)
+
 
 for tile_xy, tile_type in sorted(tiles.items()):
     if tile_type == "logic":
@@ -811,6 +973,7 @@ for wire in range(num_wires):
                 pi["y"] = pip_xy[(src, wire)][1]
                 pi["switch_mask"] = pip_xy[(src, wire)][2]
                 pi["switch_index"] = pip_xy[(src, wire)][3]
+                pi["flags"] = pip_xy[(src, wire)][4]
                 pipinfo.append(pi)
             pips.append(pipcache[(src, wire)])
         num_uphill = len(pips)
@@ -836,6 +999,7 @@ for wire in range(num_wires):
                 pi["y"] = pip_xy[(wire, dst)][1]
                 pi["switch_mask"] = pip_xy[(wire, dst)][2]
                 pi["switch_index"] = pip_xy[(wire, dst)][3]
+                pi["flags"] = pip_xy[(wire, dst)][4]
                 pipinfo.append(pi)
             pips.append(pipcache[(wire, dst)])
         num_downhill = len(pips)
@@ -868,16 +1032,20 @@ for wire in range(num_wires):
     info["num_bel_pins"] = num_bel_pins
     info["list_bel_pins"] = ("wire%d_bels" % wire) if num_bel_pins > 0 else None
 
-    avg_x, avg_y = 0, 0
     if wire in wire_xy:
+        avg_x, avg_y = 0, 0
+
         for x, y in wire_xy[wire]:
             avg_x += x
             avg_y += y
         avg_x /= len(wire_xy[wire])
         avg_y /= len(wire_xy[wire])
 
-    info["x"] = int(round(avg_x))
-    info["y"] = int(round(avg_y))
+        info["x"] = int(round(avg_x))
+        info["y"] = int(round(avg_y))
+    else:
+        info["x"] = wire_names_r[wire][0]
+        info["y"] = wire_names_r[wire][1]
 
     wireinfo.append(info)
 
@@ -955,8 +1123,8 @@ for wire, info in enumerate(wireinfo):
 
     bba.u8(info["x"], "x")
     bba.u8(info["y"], "y")
+    bba.u8(0, "z") # FIXME
     bba.u8(wiretypes[wire_type(info["name"])], "type")
-    bba.u8(0, "padding")
 
 for wire in range(num_wires):
     if len(wire_segments[wire]):
@@ -993,10 +1161,11 @@ for info in pipinfo:
     bba.u16(dst_seg, "dst_seg")
     bba.u16(info["switch_mask"], "switch_mask")
     bba.u32(info["switch_index"], "switch_index")
+    bba.u32(info["flags"], "flags")
 
 switchinfo = []
 for switch in switches:
-    dst, x, y, bits = switch
+    x, y, bits, bel = switch
     bitlist = []
     for b in bits:
         m = cbit_re.match(b)
@@ -1006,11 +1175,13 @@ for switch in switches:
     si["x"] = x
     si["y"] = y
     si["bits"] = bitlist
+    si["bel"] = bel
     switchinfo.append(si)
 
 bba.l("switch_data_%s" % dev_name, "SwitchInfoPOD")
 for info in switchinfo:
     bba.u32(len(info["bits"]), "num_bits")
+    bba.u32(info["bel"], "bel")
     bba.u8(info["x"], "x")
     bba.u8(info["y"], "y")
     for i in range(5):
@@ -1074,6 +1245,23 @@ for info in packageinfo:
     bba.u32(info[1], "num_pins")
     bba.r(info[2], "pins")
 
+for cell, timings in sorted(cell_timings.items()):
+    beltype = beltypes[cell]
+    bba.l("cell_paths_%d" % beltype, "CellPathDelayPOD")
+    for entry in timings:
+        fromport, toport, fast, slow = entry
+        bba.u32(portpins[fromport], "from_port")
+        bba.u32(portpins[toport], "to_port")
+        bba.u32(fast, "fast_delay")
+        bba.u32(slow, "slow_delay")
+
+bba.l("cell_timings_%s" % dev_name, "CellTimingPOD")
+for cell, timings in sorted(cell_timings.items()):
+    beltype = beltypes[cell]
+    bba.u32(beltype, "type")
+    bba.u32(len(timings), "num_paths")
+    bba.r("cell_paths_%d" % beltype, "path_delays")
+
 bba.l("chip_info_%s" % dev_name)
 bba.u32(dev_width, "dev_width")
 bba.u32(dev_height, "dev_height")
@@ -1083,6 +1271,7 @@ bba.u32(len(pipinfo), "num_pips")
 bba.u32(len(switchinfo), "num_switches")
 bba.u32(len(extra_cell_config), "num_belcfgs")
 bba.u32(len(packageinfo), "num_packages")
+bba.u32(len(cell_timings), "num_timing_cells")
 bba.r("bel_data_%s" % dev_name, "bel_data")
 bba.r("wire_data_%s" % dev_name, "wire_data")
 bba.r("pip_data_%s" % dev_name, "pip_data")
@@ -1090,5 +1279,6 @@ bba.r("tile_grid_%s" % dev_name, "tile_grid")
 bba.r("bits_info_%s" % dev_name, "bits_info")
 bba.r("bel_config_%s" % dev_name if len(extra_cell_config) > 0 else None, "bel_config")
 bba.r("package_info_%s" % dev_name, "packages_data")
+bba.r("cell_timings_%s" % dev_name, "cell_timing")
 
 bba.pop()

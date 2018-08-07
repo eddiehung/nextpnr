@@ -221,8 +221,40 @@ std::string tagTileType(TileType &tile)
         NPNR_ASSERT(false);
     }
 }
+
+static BelPin get_one_bel_pin(const Context *ctx, WireId wire)
+{
+    auto pins = ctx->getWireBelPins(wire);
+    NPNR_ASSERT(pins.begin() != pins.end());
+    return *pins.begin();
+}
+
+// Permute LUT init value given map (LUT input -> ext input)
+unsigned permute_lut(unsigned orig_init, const std::unordered_map<int, int> &input_permute)
+{
+    unsigned new_init = 0;
+
+    for (int i = 0; i < 16; i++) {
+        int permute_address = 0;
+        for (int j = 0; j < 4; j++) {
+            if ((i >> j) & 0x1)
+                permute_address |= (1 << input_permute.at(j));
+        }
+        if ((orig_init >> i) & 0x1) {
+            new_init |= (1 << permute_address);
+        }
+    }
+
+    return new_init;
+}
+
 void write_asc(const Context *ctx, std::ostream &out)
 {
+
+    static const std::vector<int> lut_perm = {
+            4, 14, 15, 5, 6, 16, 17, 7, 3, 13, 12, 2, 1, 11, 10, 0,
+    };
+
     // [y][x][row][col]
     const ChipInfoPOD &ci = *ctx->chip_info;
     const BitstreamInfoPOD &bi = *ci.bits_info;
@@ -259,15 +291,64 @@ void write_asc(const Context *ctx, std::ostream &out)
     }
     // Set pips
     for (auto pip : ctx->getPips()) {
-        if (ctx->pip_to_net[pip.index] != IdString()) {
+        if (ctx->pip_to_net[pip.index] != nullptr) {
             const PipInfoPOD &pi = ci.pip_data[pip.index];
             const SwitchInfoPOD &swi = bi.switches[pi.switch_index];
-            for (int i = 0; i < swi.num_bits; i++) {
-                bool val = (pi.switch_mask & (1 << ((swi.num_bits - 1) - i))) != 0;
-                int8_t &cbit = config.at(swi.y).at(swi.x).at(swi.cbits[i].row).at(swi.cbits[i].col);
-                if (bool(cbit) != 0)
-                    NPNR_ASSERT(false);
-                cbit = val;
+            int sw_bel_idx = swi.bel;
+            if (sw_bel_idx >= 0) {
+                const BelInfoPOD &beli = ci.bel_data[sw_bel_idx];
+                const TileInfoPOD &ti = bi.tiles_nonrouting[TILE_LOGIC];
+                BelId sw_bel;
+                sw_bel.index = sw_bel_idx;
+                NPNR_ASSERT(ctx->getBelType(sw_bel) == TYPE_ICESTORM_LC);
+
+                if (ci.wire_data[ctx->getPipDstWire(pip).index].type == WireInfoPOD::WIRE_TYPE_LUTFF_IN_LUT)
+                    continue; // Permutation pips
+                BelPin output = get_one_bel_pin(ctx, ctx->getPipDstWire(pip));
+                NPNR_ASSERT(output.bel == sw_bel && output.pin == PIN_O);
+                unsigned lut_init;
+
+                WireId permWire;
+                for (auto permPip : ctx->getPipsUphill(ctx->getPipSrcWire(pip))) {
+                    if (ctx->getBoundPipNet(permPip) != nullptr) {
+                        permWire = ctx->getPipSrcWire(permPip);
+                    }
+                }
+                NPNR_ASSERT(permWire != WireId());
+                std::string dName = ci.wire_data[permWire.index].name.get();
+
+                switch (dName.back()) {
+                case '0':
+                    lut_init = 2;
+                    break;
+                case '1':
+                    lut_init = 4;
+                    break;
+                case '2':
+                    lut_init = 16;
+                    break;
+                case '3':
+                    lut_init = 256;
+                    break;
+                default:
+                    NPNR_ASSERT_FALSE("bad feedthru LUT input");
+                }
+                std::vector<bool> lc(20, false);
+                for (int i = 0; i < 16; i++) {
+                    if ((lut_init >> i) & 0x1)
+                        lc.at(lut_perm.at(i)) = true;
+                }
+
+                for (int i = 0; i < 20; i++)
+                    set_config(ti, config.at(beli.y).at(beli.x), "LC_" + std::to_string(beli.z), lc.at(i), i);
+            } else {
+                for (int i = 0; i < swi.num_bits; i++) {
+                    bool val = (pi.switch_mask & (1 << ((swi.num_bits - 1) - i))) != 0;
+                    int8_t &cbit = config.at(swi.y).at(swi.x).at(swi.cbits[i].row).at(swi.cbits[i].col);
+                    if (bool(cbit) != 0)
+                        NPNR_ASSERT(false);
+                    cbit = val;
+                }
             }
         }
     }
@@ -294,10 +375,49 @@ void write_asc(const Context *ctx, std::ostream &out)
             bool set_noreset = get_param_or_def(cell.second.get(), ctx->id("SET_NORESET"));
             bool carry_enable = get_param_or_def(cell.second.get(), ctx->id("CARRY_ENABLE"));
             std::vector<bool> lc(20, false);
-            // From arachne-pnr
-            static std::vector<int> lut_perm = {
-                    4, 14, 15, 5, 6, 16, 17, 7, 3, 13, 12, 2, 1, 11, 10, 0,
-            };
+
+            // Discover permutation
+            std::unordered_map<int, int> input_perm;
+            std::set<int> unused;
+            for (int i = 0; i < 4; i++)
+                unused.insert(i);
+            for (int i = 0; i < 4; i++) {
+                WireId lut_wire = ctx->getBelPinWire(bel, PortPin(PIN_I0 + i));
+                for (auto pip : ctx->getPipsUphill(lut_wire)) {
+                    if (ctx->getBoundPipNet(pip) != nullptr) {
+                        std::string name = ci.wire_data[ctx->getPipSrcWire(pip).index].name.get();
+                        switch (name.back()) {
+                        case '0':
+                            input_perm[i] = 0;
+                            unused.erase(0);
+                            break;
+                        case '1':
+                            input_perm[i] = 1;
+                            unused.erase(1);
+                            break;
+                        case '2':
+                            input_perm[i] = 2;
+                            unused.erase(2);
+                            break;
+                        case '3':
+                            input_perm[i] = 3;
+                            unused.erase(3);
+                            break;
+                        default:
+                            NPNR_ASSERT_FALSE("failed to determine LUT permutation");
+                        }
+                        break;
+                    }
+                }
+            }
+            for (int i = 0; i < 4; i++) {
+                if (!input_perm.count(i)) {
+                    NPNR_ASSERT(!unused.empty());
+                    input_perm[i] = *(unused.begin());
+                    unused.erase(input_perm[i]);
+                }
+            }
+            lut_init = permute_lut(lut_init, input_perm);
             for (int i = 0; i < 16; i++) {
                 if ((lut_init >> i) & 0x1)
                     lc.at(lut_perm.at(i)) = true;
@@ -338,8 +458,8 @@ void write_asc(const Context *ctx, std::ostream &out)
             NPNR_ASSERT(iez != -1);
 
             bool input_en = false;
-            if ((ctx->wire_to_net[ctx->getBelPinWire(bel, PIN_D_IN_0).index] != IdString()) ||
-                (ctx->wire_to_net[ctx->getBelPinWire(bel, PIN_D_IN_1).index] != IdString())) {
+            if ((ctx->wire_to_net[ctx->getBelPinWire(bel, PIN_D_IN_0).index] != nullptr) ||
+                (ctx->wire_to_net[ctx->getBelPinWire(bel, PIN_D_IN_1).index] != nullptr)) {
                 input_en = true;
             }
 
@@ -425,6 +545,10 @@ void write_asc(const Context *ctx, std::ostream &out)
                                                                            {"A_SIGNED", 1},
                                                                            {"B_SIGNED", 1}};
             configure_extra_cell(config, ctx, cell.second.get(), mac16_params, false, std::string("IpConfig."));
+        } else if (cell.second->type == ctx->id("ICESTORM_HFOSC")) {
+            const std::vector<std::pair<std::string, int>> hfosc_params = {{"CLKHF_DIV", 2}, {"TRIM_EN", 1}};
+            configure_extra_cell(config, ctx, cell.second.get(), hfosc_params, true, std::string("IpConfig."));
+
         } else if (cell.second->type == ctx->id("ICESTORM_PLL")) {
             const std::vector<std::pair<std::string, int>> pll_params = {{"DELAY_ADJMODE_FB", 1},
                                                                          {"DELAY_ADJMODE_REL", 1},
@@ -494,7 +618,7 @@ void write_asc(const Context *ctx, std::ostream &out)
     }
     // Set config bits in unused IO and RAM
     for (auto bel : ctx->getBels()) {
-        if (ctx->bel_to_cell[bel.index] == IdString() && ctx->getBelType(bel) == TYPE_SB_IO) {
+        if (ctx->bel_to_cell[bel.index] == nullptr && ctx->getBelType(bel) == TYPE_SB_IO) {
             const TileInfoPOD &ti = bi.tiles_nonrouting[TILE_IO];
             const BelInfoPOD &beli = ci.bel_data[bel.index];
             int x = beli.x, y = beli.y, z = beli.z;
@@ -509,7 +633,7 @@ void write_asc(const Context *ctx, std::ostream &out)
                 set_ie_bit_logical(ctx, ti, config.at(iey).at(iex), "IoCtrl.IE_" + std::to_string(iez), true);
                 set_ie_bit_logical(ctx, ti, config.at(iey).at(iex), "IoCtrl.REN_" + std::to_string(iez), false);
             }
-        } else if (ctx->bel_to_cell[bel.index] == IdString() && ctx->getBelType(bel) == TYPE_ICESTORM_RAM) {
+        } else if (ctx->bel_to_cell[bel.index] == nullptr && ctx->getBelType(bel) == TYPE_ICESTORM_RAM) {
             const BelInfoPOD &beli = ci.bel_data[bel.index];
             int x = beli.x, y = beli.y;
             const TileInfoPOD &ti = bi.tiles_nonrouting[TILE_RAMB];
@@ -566,8 +690,9 @@ void write_asc(const Context *ctx, std::ostream &out)
                             set_config(ti, config.at(y).at(x),
                                        "Cascade.IPCON_LC0" + std::to_string(lc_idx) + "_inmux02_5", true);
                         else
-                            set_config(ti, config.at(y).at(x), "Cascade.MULT" + std::to_string(int(tile - TILE_DSP0)) +
-                                                                       "_LC0" + std::to_string(lc_idx) + "_inmux02_5",
+                            set_config(ti, config.at(y).at(x),
+                                       "Cascade.MULT" + std::to_string(int(tile - TILE_DSP0)) + "_LC0" +
+                                               std::to_string(lc_idx) + "_inmux02_5",
                                        true);
                     }
                 }
@@ -626,9 +751,9 @@ void write_asc(const Context *ctx, std::ostream &out)
     // Write symbols
     // const bool write_symbols = 1;
     for (auto wire : ctx->getWires()) {
-        IdString net = ctx->getBoundWireNet(wire);
-        if (net != IdString())
-            out << ".sym " << wire.index << " " << net.str(ctx) << std::endl;
+        NetInfo *net = ctx->getBoundWireNet(wire);
+        if (net != nullptr)
+            out << ".sym " << wire.index << " " << net->name.str(ctx) << std::endl;
     }
 }
 
@@ -700,7 +825,7 @@ void read_config(Context *ctx, std::istream &in, chipconfig_t &config)
 
                 WireId wire;
                 wire.index = wireIndex;
-                ctx->bindWire(wire, netName, STRENGTH_WEAK);
+                ctx->bindWire(wire, ctx->nets.at(netName).get(), STRENGTH_WEAK);
             }
         } else if (line_nr >= 0 && strlen(buffer) > 0) {
             if (line_nr > int(config.at(tile_y).at(tile_x).size() - 1))
@@ -744,7 +869,7 @@ bool read_asc(Context *ctx, std::istream &in)
                 isUsed &= !(bool(cbit) ^ val);
             }
             if (isUsed) {
-                IdString net = ctx->wire_to_net[pi.dst];
+                NetInfo *net = ctx->wire_to_net[pi.dst];
                 WireId wire;
                 wire.index = pi.dst;
                 ctx->unbindWire(wire);
@@ -771,7 +896,7 @@ bool read_asc(Context *ctx, std::istream &in)
                     std::unique_ptr<CellInfo> created = create_ice_cell(ctx, ctx->id("ICESTORM_LC"));
                     IdString name = created->name;
                     ctx->cells[name] = std::move(created);
-                    ctx->bindBel(bel, name, STRENGTH_WEAK);
+                    ctx->bindBel(bel, ctx->cells[name].get(), STRENGTH_WEAK);
                     // TODO: Add port mapping to nets and assign values of properties
                 }
             }
@@ -791,7 +916,7 @@ bool read_asc(Context *ctx, std::istream &in)
                     std::unique_ptr<CellInfo> created = create_ice_cell(ctx, ctx->id("SB_IO"));
                     IdString name = created->name;
                     ctx->cells[name] = std::move(created);
-                    ctx->bindBel(bel, name, STRENGTH_WEAK);
+                    ctx->bindBel(bel, ctx->cells[name].get(), STRENGTH_WEAK);
                     // TODO: Add port mapping to nets and assign values of properties
                 }
             }
@@ -808,35 +933,35 @@ bool read_asc(Context *ctx, std::istream &in)
                                 std::unique_ptr<CellInfo> created = create_ice_cell(ctx, ctx->id("ICESTORM_LC"));
                                 IdString name = created->name;
                                 ctx->cells[name] = std::move(created);
-                                ctx->bindBel(belpin.bel, name, STRENGTH_WEAK);
+                                ctx->bindBel(belpin.bel, ctx->cells[name].get(), STRENGTH_WEAK);
                                 // TODO: Add port mapping to nets
                             }
                             if (ctx->getBelType(belpin.bel) == TYPE_SB_IO) {
                                 std::unique_ptr<CellInfo> created = create_ice_cell(ctx, ctx->id("SB_IO"));
                                 IdString name = created->name;
                                 ctx->cells[name] = std::move(created);
-                                ctx->bindBel(belpin.bel, name, STRENGTH_WEAK);
+                                ctx->bindBel(belpin.bel, ctx->cells[name].get(), STRENGTH_WEAK);
                                 // TODO: Add port mapping to nets
                             }
                             if (ctx->getBelType(belpin.bel) == TYPE_SB_GB) {
                                 std::unique_ptr<CellInfo> created = create_ice_cell(ctx, ctx->id("SB_GB"));
                                 IdString name = created->name;
                                 ctx->cells[name] = std::move(created);
-                                ctx->bindBel(belpin.bel, name, STRENGTH_WEAK);
+                                ctx->bindBel(belpin.bel, ctx->cells[name].get(), STRENGTH_WEAK);
                                 // TODO: Add port mapping to nets
                             }
                             if (ctx->getBelType(belpin.bel) == TYPE_SB_WARMBOOT) {
                                 std::unique_ptr<CellInfo> created = create_ice_cell(ctx, ctx->id("SB_WARMBOOT"));
                                 IdString name = created->name;
                                 ctx->cells[name] = std::move(created);
-                                ctx->bindBel(belpin.bel, name, STRENGTH_WEAK);
+                                ctx->bindBel(belpin.bel, ctx->cells[name].get(), STRENGTH_WEAK);
                                 // TODO: Add port mapping to nets
                             }
                             if (ctx->getBelType(belpin.bel) == TYPE_ICESTORM_LFOSC) {
                                 std::unique_ptr<CellInfo> created = create_ice_cell(ctx, ctx->id("ICESTORM_LFOSC"));
                                 IdString name = created->name;
                                 ctx->cells[name] = std::move(created);
-                                ctx->bindBel(belpin.bel, name, STRENGTH_WEAK);
+                                ctx->bindBel(belpin.bel, ctx->cells[name].get(), STRENGTH_WEAK);
                                 // TODO: Add port mapping to nets
                             }
                         }
@@ -850,17 +975,17 @@ bool read_asc(Context *ctx, std::istream &in)
                     PortPin pin = ctx->portPinFromId(port.first);
                     WireId wire = ctx->getBelPinWire(cell.second->bel, pin);
                     if (wire != WireId()) {
-                        IdString name = ctx->getBoundWireNet(wire);
-                        if (name != IdString()) {
-                            port.second.net = ctx->nets[name].get();
+                        NetInfo *net = ctx->getBoundWireNet(wire);
+                        if (net != nullptr) {
+                            port.second.net = net;
                             PortRef ref;
                             ref.cell = cell.second.get();
                             ref.port = port.second.name;
 
                             if (port.second.type == PORT_OUT)
-                                ctx->nets[name]->driver = ref;
+                                net->driver = ref;
                             else
-                                ctx->nets[name]->users.push_back(ref);
+                                net->users.push_back(ref);
                         }
                     }
                 }

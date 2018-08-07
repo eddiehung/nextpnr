@@ -64,6 +64,13 @@ NPNR_PACKED_STRUCT(struct BelPortPOD {
 });
 
 NPNR_PACKED_STRUCT(struct PipInfoPOD {
+    enum PipFlags : uint32_t
+    {
+        FLAG_NONE = 0,
+        FLAG_ROUTETHRU = 1,
+        FLAG_NOCARRY = 2
+    };
+
     // RelPtr<char> name;
     int32_t src, dst;
     int32_t fast_delay;
@@ -72,6 +79,7 @@ NPNR_PACKED_STRUCT(struct PipInfoPOD {
     int16_t src_seg, dst_seg;
     int16_t switch_mask;
     int32_t switch_index;
+    PipFlags flags;
 });
 
 NPNR_PACKED_STRUCT(struct WireSegmentPOD {
@@ -80,6 +88,25 @@ NPNR_PACKED_STRUCT(struct WireSegmentPOD {
 });
 
 NPNR_PACKED_STRUCT(struct WireInfoPOD {
+    enum WireType : int8_t
+    {
+        WIRE_TYPE_NONE = 0,
+        WIRE_TYPE_GLB2LOCAL = 1,
+        WIRE_TYPE_GLB_NETWK = 2,
+        WIRE_TYPE_LOCAL = 3,
+        WIRE_TYPE_LUTFF_IN = 4,
+        WIRE_TYPE_LUTFF_IN_LUT = 5,
+        WIRE_TYPE_LUTFF_LOUT = 6,
+        WIRE_TYPE_LUTFF_OUT = 7,
+        WIRE_TYPE_LUTFF_COUT = 8,
+        WIRE_TYPE_LUTFF_GLOBAL = 9,
+        WIRE_TYPE_CARRY_IN_MUX = 10,
+        WIRE_TYPE_SP4_V = 11,
+        WIRE_TYPE_SP4_H = 12,
+        WIRE_TYPE_SP12_V = 13,
+        WIRE_TYPE_SP12_H = 14
+    };
+
     RelPtr<char> name;
     int32_t num_uphill, num_downhill;
     RelPtr<int32_t> pips_uphill, pips_downhill;
@@ -93,9 +120,8 @@ NPNR_PACKED_STRUCT(struct WireInfoPOD {
     int32_t fast_delay;
     int32_t slow_delay;
 
-    int8_t x, y;
+    int8_t x, y, z;
     WireType type;
-    int8_t padding_0;
 });
 
 NPNR_PACKED_STRUCT(struct PackagePinPOD {
@@ -141,6 +167,7 @@ static const int max_switch_bits = 5;
 
 NPNR_PACKED_STRUCT(struct SwitchInfoPOD {
     int32_t num_bits;
+    int32_t bel;
     int8_t x, y;
     ConfigBitPOD cbits[max_switch_bits];
 });
@@ -172,10 +199,24 @@ NPNR_PACKED_STRUCT(struct BelConfigPOD {
     RelPtr<BelConfigEntryPOD> entries;
 });
 
+NPNR_PACKED_STRUCT(struct CellPathDelayPOD {
+    PortPin from_port;
+    PortPin to_port;
+    int32_t fast_delay;
+    int32_t slow_delay;
+});
+
+NPNR_PACKED_STRUCT(struct CellTimingPOD {
+    int32_t type;
+    int32_t num_paths;
+    RelPtr<CellPathDelayPOD> path_delays;
+});
+
 NPNR_PACKED_STRUCT(struct ChipInfoPOD {
     int32_t width, height;
     int32_t num_bels, num_wires, num_pips;
     int32_t num_switches, num_belcfgs, num_packages;
+    int32_t num_timing_cells;
     RelPtr<BelInfoPOD> bel_data;
     RelPtr<WireInfoPOD> wire_data;
     RelPtr<PipInfoPOD> pip_data;
@@ -183,6 +224,7 @@ NPNR_PACKED_STRUCT(struct ChipInfoPOD {
     RelPtr<BitstreamInfoPOD> bits_info;
     RelPtr<BelConfigPOD> bel_config;
     RelPtr<PackageInfoPOD> packages_data;
+    RelPtr<CellTimingPOD> cell_timing;
 });
 
 #if defined(_MSC_VER)
@@ -357,10 +399,11 @@ struct Arch : BaseCtx
     mutable std::unordered_map<IdString, int> pip_by_name;
     mutable std::unordered_map<Loc, int> bel_by_loc;
 
-    std::vector<IdString> bel_to_cell;
-    std::vector<IdString> wire_to_net;
-    std::vector<IdString> pip_to_net;
-    std::vector<IdString> switches_locked;
+    std::vector<bool> bel_carry;
+    std::vector<CellInfo*> bel_to_cell;
+    std::vector<NetInfo*> wire_to_net;
+    std::vector<NetInfo*> pip_to_net;
+    std::vector<NetInfo*> switches_locked;
 
     ArchArgs args;
     Arch(ArchArgs args);
@@ -394,39 +437,42 @@ struct Arch : BaseCtx
 
     uint32_t getBelChecksum(BelId bel) const { return bel.index; }
 
-    void bindBel(BelId bel, IdString cell, PlaceStrength strength)
+    void bindBel(BelId bel, CellInfo *cell, PlaceStrength strength)
     {
         NPNR_ASSERT(bel != BelId());
-        NPNR_ASSERT(bel_to_cell[bel.index] == IdString());
+        NPNR_ASSERT(bel_to_cell[bel.index] == nullptr);
+
         bel_to_cell[bel.index] = cell;
-        cells[cell]->bel = bel;
-        cells[cell]->belStrength = strength;
+        bel_carry[bel.index] = (cell->type == id_icestorm_lc && cell->lcInfo.carryEnable);
+        cell->bel = bel;
+        cell->belStrength = strength;
         refreshUiBel(bel);
     }
 
     void unbindBel(BelId bel)
     {
         NPNR_ASSERT(bel != BelId());
-        NPNR_ASSERT(bel_to_cell[bel.index] != IdString());
-        cells[bel_to_cell[bel.index]]->bel = BelId();
-        cells[bel_to_cell[bel.index]]->belStrength = STRENGTH_NONE;
-        bel_to_cell[bel.index] = IdString();
+        NPNR_ASSERT(bel_to_cell[bel.index] != nullptr);
+        bel_to_cell[bel.index]->bel = BelId();
+        bel_to_cell[bel.index]->belStrength = STRENGTH_NONE;
+        bel_to_cell[bel.index] = nullptr;
+        bel_carry[bel.index] = false;
         refreshUiBel(bel);
     }
 
     bool checkBelAvail(BelId bel) const
     {
         NPNR_ASSERT(bel != BelId());
-        return bel_to_cell[bel.index] == IdString();
+        return bel_to_cell[bel.index] == nullptr;
     }
 
-    IdString getBoundBelCell(BelId bel) const
+    CellInfo *getBoundBelCell(BelId bel) const
     {
         NPNR_ASSERT(bel != BelId());
         return bel_to_cell[bel.index];
     }
 
-    IdString getConflictingBelCell(BelId bel) const
+    CellInfo *getConflictingBelCell(BelId bel) const
     {
         NPNR_ASSERT(bel != BelId());
         return bel_to_cell[bel.index];
@@ -474,53 +520,53 @@ struct Arch : BaseCtx
         return id(chip_info->wire_data[wire.index].name.get());
     }
 
-    IdString getWireType(WireId wire) const { return IdString(); }
+    IdString getWireType(WireId wire) const;
 
     uint32_t getWireChecksum(WireId wire) const { return wire.index; }
 
-    void bindWire(WireId wire, IdString net, PlaceStrength strength)
+    void bindWire(WireId wire, NetInfo *net, PlaceStrength strength)
     {
         NPNR_ASSERT(wire != WireId());
-        NPNR_ASSERT(wire_to_net[wire.index] == IdString());
+        NPNR_ASSERT(wire_to_net[wire.index] == nullptr);
         wire_to_net[wire.index] = net;
-        nets[net]->wires[wire].pip = PipId();
-        nets[net]->wires[wire].strength = strength;
+        net->wires[wire].pip = PipId();
+        net->wires[wire].strength = strength;
         refreshUiWire(wire);
     }
 
     void unbindWire(WireId wire)
     {
         NPNR_ASSERT(wire != WireId());
-        NPNR_ASSERT(wire_to_net[wire.index] != IdString());
+        NPNR_ASSERT(wire_to_net[wire.index] != nullptr);
 
-        auto &net_wires = nets[wire_to_net[wire.index]]->wires;
+        auto &net_wires = wire_to_net[wire.index]->wires;
         auto it = net_wires.find(wire);
         NPNR_ASSERT(it != net_wires.end());
 
         auto pip = it->second.pip;
         if (pip != PipId()) {
-            pip_to_net[pip.index] = IdString();
-            switches_locked[chip_info->pip_data[pip.index].switch_index] = IdString();
+            pip_to_net[pip.index] = nullptr;
+            switches_locked[chip_info->pip_data[pip.index].switch_index] = nullptr;
         }
 
         net_wires.erase(it);
-        wire_to_net[wire.index] = IdString();
+        wire_to_net[wire.index] = nullptr;
         refreshUiWire(wire);
     }
 
     bool checkWireAvail(WireId wire) const
     {
         NPNR_ASSERT(wire != WireId());
-        return wire_to_net[wire.index] == IdString();
+        return wire_to_net[wire.index] == nullptr;
     }
 
-    IdString getBoundWireNet(WireId wire) const
+    NetInfo *getBoundWireNet(WireId wire) const
     {
         NPNR_ASSERT(wire != WireId());
         return wire_to_net[wire.index];
     }
 
-    IdString getConflictingWireNet(WireId wire) const
+    NetInfo *getConflictingWireNet(WireId wire) const
     {
         NPNR_ASSERT(wire != WireId());
         return wire_to_net[wire.index];
@@ -531,9 +577,9 @@ struct Arch : BaseCtx
         DelayInfo delay;
         NPNR_ASSERT(wire != WireId());
         if (fast_part)
-            delay.delay =  chip_info->wire_data[wire.index].fast_delay;
+            delay.delay = chip_info->wire_data[wire.index].fast_delay;
         else
-            delay.delay =  chip_info->wire_data[wire.index].slow_delay;
+            delay.delay = chip_info->wire_data[wire.index].slow_delay;
         return delay;
     }
 
@@ -558,21 +604,21 @@ struct Arch : BaseCtx
 
     PipId getPipByName(IdString name) const;
 
-    void bindPip(PipId pip, IdString net, PlaceStrength strength)
+    void bindPip(PipId pip, NetInfo *net, PlaceStrength strength)
     {
         NPNR_ASSERT(pip != PipId());
-        NPNR_ASSERT(pip_to_net[pip.index] == IdString());
-        NPNR_ASSERT(switches_locked[chip_info->pip_data[pip.index].switch_index] == IdString());
+        NPNR_ASSERT(pip_to_net[pip.index] == nullptr);
+        NPNR_ASSERT(switches_locked[chip_info->pip_data[pip.index].switch_index] == nullptr);
 
         pip_to_net[pip.index] = net;
         switches_locked[chip_info->pip_data[pip.index].switch_index] = net;
 
         WireId dst;
         dst.index = chip_info->pip_data[pip.index].dst;
-        NPNR_ASSERT(wire_to_net[dst.index] == IdString());
+        NPNR_ASSERT(wire_to_net[dst.index] == nullptr);
         wire_to_net[dst.index] = net;
-        nets[net]->wires[dst].pip = pip;
-        nets[net]->wires[dst].strength = strength;
+        net->wires[dst].pip = pip;
+        net->wires[dst].strength = strength;
         refreshUiPip(pip);
         refreshUiWire(dst);
     }
@@ -580,17 +626,17 @@ struct Arch : BaseCtx
     void unbindPip(PipId pip)
     {
         NPNR_ASSERT(pip != PipId());
-        NPNR_ASSERT(pip_to_net[pip.index] != IdString());
-        NPNR_ASSERT(switches_locked[chip_info->pip_data[pip.index].switch_index] != IdString());
+        NPNR_ASSERT(pip_to_net[pip.index] != nullptr);
+        NPNR_ASSERT(switches_locked[chip_info->pip_data[pip.index].switch_index] != nullptr);
 
         WireId dst;
         dst.index = chip_info->pip_data[pip.index].dst;
-        NPNR_ASSERT(wire_to_net[dst.index] != IdString());
-        wire_to_net[dst.index] = IdString();
-        nets[pip_to_net[pip.index]]->wires.erase(dst);
+        NPNR_ASSERT(wire_to_net[dst.index] != nullptr);
+        wire_to_net[dst.index] = nullptr;
+        pip_to_net[pip.index]->wires.erase(dst);
 
-        pip_to_net[pip.index] = IdString();
-        switches_locked[chip_info->pip_data[pip.index].switch_index] = IdString();
+        pip_to_net[pip.index] = nullptr;
+        switches_locked[chip_info->pip_data[pip.index].switch_index] = nullptr;
         refreshUiPip(pip);
         refreshUiWire(dst);
     }
@@ -598,16 +644,34 @@ struct Arch : BaseCtx
     bool checkPipAvail(PipId pip) const
     {
         NPNR_ASSERT(pip != PipId());
-        return switches_locked[chip_info->pip_data[pip.index].switch_index] == IdString();
+        auto &pi = chip_info->pip_data[pip.index];
+        auto &si = chip_info->bits_info->switches[pi.switch_index];
+
+        if (switches_locked[pi.switch_index] != nullptr)
+            return false;
+
+        if (pi.flags & PipInfoPOD::FLAG_ROUTETHRU) {
+            NPNR_ASSERT(si.bel >= 0);
+            if (bel_to_cell[si.bel] != nullptr)
+                return false;
+        }
+
+        if (pi.flags & PipInfoPOD::FLAG_NOCARRY) {
+            NPNR_ASSERT(si.bel >= 0);
+            if (bel_carry[si.bel])
+                return false;
+        }
+
+        return true;
     }
 
-    IdString getBoundPipNet(PipId pip) const
+    NetInfo *getBoundPipNet(PipId pip) const
     {
         NPNR_ASSERT(pip != PipId());
         return pip_to_net[pip.index];
     }
 
-    IdString getConflictingPipNet(PipId pip) const
+    NetInfo *getConflictingPipNet(PipId pip) const
     {
         NPNR_ASSERT(pip != PipId());
         return switches_locked[chip_info->pip_data[pip.index].switch_index];
@@ -702,7 +766,7 @@ struct Arch : BaseCtx
     delay_t getRipupDelayPenalty() const { return 200; }
     float getDelayNS(delay_t v) const { return v * 0.001; }
     uint32_t getDelayChecksum(delay_t v) const { return v; }
-    delay_t getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay_t budget) const;
+    bool getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay_t &budget) const;
 
     // -------------------------------------------------
 
@@ -715,7 +779,6 @@ struct Arch : BaseCtx
 
     std::vector<GraphicElement> getDecalGraphics(DecalId decal) const;
 
-    DecalXY getFrameDecal() const;
     DecalXY getBelDecal(BelId bel) const;
     DecalXY getWireDecal(WireId wire) const;
     DecalXY getPipDecal(PipId pip) const;
@@ -759,7 +822,7 @@ struct Arch : BaseCtx
     IdString id_icestorm_lc, id_sb_io, id_sb_gb;
     IdString id_cen, id_clk, id_sr;
     IdString id_i0, id_i1, id_i2, id_i3;
-    IdString id_dff_en, id_neg_clk;
+    IdString id_dff_en, id_carry_en, id_neg_clk;
     IdString id_cin, id_cout;
     IdString id_o, id_lo;
     IdString id_icestorm_ram, id_rclk, id_wclk;
@@ -775,6 +838,10 @@ struct Arch : BaseCtx
         }
         NPNR_ASSERT_FALSE("Expected PLL pin to share an output with an SB_IO D_IN_{0,1}");
     }
+
+    float placer_constraintWeight = 10;
 };
+
+void ice40DelayFuzzerMain(Context *ctx);
 
 NEXTPNR_NAMESPACE_END

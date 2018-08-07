@@ -23,12 +23,14 @@ static void initMainResource() { Q_INIT_RESOURCE(nextpnr); }
 
 NEXTPNR_NAMESPACE_BEGIN
 
-MainWindow::MainWindow(std::unique_ptr<Context> context, QWidget *parent) : BaseMainWindow(std::move(context), parent)
+MainWindow::MainWindow(std::unique_ptr<Context> context, ArchArgs args, QWidget *parent) : BaseMainWindow(std::move(context), args, parent)
 {
     initMainResource();
 
     std::string title = "nextpnr-generic - [EMPTY]";
     setWindowTitle(title.c_str());
+
+    connect(this, &BaseMainWindow::contextChanged, this, &MainWindow::newContext);
 
     createMenu();
     Q_EMIT contextChanged(ctx.get());
@@ -36,13 +38,13 @@ MainWindow::MainWindow(std::unique_ptr<Context> context, QWidget *parent) : Base
 
 MainWindow::~MainWindow() {}
 
-void MainWindow::createMenu()
+void MainWindow::newContext(Context *ctx)
 {
-    QMenu *menu_Custom = new QMenu("&Generic", menuBar);
-    menuBar->addAction(menu_Custom->menuAction());
-
-    createGraphicsBar();
+    std::string title = "nextpnr-generic - " + ctx->getChipName();
+    setWindowTitle(title.c_str());
 }
+
+void MainWindow::createMenu() {}
 
 void MainWindow::new_proj() {}
 

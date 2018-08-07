@@ -413,7 +413,7 @@ delay_t Arch::estimateDelay(WireId src, WireId dst) const
     return 200 * (abs(src.location.x - dst.location.x) + abs(src.location.y - dst.location.y));
 }
 
-delay_t Arch::predictDelay(const NetInfo *net_info, const PortRef &sink) const;
+delay_t Arch::predictDelay(const NetInfo *net_info, const PortRef &sink) const
 {
     const auto &driver = net_info->driver;
     auto driver_loc = getBelLocation(driver.cell->bel);
@@ -422,23 +422,23 @@ delay_t Arch::predictDelay(const NetInfo *net_info, const PortRef &sink) const;
     return 200 * (abs(driver_loc.x - sink_loc.x) + abs(driver_loc.y - sink_loc.y));
 }
 
-delay_t getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay_t budget) const { return budget; }
+bool Arch::getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay_t &budget) const { return false; }
 
 // -----------------------------------------------------------------------
 
-bool Arch::place() { return placer1(getCtx()); }
+bool Arch::place() { return placer1(getCtx(), Placer1Cfg()); }
 
-bool Arch::route() { return router1(getCtx()); }
+bool Arch::route()
+{
+    Router1Cfg cfg;
+    return router1(getCtx(), cfg);
+}
 
 // -----------------------------------------------------------------------
 
 std::vector<GraphicElement> Arch::getDecalGraphics(DecalId decal) const
 {
     std::vector<GraphicElement> ret;
-
-    if (decal.type == DecalId::TYPE_FRAME) {
-        /* nothing */
-    }
 
     if (decal.type == DecalId::TYPE_BEL) {
         BelId bel;
@@ -473,21 +473,13 @@ std::vector<GraphicElement> Arch::getDecalGraphics(DecalId decal) const
     return ret;
 }
 
-DecalXY Arch::getFrameDecal() const
-{
-    DecalXY decalxy;
-    decalxy.decal.type = DecalId::TYPE_FRAME;
-    decalxy.decal.active = true;
-    return decalxy;
-}
-
 DecalXY Arch::getBelDecal(BelId bel) const
 {
     DecalXY decalxy;
     decalxy.decal.type = DecalId::TYPE_BEL;
     decalxy.decal.location = bel.location;
     decalxy.decal.z = bel.index;
-    decalxy.decal.active = bel_to_cell.count(bel) && (bel_to_cell.at(bel) != IdString());
+    decalxy.decal.active = bel_to_cell.count(bel) && (bel_to_cell.at(bel) != nullptr);
     return decalxy;
 }
 
@@ -507,5 +499,16 @@ bool Arch::getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort
 IdString Arch::getPortClock(const CellInfo *cell, IdString port) const { return IdString(); }
 
 bool Arch::isClockPort(const CellInfo *cell, IdString port) const { return false; }
+
+std::vector<std::pair<std::string, std::string>> Arch::getTilesAtLocation(int row, int col)
+{
+    std::vector<std::pair<std::string, std::string>> ret;
+    auto &tileloc = chip_info->tile_info[row * chip_info->width + col];
+    for (int i = 0; i < tileloc.num_tiles; i++) {
+        ret.push_back(std::make_pair(tileloc.tile_names[i].name.get(),
+                                     chip_info->tiletype_names[tileloc.tile_names[i].type_idx].get()));
+    }
+    return ret;
+}
 
 NEXTPNR_NAMESPACE_END

@@ -176,6 +176,7 @@ Arch::Arch(ArchArgs args) : args(args)
     if (package_info == nullptr)
         log_error("Unsupported package '%s'.\n", args.package.c_str());
 
+    bel_carry.resize(chip_info->num_bels);
     bel_to_cell.resize(chip_info->num_bels);
     wire_to_net.resize(chip_info->num_wires);
     pip_to_net.resize(chip_info->num_pips);
@@ -194,6 +195,7 @@ Arch::Arch(ArchArgs args) : args(args)
     id_i2 = id("I2");
     id_i3 = id("I3");
     id_dff_en = id("DFF_ENABLE");
+    id_carry_en = id("CARRY_ENABLE");
     id_neg_clk = id("NEG_CLK");
     id_cin = id("CIN");
     id_cout = id("COUT");
@@ -401,6 +403,44 @@ WireId Arch::getWireByName(IdString name) const
     return ret;
 }
 
+IdString Arch::getWireType(WireId wire) const
+{
+    NPNR_ASSERT(wire != WireId());
+    switch (chip_info->wire_data[wire.index].type) {
+    case WireInfoPOD::WIRE_TYPE_NONE:
+        return IdString();
+    case WireInfoPOD::WIRE_TYPE_GLB2LOCAL:
+        return id("GLB2LOCAL");
+    case WireInfoPOD::WIRE_TYPE_GLB_NETWK:
+        return id("GLB_NETWK");
+    case WireInfoPOD::WIRE_TYPE_LOCAL:
+        return id("LOCAL");
+    case WireInfoPOD::WIRE_TYPE_LUTFF_IN:
+        return id("LUTFF_IN");
+    case WireInfoPOD::WIRE_TYPE_LUTFF_IN_LUT:
+        return id("LUTFF_IN_LUT");
+    case WireInfoPOD::WIRE_TYPE_LUTFF_LOUT:
+        return id("LUTFF_LOUT");
+    case WireInfoPOD::WIRE_TYPE_LUTFF_OUT:
+        return id("LUTFF_OUT");
+    case WireInfoPOD::WIRE_TYPE_LUTFF_COUT:
+        return id("LUTFF_COUT");
+    case WireInfoPOD::WIRE_TYPE_LUTFF_GLOBAL:
+        return id("LUTFF_GLOBAL");
+    case WireInfoPOD::WIRE_TYPE_CARRY_IN_MUX:
+        return id("CARRY_IN_MUX");
+    case WireInfoPOD::WIRE_TYPE_SP4_V:
+        return id("SP4_V");
+    case WireInfoPOD::WIRE_TYPE_SP4_H:
+        return id("SP4_H");
+    case WireInfoPOD::WIRE_TYPE_SP12_V:
+        return id("SP12_V");
+    case WireInfoPOD::WIRE_TYPE_SP12_H:
+        return id("SP12_H");
+    }
+    return IdString();
+}
+
 // -----------------------------------------------------------------------
 
 PipId Arch::getPipByName(IdString name) const
@@ -543,9 +583,7 @@ std::vector<GroupId> Arch::getGroups() const
             group.type = GroupId::TYPE_LOCAL_SW;
             ret.push_back(group);
 
-#if 0
-            if (type == TILE_LOGIC)
-            {
+            if (type == TILE_LOGIC) {
                 group.type = GroupId::TYPE_LC0_SW;
                 ret.push_back(group);
 
@@ -570,7 +608,6 @@ std::vector<GroupId> Arch::getGroups() const
                 group.type = GroupId::TYPE_LC7_SW;
                 ret.push_back(group);
             }
-#endif
         }
     }
     return ret;
@@ -602,66 +639,45 @@ std::vector<GroupId> Arch::getGroupGroups(GroupId group) const
 
 // -----------------------------------------------------------------------
 
-delay_t Arch::estimateDelay(WireId src, WireId dst) const
-{
-    NPNR_ASSERT(src != WireId());
-    int x1 = chip_info->wire_data[src.index].x;
-    int y1 = chip_info->wire_data[src.index].y;
-
-    NPNR_ASSERT(dst != WireId());
-    int x2 = chip_info->wire_data[dst.index].x;
-    int y2 = chip_info->wire_data[dst.index].y;
-
-    int xd = x2 - x1, yd = y2 - y1;
-    int xscale = 120, yscale = 120, offset = 0;
-
-    return xscale * abs(xd) + yscale * abs(yd) + offset;
-}
-
-delay_t Arch::predictDelay(const NetInfo *net_info, const PortRef &sink) const
+bool Arch::getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay_t &budget) const
 {
     const auto &driver = net_info->driver;
-    auto driver_loc = getBelLocation(driver.cell->bel);
-    auto sink_loc = getBelLocation(sink.cell->bel);
-
-    if (driver.port == id_cout) {
-        if (driver_loc.y == sink_loc.y)
-            return 0;
-        return 250;
-    }
-
-    int xd = sink_loc.x - driver_loc.x, yd = sink_loc.y - driver_loc.y;
-    int xscale = 120, yscale = 120, offset = 0;
-
-    // if (chip_info->wire_data[src.index].type == WIRE_TYPE_SP4_VERT) {
-    //     yd = yd < -4 ? yd + 4 : (yd < 0 ? 0 : yd);
-    //     offset = 500;
-    // }
-
-    if (driver.port == id_o)
-        offset += 330;
-    if (sink.port == id_i0 || sink.port == id_i1 || sink.port == id_i2 || sink.port == id_i3)
-        offset += 260;
-
-    return xscale * abs(xd) + yscale * abs(yd) + offset;
-}
-
-delay_t Arch::getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay_t budget) const
-{
-    const auto &driver = net_info->driver;
-    if (driver.port == id_cout) {
+    if (driver.port == id_cout && sink.port == id_cin) {
         auto driver_loc = getBelLocation(driver.cell->bel);
         auto sink_loc = getBelLocation(sink.cell->bel);
         if (driver_loc.y == sink_loc.y)
-            return 0;
-        return 250;
+            budget = 0;
+        else switch (args.type) {
+#ifndef ICE40_HX1K_ONLY
+            case ArchArgs::HX8K:
+#endif
+            case ArchArgs::HX1K:
+                budget = 190; break;
+#ifndef ICE40_HX1K_ONLY
+            case ArchArgs::LP384:
+            case ArchArgs::LP1K:
+            case ArchArgs::LP8K:
+                budget = 290; break;
+            case ArchArgs::UP5K:
+                budget = 560; break;
+#endif
+            default:
+                log_error("Unsupported iCE40 chip type.\n");
+        }
+        return true;
     }
-    return budget;
+    return false;
 }
 
 // -----------------------------------------------------------------------
 
-bool Arch::place() { return placer1(getCtx()); }
+bool Arch::place()
+{
+    Placer1Cfg cfg;
+    cfg.constraintWeight = placer_constraintWeight;
+    return placer1(getCtx(), cfg);
+}
+
 bool Arch::place_vpr() 
 { 
     auto ctx = getCtx();
@@ -709,20 +725,20 @@ bool Arch::route() { return router1(getCtx()); }
 
 // -----------------------------------------------------------------------
 
-DecalXY Arch::getFrameDecal() const
+bool Arch::route()
 {
-    DecalXY decalxy;
-    decalxy.decal.type = DecalId::TYPE_FRAME;
-    decalxy.decal.active = true;
-    return decalxy;
+    Router1Cfg cfg;
+    return router1(getCtx(), cfg);
 }
+
+// -----------------------------------------------------------------------
 
 DecalXY Arch::getBelDecal(BelId bel) const
 {
     DecalXY decalxy;
     decalxy.decal.type = DecalId::TYPE_BEL;
     decalxy.decal.index = bel.index;
-    decalxy.decal.active = bel_to_cell.at(bel.index) != IdString();
+    decalxy.decal.active = bel_to_cell.at(bel.index) != nullptr;
     return decalxy;
 }
 
@@ -731,7 +747,7 @@ DecalXY Arch::getWireDecal(WireId wire) const
     DecalXY decalxy;
     decalxy.decal.type = DecalId::TYPE_WIRE;
     decalxy.decal.index = wire.index;
-    decalxy.decal.active = wire_to_net.at(wire.index) != IdString();
+    decalxy.decal.active = wire_to_net.at(wire.index) != nullptr;
     return decalxy;
 }
 
@@ -740,7 +756,7 @@ DecalXY Arch::getPipDecal(PipId pip) const
     DecalXY decalxy;
     decalxy.decal.type = DecalId::TYPE_PIP;
     decalxy.decal.index = pip.index;
-    decalxy.decal.active = pip_to_net.at(pip.index) != IdString();
+    decalxy.decal.active = pip_to_net.at(pip.index) != nullptr;
     return decalxy;
 };
 
@@ -756,10 +772,6 @@ DecalXY Arch::getGroupDecal(GroupId group) const
 std::vector<GraphicElement> Arch::getDecalGraphics(DecalId decal) const
 {
     std::vector<GraphicElement> ret;
-
-    if (decal.type == DecalId::TYPE_FRAME) {
-        /* nothing */
-    }
 
     if (decal.type == DecalId::TYPE_GROUP) {
         int type = (decal.index >> 16) & 255;
@@ -813,6 +825,18 @@ std::vector<GraphicElement> Arch::getDecalGraphics(DecalId decal) const
             el.x2 = x + local_swbox_x2;
             el.y1 = y + local_swbox_y1;
             el.y2 = y + local_swbox_y2;
+            ret.push_back(el);
+        }
+
+        if (GroupId::TYPE_LC0_SW <= type && type <= GroupId::TYPE_LC7_SW) {
+            GraphicElement el;
+            el.type = GraphicElement::TYPE_BOX;
+            el.style = GraphicElement::STYLE_FRAME;
+
+            el.x1 = x + lut_swbox_x1;
+            el.x2 = x + lut_swbox_x2;
+            el.y1 = y + logic_cell_y1 + logic_cell_pitch * (type - GroupId::TYPE_LC0_SW);
+            el.y2 = y + logic_cell_y2 + logic_cell_pitch * (type - GroupId::TYPE_LC0_SW);
             ret.push_back(el);
         }
     }
@@ -886,28 +910,23 @@ std::vector<GraphicElement> Arch::getDecalGraphics(DecalId decal) const
 
 bool Arch::getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort, DelayInfo &delay) const
 {
-    if (cell->type == id_icestorm_lc) {
-        if ((fromPort == id_i0 || fromPort == id_i1 || fromPort == id_i2 || fromPort == id_i3) &&
-            (toPort == id_o || toPort == id_lo)) {
-            delay.delay = 450;
-            return true;
-        } else if (fromPort == id_cin && toPort == id_cout) {
-            delay.delay = 120;
-            return true;
-        } else if (fromPort == id_i1 && toPort == id_cout) {
-            delay.delay = 260;
-            return true;
-        } else if (fromPort == id_i2 && toPort == id_cout) {
-            delay.delay = 230;
-            return true;
-        } else if (fromPort == id_clk && toPort == id_o) {
-            delay.delay = 540;
-            return true;
-        }
-    } else if (cell->type == id_icestorm_ram) {
-        if (fromPort == id_rclk) {
-            delay.delay = 2140;
-            return true;
+    BelType type = belTypeFromId(cell->type);
+    for (int i = 0; i < chip_info->num_timing_cells; i++) {
+        const auto &tc = chip_info->cell_timing[i];
+        if (tc.type == type) {
+            PortPin fromPin = portPinFromId(fromPort);
+            PortPin toPin = portPinFromId(toPort);
+            for (int j = 0; j < tc.num_paths; j++) {
+                const auto &path = tc.path_delays[j];
+                if (path.from_port == fromPin && path.to_port == toPin) {
+                    if (fast_part)
+                        delay.delay = path.fast_delay;
+                    else
+                        delay.delay = path.slow_delay;
+                    return true;
+                }
+            }
+            break;
         }
     }
     return false;
@@ -975,6 +994,7 @@ void Arch::assignCellInfo(CellInfo *cell)
     cell->belType = belTypeFromId(cell->type);
     if (cell->type == id_icestorm_lc) {
         cell->lcInfo.dffEnable = bool_or_default(cell->params, id_dff_en);
+        cell->lcInfo.carryEnable = bool_or_default(cell->params, id_carry_en);
         cell->lcInfo.negClk = bool_or_default(cell->params, id_neg_clk);
         cell->lcInfo.clk = get_net_or_empty(cell, id_clk);
         cell->lcInfo.cen = get_net_or_empty(cell, id_cen);

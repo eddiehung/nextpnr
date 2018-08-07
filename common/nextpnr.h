@@ -281,7 +281,7 @@ struct CellInfo : ArchCellInfo
     std::unordered_map<IdString, IdString> pins;
 
     // placement constraints
-    CellInfo *constr_parent;
+    CellInfo *constr_parent = nullptr;
     std::vector<CellInfo *> constr_children;
     const int UNCONSTR = INT_MIN;
     int constr_x = UNCONSTR;   // this.x - parent.x
@@ -437,6 +437,13 @@ struct BaseCtx
 
     const Context *getCtx() const { return reinterpret_cast<const Context *>(this); }
 
+    template<typename T> const char *nameOf(const T *obj)
+    {
+        if (obj == nullptr)
+            return "";
+        return obj->name.c_str(getCtx());
+    }
+
     // --------------------------------------------------------------
 
     bool allUiReload = true;
@@ -472,7 +479,7 @@ struct Context : Arch, DeterministicRNG
     bool force = false;
     bool timing_driven = true;
     float target_freq = 12e6;
-    bool user_freq = false;
+    bool auto_freq = false;
     int slack_redist_iter = 0;
 
     Context(ArchArgs args) : Arch(args) {}
@@ -484,7 +491,8 @@ struct Context : Arch, DeterministicRNG
     delay_t getNetinfoRouteDelay(const NetInfo *net_info, const PortRef &sink) const;
 
     // provided by router1.cc
-    bool getActualRouteDelay(WireId src_wire, WireId dst_wire, delay_t &delay);
+    bool getActualRouteDelay(WireId src_wire, WireId dst_wire, delay_t *delay = nullptr,
+                             std::unordered_map<WireId, PipId> *route = nullptr, bool useEstimate = true);
 
     // --------------------------------------------------------------
 
