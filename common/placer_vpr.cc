@@ -38,9 +38,8 @@
 #include <vector>
 #include "log.h"
 #include "place_common.h"
-#include "place_legaliser.h"
 #include "timing.h"
-#include "place_legaliser.h"
+#include "util.h"
 
 namespace vpr {
     using namespace NEXTPNR_NAMESPACE;
@@ -117,7 +116,7 @@ namespace vpr {
             sWNS = std::numeric_limits<decltype(sWNS)>::max();
             sTNS = 0;
             max_req = delay_t(1.0e12 / npnr_ctx->target_freq);
-            worst_path_slack = timing_analysis(npnr_ctx);
+            worst_path_slack = timing_analysis(npnr_ctx, false /* print_fmax */, false /* print_histogram */);
 
             // Compute the delay for every pin on every net
             for (auto &n : npnr_ctx->nets) {
@@ -130,18 +129,16 @@ namespace vpr {
                 if (driver_cell->bel == BelId())
                     continue;
                 driver_gb = npnr_ctx->getBelGlobalBuf(driver_cell->bel);
-                WireId drv_wire = npnr_ctx->getBelPinWire(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
                 if (driver_gb)
                     continue;
                 for (auto& load : net->users) {
-                    if (load.cell == nullptr)
+                    if (!load.cell)
                         continue;
                     CellInfo *load_cell = load.cell;
                     if (load_cell->bel == BelId())
                         continue;
-                    WireId user_wire = npnr_ctx->getBelPinWire(load_cell->bel, npnr_ctx->portPinFromId(load.port));
-                    delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
-                    delay_t slack = load.budget - raw_wl;
+                    auto net_delay = npnr_ctx->getNetinfoRouteDelay(net, load);
+                    auto slack = load.budget - net_delay;
                     sWNS = std::min(sWNS, slack);
                     if (slack < 0)
                         sTNS += slack;
@@ -259,19 +256,6 @@ class VPRPlacer
         for (auto& c : grid._bels)
             c.resize(max_y+1);
 
-        auto carries = prepare_and_find_carries(ctx);
-        for (auto &chain : carries) {
-            auto head = chain.front();
-            for (int z = 1; z < int(chain.size()); z++) {
-                auto cell = chain.at(z);
-                cell->constr_parent = head;
-                cell->constr_x = 0;
-                cell->constr_y = z / 8;
-                cell->constr_z = z % 8;
-            }
-            head->constr_children.assign(chain.begin() + 1, chain.end());
-        }
-
         int32_t cell_idx = 0;
         for (auto &cell : ctx->cells) {
             CellInfo *ci = cell.second.get();
@@ -297,7 +281,7 @@ class VPRPlacer
                             loc_name.c_str(), ctx->belTypeToId(bel_type).c_str(ctx), ci->name.c_str(ctx),
                             ci->type.c_str(ctx));
                 }
-                ctx->bindBel(bel, ci->name, STRENGTH_USER);
+                ctx->bindBel(bel, ci, STRENGTH_USER);
             }
         }
         int32_t net_idx = 0;
@@ -328,12 +312,13 @@ class VPRPlacer
         vpr::try_place(placer_opts, annealing_sched);
 
         // Final post-pacement validitiy check
+        ctx->yield();
         for (auto bel : ctx->getBels()) {
-            IdString cell = ctx->getBoundBelCell(bel);
+            CellInfo *cell = ctx->getBoundBelCell(bel);
             if (!ctx->isBelLocationValid(bel)) {
                 std::string cell_text = "no cell";
-                if (cell != IdString())
-                    cell_text = std::string("cell '") + cell.str(ctx) + "'";
+                if (cell != nullptr)
+                    cell_text = std::string("cell '") + ctx->nameOf(cell) + "'";
                 if (ctx->force) {
                     log_warning("post-placement validity check failed for Bel '%s' "
                                 "(%s)\n",
@@ -345,7 +330,11 @@ class VPRPlacer
                 }
             }
         }
-        timing_analysis(ctx, true /* print_fmax */);
+        for (auto cell : sorted(ctx->cells))
+            if (get_constraints_distance(ctx, cell.second) != 0)
+                log_error("constraint satisfaction check failed for cell '%s' at Bel '%s'\n", cell.first.c_str(ctx),
+                          ctx->getBelName(cell.second->bel).c_str(ctx));
+        timing_analysis(ctx);
         ctx->unlock();
         return true;
     }

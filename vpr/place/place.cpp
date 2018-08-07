@@ -1184,15 +1184,13 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, 
     auto bel_from = b_from->bel;
     auto bel_to = g_vpr_ctx.device().grid[x_to][y_to][z_to];
 
-//	b_to = place_ctx.grid_blocks[x_to][y_to].blocks[z_to];
-    auto b_to_id = npnr_ctx->getBoundBelCell(bel_to);
-    b_to = (b_to_id == IdString() ? nullptr : npnr_ctx->cells[b_to_id].get());
+    b_to = npnr_ctx->getBoundBelCell(bel_to);
 
 	// Check whether the to_location is empty
 	if (b_to == /*EMPTY_BLOCK_ID*/ nullptr) {
 
         npnr_ctx->unbindBel(bel_from);
-        npnr_ctx->bindBel(bel_to, b_from->name, STRENGTH_WEAK);
+        npnr_ctx->bindBel(bel_to, b_from, STRENGTH_WEAK);
         //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel_to));
 
         blocks_affected.emplace_back(b_from, bel_from);
@@ -1208,8 +1206,8 @@ static int setup_blocks_affected(/*ClusterBlockId*/ CellInfo* b_from, int x_to, 
 
         npnr_ctx->unbindBel(bel_to);
         npnr_ctx->unbindBel(bel_from);
-        npnr_ctx->bindBel(bel_to, b_from->name, STRENGTH_WEAK);
-        npnr_ctx->bindBel(bel_from, b_to->name, STRENGTH_WEAK);
+        npnr_ctx->bindBel(bel_to, b_from, STRENGTH_WEAK);
+        npnr_ctx->bindBel(bel_from, b_to, STRENGTH_WEAK);
 
         blocks_affected.emplace_back(b_from, bel_from);
         blocks_affected.emplace_back(b_to, bel_to);
@@ -1286,9 +1284,8 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
                     abort_swap = true;
                 }
                 else {
-                    auto cell_name = npnr_ctx->getBoundBelCell(bel_to);
-                    if (cell_name != IdString()) {
-                        auto cell_to = npnr_ctx->cells[cell_name].get();
+                    auto cell_to = npnr_ctx->getBoundBelCell(bel_to);
+                    if (cell_to) {
                         if (cell_to->belStrength > STRENGTH_WEAK) {
 			                abort_swap = true;
                         }
@@ -1513,7 +1510,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
                 auto b_from = b.first;
                 auto bel = b.second;
 
-                npnr_ctx->bindBel(bel, b_from->name, STRENGTH_WEAK);
+                npnr_ctx->bindBel(bel, b_from, STRENGTH_WEAK);
 			}
 		}
 
@@ -1540,7 +1537,7 @@ static e_swap_result try_swap(float t, float *cost, float *bb_cost, float *timin
             auto b_from = b.first;
             auto bel = b.second;
 
-            npnr_ctx->bindBel(bel, b_from->name, STRENGTH_WEAK);
+            npnr_ctx->bindBel(bel, b_from, STRENGTH_WEAK);
 		}
 
 		/* Resets the num_moved_blocks, but do not free blocks_moved array. Defensive Coding */
@@ -1834,9 +1831,8 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
                 is_legal = false;
             }
             else {
-                auto cell_name = npnr_ctx->getBoundBelCell(bel_to);
-                if (cell_name != IdString()) {
-                    auto cell_to = npnr_ctx->cells[cell_name].get();
+                auto cell_to = npnr_ctx->getBoundBelCell(bel_to);
+                if (cell_to) {
                     if (cell_to->belStrength > STRENGTH_WEAK) {
 			            is_legal = false;
                     }
@@ -2904,7 +2900,7 @@ static int try_place_macro(int itype, /*int*/ Loc ipos, int imacro) {
             auto iblk = pl_macros[imacro].members[imember].blk_index;
             auto bel = grid[member_x][member_y][member_z];
 
-            npnr_ctx->bindBel(bel, iblk->name, STRENGTH_WEAK);
+            npnr_ctx->bindBel(bel, iblk, STRENGTH_WEAK);
 
 			// Could not ensure that the randomiser would not pick this location again
 			// So, would have to do a lazy removal - whenever I come across a block that could not be placed,
@@ -3046,9 +3042,9 @@ static void initial_placement_blocks(/*int * free_locations, enum e_pad_loc_type
 // 			}
 
             if (npnr_ctx->isIO(blk_id))
-                npnr_ctx->bindBel(grid[x][y][z], blk_id->name, STRENGTH_USER);
+                npnr_ctx->bindBel(grid[x][y][z], blk_id, STRENGTH_USER);
             else
-                npnr_ctx->bindBel(grid[x][y][z], blk_id->name, STRENGTH_WEAK);
+                npnr_ctx->bindBel(grid[x][y][z], blk_id, STRENGTH_WEAK);
             //NPNR_ASSERT(npnr_ctx->isBelLocationValid(bel));
 
 //			/* Ensure randomizer doesn't pick this location again, since it's occupied. Could shift all the
@@ -3125,9 +3121,8 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
 	// All the macros are placed, update the legal_pos[][] array
     for (auto it = legal_pos.begin(); it != legal_pos.end(); it++) {
         it->erase(remove_if(it->begin(), it->end(), [&grid](const Loc& loc) {
-                auto cell_name = npnr_ctx->getBoundBelCell(grid[loc.x][loc.y][loc.z]);
-                if (cell_name == IdString()) return false;
-                auto cell = npnr_ctx->cells.at(cell_name).get();
+                auto cell = npnr_ctx->getBoundBelCell(grid[loc.x][loc.y][loc.z]);
+                if (!cell) return false;
                 return cell->belStrength > STRENGTH_WEAK;
             }), it->end());
     }
@@ -3137,8 +3132,8 @@ static void initial_placement(/*enum e_pad_loc_type pad_loc_type,
         it->clear();
         it->reserve(src.size());
         for (auto& loc : src) {
-            auto cell_name = npnr_ctx->getBoundBelCell(grid[loc.x][loc.y][loc.z]);
-            if (cell_name == IdString())
+            auto cell = npnr_ctx->getBoundBelCell(grid[loc.x][loc.y][loc.z]);
+            if (!cell)
                 it->push_back(loc);
         }
         npnr_ctx->shuffle(*it);

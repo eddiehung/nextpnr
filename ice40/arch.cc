@@ -708,11 +708,11 @@ bool Arch::place_vpr()
             bool is_reset = net->is_reset, is_cen = net->is_enable;
             NPNR_ASSERT(!is_reset || !is_cen);
             if (is_reset) {
-                ctx->bindBel(gb_reset.back(), cell->name, STRENGTH_WEAK);
+                ctx->bindBel(gb_reset.back(), cell, STRENGTH_WEAK);
                 gb_reset.pop_back();
             } 
             else if (is_cen) {
-                ctx->bindBel(gb_cen.back(), cell->name, STRENGTH_WEAK);
+                ctx->bindBel(gb_cen.back(), cell, STRENGTH_WEAK);
                 gb_cen.pop_back();
             }
         }
@@ -720,8 +720,6 @@ bool Arch::place_vpr()
 
     return placer_vpr(ctx); 
 }
-
-bool Arch::route() { return router1(getCtx()); }
 
 // -----------------------------------------------------------------------
 
