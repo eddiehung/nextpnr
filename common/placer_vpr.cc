@@ -49,10 +49,23 @@ namespace vpr {
 
     // base/device_grid.h
     struct DeviceGrid {
-        inline size_t width() const { return _bels.size(); }
-        inline size_t height() const { return _bels.front().size(); }
-        inline const std::vector<std::vector<BelId>>& operator[](size_t x) { return _bels.at(x); }
-        std::vector<std::vector<std::vector<BelId>>> _bels;
+        inline size_t width() const { return npnr_ctx->chip_info->width; }
+        inline size_t height() const { return npnr_ctx->chip_info->height; }
+
+        struct BelXY {
+            BelXY(BelRange&& range) : range(range) {}
+            BelRange range;
+            inline BelId operator[](int z) { auto it = range.begin(); for (; z > 0; --z, ++it); return *it; }
+            inline size_t size() { size_t n = 0; for (auto it = range.begin(); it != range.end(); ++it, ++n); return n; }
+        };
+
+        struct BelX {
+            BelX(int x) : x(x) {}
+            int x;
+            inline BelXY operator[](int y) { return BelXY(npnr_ctx->getBelsByTile(x,y)); }
+        };
+
+        inline BelX operator[](int x) { return BelX(x); }
     };
     // base/netlist_fwd.h
     enum PinType
@@ -242,21 +255,6 @@ class VPRPlacer
     VPRPlacer(Context *ctx) : ctx(ctx)
     {
         vpr::npnr_ctx = ctx;
-        int max_y = 0;
-        auto &grid = vpr::g_vpr_ctx.device.grid;
-        for (auto bel : ctx->getBels()) {
-            auto loc = ctx->getBelLocation(bel);
-            if (loc.x >= int(grid._bels.size()))
-                grid._bels.resize(loc.x+1);
-            max_y = std::max(loc.y, max_y);
-            if (max_y >= int(grid._bels[loc.x].size()))
-                grid._bels[loc.x].resize(max_y+1);
-            if (loc.z >= int(grid._bels[loc.x][loc.y].size()))
-                grid._bels[loc.x][loc.y].resize(loc.z+1);
-            grid._bels[loc.x][loc.y][loc.z] = bel;
-        }
-        for (auto& c : grid._bels)
-            c.resize(max_y+1);
 
         int32_t cell_idx = 0;
         for (auto &cell : ctx->cells) {
