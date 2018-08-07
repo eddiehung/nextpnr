@@ -1889,7 +1889,7 @@ static void find_to_location(/*t_type_ptr*/ IdString type, float rlim,
 		*py_to = min_y + y_rel;
         // Instead of computing z_to in the outer find_to function,
         //   do it here so we have a fully valid location
-        if (!grid[*px_to][*py_to].size() > 0) {
+        if (grid[*px_to][*py_to].size() > 0) {
             *pz_to = vtr::irand(grid[*px_to][*py_to].size() - 1);
         }
         else {
