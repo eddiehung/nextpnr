@@ -1294,8 +1294,9 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
                         }
 
                         // Does not allow a swap with a macro yet
-                        get_imacro_from_iblk(&imacro, cell_to->udata, pl_macros /*, num_pl_macros*/);
-                        if (imacro != -1) {
+                        int jmacro;
+                        get_imacro_from_iblk(&jmacro, cell_to->udata, pl_macros /*, num_pl_macros*/);
+                        if (jmacro != -1) {
                             abort_swap = true;
                         }
                     }
