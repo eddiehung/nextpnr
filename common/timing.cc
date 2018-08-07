@@ -196,7 +196,7 @@ void assign_budget(Context *ctx, bool quiet)
         log_info("Checksum: 0x%08x\n", ctx->checksum());
 }
 
-void timing_analysis(Context *ctx, bool print_histogram, bool print_path)
+delay_t timing_analysis(Context *ctx, bool print_fmax, bool print_histogram, bool print_path)
 {
     PortRefVector crit_path;
     DelayFrequency slack_histogram;
@@ -242,8 +242,10 @@ void timing_analysis(Context *ctx, bool print_histogram, bool print_path)
         }
     }
 
-    delay_t default_slack = delay_t(1.0e12 / ctx->target_freq);
-    log_info("estimated Fmax = %.2f MHz\n", 1e6 / (default_slack - min_slack));
+    if (print_fmax) {
+        delay_t default_slack = delay_t(1.0e12 / ctx->target_freq);
+        log_info("estimated Fmax = %.2f MHz\n", 1e6 / (default_slack - min_slack));
+    }
 
     if (print_histogram && slack_histogram.size() > 0) {
         constexpr unsigned num_bins = 20;
@@ -269,6 +271,8 @@ void timing_analysis(Context *ctx, bool print_histogram, bool print_path)
                      std::string(bins[i] * bar_width / max_freq, '*').c_str(),
                      (bins[i] * bar_width) % max_freq > 0 ? '+' : ' ');
     }
+
+    return min_slack;
 }
 
 NEXTPNR_NAMESPACE_END
