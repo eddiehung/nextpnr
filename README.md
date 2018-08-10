@@ -1,6 +1,8 @@
 nextpnr -- a portable FPGA place and route tool
 ===============================================
 
+### *This `vpr_place` branch contains code adapted from the [Verilog-To-Routing](https://verilogtorouting.org/) project.*
+
 nextpnr aims to be a vendor neutral, timing driven, FOSS FPGA place and route
 tool.
 
