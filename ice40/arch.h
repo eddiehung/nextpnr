@@ -398,6 +398,33 @@ struct Arch : BaseCtx
     mutable std::unordered_map<IdString, int> wire_by_name;
     mutable std::unordered_map<IdString, int> pip_by_name;
     mutable std::unordered_map<Loc, int> bel_by_loc;
+    struct TileValidity {
+        uint8_t num_dffs = 0;
+        int8_t conflicting_cen = 0;
+        int8_t conflicting_clk = 0;
+        int8_t conflicting_sr = 0;
+        int8_t clk_polarity = 0;
+        uint8_t locals_count = 0;
+        const NetInfo* cen;
+        const NetInfo* clk;
+        const NetInfo* sr;
+        struct Hash {
+            size_t operator()(const Loc& obj) const noexcept {
+                size_t seed = 0;
+                boost::hash_combine(seed, std::hash<int>()(obj.x));
+                boost::hash_combine(seed, std::hash<int>()(obj.y));
+                //boost::hash_combine(seed, hash<int>()(obj.z));
+                return seed;
+            }
+        };
+        struct Equal {
+            bool operator()(const Loc& lhs, const Loc &rhs) const noexcept {
+                return (lhs.x == rhs.x) && (lhs.y == rhs.y) /*&& (lhs.z == rhs.z)*/;
+            }
+        };
+
+    };
+    mutable std::unordered_map<Loc, TileValidity, TileValidity::Hash, TileValidity::Equal> valid_by_loc;
 
     std::vector<bool> bel_carry;
     std::vector<CellInfo *> bel_to_cell;
@@ -443,6 +470,30 @@ struct Arch : BaseCtx
         cell->bel = bel;
         cell->belStrength = strength;
         refreshUiBel(bel);
+
+        if (cell->type == id_ICESTORM_LC) {
+            auto &v = valid_by_loc[getBelLocation(bel)];
+            if (cell->lcInfo.dffEnable) {
+                if (v.num_dffs++ == 0) {
+                    v.cen = cell->lcInfo.cen;
+                    v.clk = cell->lcInfo.clk;
+                    v.sr = cell->lcInfo.sr;
+                }
+                else {
+                    if (v.conflicting_cen >= 0 && cell->lcInfo.cen != v.cen)
+                        ++v.conflicting_cen;
+                    if (v.conflicting_clk >= 0 && cell->lcInfo.clk != v.clk)
+                        ++v.conflicting_clk;
+                    if (v.conflicting_sr >= 0 && cell->lcInfo.sr != v.sr)
+                        ++v.conflicting_sr;
+                }
+                if (cell->lcInfo.negClk)
+                    --v.clk_polarity;
+                else
+                    ++v.clk_polarity;
+            }
+            v.locals_count += cell->lcInfo.inputCount;
+        }
     }
 
     void unbindBel(BelId bel)
@@ -451,9 +502,49 @@ struct Arch : BaseCtx
         NPNR_ASSERT(bel_to_cell[bel.index] != nullptr);
         bel_to_cell[bel.index]->bel = BelId();
         bel_to_cell[bel.index]->belStrength = STRENGTH_NONE;
+        auto cell = bel_to_cell[bel.index];
         bel_to_cell[bel.index] = nullptr;
         bel_carry[bel.index] = false;
         refreshUiBel(bel);
+
+        if (cell->type == id_ICESTORM_LC) {
+            auto &v = valid_by_loc.at(getBelLocation(bel));
+            if (cell->lcInfo.dffEnable) {
+                if (--v.num_dffs == 0) {
+                    v.conflicting_cen = 0;
+                    v.conflicting_clk = 0;
+                    v.conflicting_sr = 0;
+                }
+                else {
+                    if (v.conflicting_cen > 0) {
+                        if (cell->lcInfo.cen == v.cen) {
+                            if (v.conflicting_cen == v.num_dffs) v.conflicting_cen = -1;
+                        }
+                        else if (--v.conflicting_cen == 0)
+                            v.conflicting_cen = -1;
+                    }
+                    if (v.conflicting_clk > 0) {
+                        if (cell->lcInfo.clk == v.clk) {
+                            if (v.conflicting_clk == v.num_dffs) v.conflicting_clk = -1;
+                        }
+                        else if (--v.conflicting_clk == 0)
+                            v.conflicting_clk = -1;
+                    }
+                    if (v.conflicting_sr > 0) {
+                        if (cell->lcInfo.sr == v.sr) {
+                            if (v.conflicting_sr == v.num_dffs) v.conflicting_sr = -1;
+                        }
+                        else if (--v.conflicting_sr == 0)
+                            v.conflicting_sr = -1;
+                    }
+                }
+                if (cell->lcInfo.negClk)
+                    ++v.clk_polarity;
+                else
+                    --v.clk_polarity;
+            }
+            v.locals_count -= cell->lcInfo.inputCount;
+        }
     }
 
     bool checkBelAvail(BelId bel) const
@@ -813,6 +904,7 @@ struct Arch : BaseCtx
 
     // Helper function for above
     bool logicCellsCompatible(const CellInfo** it, const size_t size) const;
+    bool logicCellsCompatible(const Loc& bel_loc) const;
 
     // -------------------------------------------------
     // Assign architecure-specific arguments to nets and cells, which must be

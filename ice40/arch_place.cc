@@ -70,18 +70,50 @@ bool Arch::logicCellsCompatible(const CellInfo** it, const size_t size) const
     return locals_count <= 32;
 }
 
+bool Arch::logicCellsCompatible(const Loc& bel_loc) const
+{
+    auto &v = valid_by_loc.at(bel_loc);
+    auto locals_count = v.locals_count;
+    if (v.num_dffs) {
+        if ((abs(v.clk_polarity) != v.num_dffs)) return false;
+
+        // If negative, recompute
+        if (v.conflicting_cen < 0 || v.conflicting_clk < 0 || v.conflicting_sr < 0) {
+            bool dffs_exist = false;
+            v.conflicting_cen = 0;
+            v.conflicting_clk = 0;
+            v.conflicting_sr = 0;
+            for (auto bel_other : getBelsByTile(bel_loc.x, bel_loc.y)) {
+                CellInfo *ci_other = getBoundBelCell(bel_other);
+                if (ci_other == nullptr || !ci_other->lcInfo.dffEnable) continue;
+                if (!dffs_exist) {
+                    dffs_exist = true;
+                    v.cen = ci_other->lcInfo.cen;
+                    v.clk = ci_other->lcInfo.clk;
+                    v.sr = ci_other->lcInfo.sr;
+                }
+                else {
+                    if (ci_other->lcInfo.cen != v.cen) ++v.conflicting_cen;
+                    if (ci_other->lcInfo.clk != v.clk) ++v.conflicting_clk;
+                    if (ci_other->lcInfo.sr != v.sr) ++v.conflicting_sr;
+                }
+            }
+        }
+
+        if (v.conflicting_cen > 0 || v.conflicting_clk > 0 || v.conflicting_sr > 0)
+            return false;
+
+        if (v.cen && !v.cen->is_global) ++locals_count;
+        if (v.clk && !v.clk->is_global) ++locals_count;
+        if (v.sr && !v.sr->is_global) ++locals_count;
+    }
+    return locals_count <= 32;
+}
+
 bool Arch::isBelLocationValid(BelId bel) const
 {
     if (getBelType(bel) == id_ICESTORM_LC) {
-        std::array<const CellInfo *, 8> bel_cells;
-        size_t num_cells = 0;
-        Loc bel_loc = getBelLocation(bel);
-        for (auto bel_other : getBelsByTile(bel_loc.x, bel_loc.y)) {
-            CellInfo *ci_other = getBoundBelCell(bel_other);
-            if (ci_other != nullptr)
-                bel_cells[num_cells++] = ci_other;
-        }
-        return logicCellsCompatible(bel_cells.data(), num_cells);
+        return logicCellsCompatible(getBelLocation(bel));
     } else {
         CellInfo *ci = getBoundBelCell(bel);
         if (ci == nullptr)
