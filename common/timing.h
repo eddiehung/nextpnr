@@ -29,7 +29,7 @@ delay_t assign_budget(Context *ctx, bool quiet = false);
 
 // Perform timing analysis and print out the fmax, and optionally the
 //    critical path
-delay_t timing_analysis(Context *ctx, bool print_fmax = false, bool print_histogram = true, bool print_path = false);
+delay_t timing_analysis(Context *ctx, bool print_histogram = true, bool print_path = false, bool print_fmax = true);
 
 NEXTPNR_NAMESPACE_END
 

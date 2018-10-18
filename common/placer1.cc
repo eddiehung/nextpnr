@@ -23,6 +23,7 @@
 
 #include "placer1.h"
 #include <algorithm>
+#include <boost/lexical_cast.hpp>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -51,7 +52,7 @@ class SAPlacer
         int num_bel_types = 0;
         for (auto bel : ctx->getBels()) {
             Loc loc = ctx->getBelLocation(bel);
-            BelType type = ctx->getBelType(bel);
+            IdString type = ctx->getBelType(bel);
             int type_idx;
             if (bel_types.find(type) == bel_types.end()) {
                 type_idx = num_bel_types++;
@@ -70,6 +71,20 @@ class SAPlacer
             fast_bels.at(type_idx).at(loc.x).at(loc.y).push_back(bel);
         }
         diameter = std::max(max_x, max_y) + 1;
+
+        costs.resize(ctx->nets.size());
+        old_udata.reserve(ctx->nets.size());
+        decltype(NetInfo::udata) n = 0;
+        for (auto &net : ctx->nets) {
+            old_udata.emplace_back(net.second->udata);
+            net.second->udata = n++;
+        }
+    }
+
+    ~SAPlacer()
+    {
+        for (auto &net : ctx->nets)
+            net.second->udata = old_udata[net.second->udata];
     }
 
     bool place()
@@ -91,18 +106,16 @@ class SAPlacer
                               loc_name.c_str(), cell->name.c_str(ctx));
                 }
 
-                BelType bel_type = ctx->getBelType(bel);
-                if (bel_type != ctx->belTypeFromId(cell->type)) {
+                IdString bel_type = ctx->getBelType(bel);
+                if (bel_type != cell->type) {
                     log_error("Bel \'%s\' of type \'%s\' does not match cell "
                               "\'%s\' of type \'%s\'\n",
-                              loc_name.c_str(), ctx->belTypeToId(bel_type).c_str(ctx), cell->name.c_str(ctx),
-                              cell->type.c_str(ctx));
+                              loc_name.c_str(), bel_type.c_str(ctx), cell->name.c_str(ctx), cell->type.c_str(ctx));
                 }
                 if (!ctx->isValidBelForCell(cell, bel)) {
                     log_error("Bel \'%s\' of type \'%s\' is not valid for cell "
                               "\'%s\' of type \'%s\'\n",
-                              loc_name.c_str(), ctx->belTypeToId(bel_type).c_str(ctx), cell->name.c_str(ctx),
-                              cell->type.c_str(ctx));
+                              loc_name.c_str(), bel_type.c_str(ctx), cell->name.c_str(ctx), cell->type.c_str(ctx));
                 }
 
                 ctx->bindBel(bel, cell, STRENGTH_USER);
@@ -149,7 +162,7 @@ class SAPlacer
         curr_tns = 0;
         for (auto &net : ctx->nets) {
             wirelen_t wl = get_net_metric(ctx, net.second.get(), MetricType::COST, curr_tns);
-            metrics[net.first] = wl;
+            costs[net.second->udata] = CostChange{wl, -1};
             curr_metric += wl;
         }
 
@@ -238,7 +251,10 @@ class SAPlacer
                 temp = post_legalise_temp;
                 diameter *= post_legalise_dia_scale;
                 ctx->shuffle(autoplaced);
-                assign_budget(ctx);
+
+                // Legalisation is a big change so force a slack redistribution here
+                if (ctx->slack_redist_iter > 0)
+                    assign_budget(ctx, true /* quiet */);
             } else if (ctx->slack_redist_iter > 0 && iter % ctx->slack_redist_iter == 0) {
                 assign_budget(ctx, true /* quiet */);
             }
@@ -249,7 +265,7 @@ class SAPlacer
             curr_tns = 0;
             for (auto &net : ctx->nets) {
                 wirelen_t wl = get_net_metric(ctx, net.second.get(), MetricType::COST, curr_tns);
-                metrics[net.first] = wl;
+                costs[net.second->udata] = CostChange{wl, -1};
                 curr_metric += wl;
             }
 
@@ -305,7 +321,7 @@ class SAPlacer
             if (cell->bel != BelId()) {
                 ctx->unbindBel(cell->bel);
             }
-            BelType targetType = ctx->belTypeFromId(cell->type);
+            IdString targetType = cell->type;
             for (auto bel : ctx->getBels()) {
                 if (ctx->getBelType(bel) == targetType && ctx->isValidBelForCell(cell, bel)) {
                     if (ctx->checkBelAvail(bel)) {
@@ -344,10 +360,8 @@ class SAPlacer
     // Attempt a SA position swap, return true on success or false on failure
     bool try_swap_position(CellInfo *cell, BelId newBel)
     {
-        static std::unordered_set<NetInfo *> update;
-        static std::vector<std::pair<IdString, wirelen_t>> new_lengths;
-        new_lengths.clear();
-        update.clear();
+        static std::vector<NetInfo *> updates;
+        updates.clear();
         BelId oldBel = cell->bel;
         CellInfo *other_cell = ctx->getBoundBelCell(newBel);
         if (other_cell != nullptr && other_cell->belStrength > STRENGTH_WEAK) {
@@ -363,14 +377,25 @@ class SAPlacer
             ctx->unbindBel(newBel);
         }
 
-        for (const auto &port : cell->ports)
-            if (port.second.net != nullptr)
-                update.insert(port.second.net);
+        for (const auto &port : cell->ports) {
+            if (port.second.net != nullptr) {
+                auto &cost = costs[port.second.net->udata];
+                if (cost.new_cost == 0)
+                    continue;
+                cost.new_cost = 0;
+                updates.emplace_back(port.second.net);
+            }
+        }
 
         if (other_cell != nullptr) {
             for (const auto &port : other_cell->ports)
-                if (port.second.net != nullptr)
-                    update.insert(port.second.net);
+                if (port.second.net != nullptr) {
+                    auto &cost = costs[port.second.net->udata];
+                    if (cost.new_cost == 0)
+                        continue;
+                    cost.new_cost = 0;
+                    updates.emplace_back(port.second.net);
+                }
         }
 
         ctx->bindBel(newBel, cell, STRENGTH_WEAK);
@@ -388,12 +413,13 @@ class SAPlacer
         new_metric = curr_metric;
 
         // Recalculate metrics for all nets touched by the peturbation
-        for (auto net : update) {
-            new_metric -= metrics.at(net->name);
+        for (const auto &net : updates) {
+            auto &c = costs[net->udata];
+            new_metric -= c.curr_cost;
             float temp_tns = 0;
             wirelen_t net_new_wl = get_net_metric(ctx, net, MetricType::COST, temp_tns);
             new_metric += net_new_wl;
-            new_lengths.push_back(std::make_pair(net->name, net_new_wl));
+            c.new_cost = net_new_wl;
         }
 
         new_dist = get_constraints_distance(ctx, cell);
@@ -412,8 +438,10 @@ class SAPlacer
             goto swap_fail;
         }
         curr_metric = new_metric;
-        for (auto new_wl : new_lengths)
-            metrics.at(new_wl.first) = new_wl.second;
+        for (const auto &net : updates) {
+            auto &c = costs[net->udata];
+            c = CostChange{c.new_cost, -1};
+        }
 
         return true;
     swap_fail:
@@ -421,6 +449,8 @@ class SAPlacer
         if (other_cell != nullptr) {
             ctx->bindBel(newBel, other_cell, STRENGTH_WEAK);
         }
+        for (const auto &net : updates)
+            costs[net->udata].new_cost = -1;
         return false;
     }
 
@@ -428,7 +458,7 @@ class SAPlacer
     // diameter
     BelId random_bel_for_cell(CellInfo *cell)
     {
-        BelType targetType = ctx->belTypeFromId(cell->type);
+        IdString targetType = cell->type;
         Loc curr_loc = ctx->getBelLocation(cell->bel);
         while (true) {
             int nx = ctx->rng(2 * diameter + 1) + std::max(curr_loc.x - diameter, 0);
@@ -449,7 +479,6 @@ class SAPlacer
     }
 
     Context *ctx;
-    std::unordered_map<IdString, wirelen_t> metrics;
     wirelen_t curr_metric = std::numeric_limits<wirelen_t>::max();
     float curr_tns = 0;
     float temp = 1000;
@@ -457,7 +486,7 @@ class SAPlacer
     int n_move, n_accept;
     int tot_move, tot_accept;
     int diameter = 35, max_x = 1, max_y = 1;
-    std::unordered_map<BelType, int> bel_types;
+    std::unordered_map<IdString, int> bel_types;
     std::vector<std::vector<std::vector<std::vector<BelId>>>> fast_bels;
     std::unordered_set<BelId> locked_bels;
     bool require_legal = false;
@@ -465,7 +494,17 @@ class SAPlacer
     const float post_legalise_temp = 10;
     const float post_legalise_dia_scale = 1.5;
     Placer1Cfg cfg;
+
+    struct CostChange
+    {
+        wirelen_t curr_cost;
+        wirelen_t new_cost;
+    };
+    std::vector<CostChange> costs;
+    std::vector<decltype(NetInfo::udata)> old_udata;
 };
+
+Placer1Cfg::Placer1Cfg(Context *ctx) : Settings(ctx) { constraintWeight = get<float>("placer1/constraintWeight", 10); }
 
 bool placer1(Context *ctx, Placer1Cfg cfg)
 {

@@ -114,7 +114,7 @@ namespace vpr {
             if (npnr_ctx->slack_redist_iter > 0)
                 worst_path_slack = assign_budget(npnr_ctx, true /* quiet */);
             else
-                worst_path_slack = timing_analysis(npnr_ctx, false /* print_fmax */, false /* print_histogram */);
+                worst_path_slack = timing_analysis(npnr_ctx, false /* print_fmax */, false /* print_histogram */, false /* print_fmax */);
 
             sWNS = std::numeric_limits<decltype(sWNS)>::max();
             sTNS = 0;
@@ -169,7 +169,7 @@ namespace vpr {
         if (driver_cell->bel == BelId())
             return 0;
         driver_gb = npnr_ctx->getBelGlobalBuf(driver_cell->bel);
-        WireId drv_wire = npnr_ctx->getBelPinWire(driver_cell->bel, npnr_ctx->portPinFromId(net->driver.port));
+        WireId drv_wire = npnr_ctx->getBelPinWire(driver_cell->bel, net->driver.port);
         if (driver_gb)
             return 0;
         if (load.cell == nullptr)
@@ -177,7 +177,7 @@ namespace vpr {
         CellInfo *load_cell = load.cell;
         if (load_cell->bel == BelId())
             return 0;
-        WireId user_wire = npnr_ctx->getBelPinWire(load_cell->bel, npnr_ctx->portPinFromId(load.port));
+        WireId user_wire = npnr_ctx->getBelPinWire(load_cell->bel, load.port);
         delay_t raw_wl = npnr_ctx->estimateDelay(drv_wire, user_wire);
         delay_t slack = load.budget - raw_wl;
         delay_t shift = std::min(timing_info.sWNS, 0);
@@ -277,10 +277,10 @@ class VPRPlacer
                 }
 
                 auto bel_type = ctx->getBelType(bel);
-                if (bel_type != ctx->belTypeFromId(ci->type)) {
+                if (bel_type != ci->type) {
                     log_error("Bel \'%s\' of type \'%s\' does not match cell "
                             "\'%s\' of type \'%s\'",
-                            loc_name.c_str(), ctx->belTypeToId(bel_type).c_str(ctx), ci->name.c_str(ctx),
+                            loc_name.c_str(), bel_type.c_str(ctx), ci->name.c_str(ctx),
                             ci->type.c_str(ctx));
                 }
                 ctx->bindBel(bel, ci, STRENGTH_USER);

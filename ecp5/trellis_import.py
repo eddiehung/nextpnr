@@ -11,7 +11,7 @@ tiletype_names = dict()
 
 parser = argparse.ArgumentParser(description="import ECP5 routing and bels from Project Trellis")
 parser.add_argument("device", type=str, help="target device")
-parser.add_argument("-p", "--portspins", type=str, help="path to portpins.inc")
+parser.add_argument("-p", "--constids", type=str, help="path to constids.inc")
 args = parser.parse_args()
 
 
@@ -28,7 +28,7 @@ def get_tiletype_index(name):
     return idx
 
 
-portpins = dict()
+constids = dict()
 
 
 class BinaryBlobAssembler:
@@ -77,12 +77,6 @@ class BinaryBlobAssembler:
 
     def pop(self):
         print("pop")
-
-bel_types = {
-    "NONE": 0,
-    "SLICE": 1,
-    "PIO": 2
-}
 
 def get_bel_index(ddrg, loc, name):
     loctype = ddrg.locationTypes[ddrg.typeAtLocation[loc]]
@@ -134,12 +128,60 @@ def process_loc_globals(chip):
         for x in range(0, max_col+1):
             quad = chip.global_data.get_quadrant(y, x)
             tapdrv = chip.global_data.get_tap_driver(y, x)
-            global_data[x, y] = (quadrants.index(quad), int(tapdrv.dir), tapdrv.col)
+            if tapdrv.col == x:
+                spinedrv = chip.global_data.get_spine_driver(quad, x)
+                spine = (spinedrv.second, spinedrv.first)
+            else:
+                spine = (-1, -1)
+            global_data[x, y] = (quadrants.index(quad), int(tapdrv.dir), tapdrv.col, spine)
+
+def get_wire_type(name):
+    if "H00" in name or "V00" in name:
+        return "X0"
+    if "H01" in name or "V01" in name:
+        return "X1"
+    if "H02" in name or "V02" in name:
+        return "X2"
+    if "H06" in name or "V06" in name:
+        return "X6"
+    if "_SLICE" in name or "_EBR" in name:
+        return "SLICE"
+    return "LOCAL"
+
+def get_pip_delay(wire_from, wire_to):
+    # ECP5 timings WIP!!!
+    type_from = get_wire_type(wire_from)
+    type_to = get_wire_type(wire_to)
+    if type_from == "X2" and type_to == "X2":
+        return 170
+    if type_from == "SLICE" or type_to == "SLICE":
+        return 205
+    if type_from in ("LOCAL", "X0") and type_to in ("X1", "X2", "X6"):
+        return 90
+    if type_from == "X6" or type_to == "X6":
+        return 200
+    if type_from in ("X1", "X2", "X6") and type_to in ("LOCAL", "X0"):
+        return 90
+    return 100
+
+
 
 def write_database(dev_name, chip, ddrg, endianness):
     def write_loc(loc, sym_name):
         bba.u16(loc.x, "%s.x" % sym_name)
         bba.u16(loc.y, "%s.y" % sym_name)
+
+    loctypes = list([_.key() for _ in ddrg.locationTypes])
+    loc_with_type = {}
+    for y in range(0, max_row+1):
+        for x in range(0, max_col+1):
+            loc_with_type[loctypes.index(ddrg.typeAtLocation[pytrellis.Location(x, y)])] = (x, y)
+
+    def get_wire_name(arc_loctype, rel, idx):
+        loc = loc_with_type[arc_loctype]
+        lt = ddrg.typeAtLocation[pytrellis.Location(loc[0] + rel.x, loc[1] + rel.y)]
+        wire = ddrg.locationTypes[lt].wires[idx]
+        return ddrg.to_str(wire.name)
 
     bba = BinaryBlobAssembler()
     bba.pre('#include "nextpnr.h"')
@@ -148,7 +190,6 @@ def write_database(dev_name, chip, ddrg, endianness):
     bba.push("chipdb_blob_%s" % dev_name)
     bba.r("chip_info", "chip_info")
 
-    loctypes = list([_.key() for _ in ddrg.locationTypes])
 
     for idx in range(len(loctypes)):
         loctype = ddrg.locationTypes[loctypes[idx]]
@@ -159,7 +200,7 @@ def write_database(dev_name, chip, ddrg, endianness):
                 write_loc(arc.sinkWire.rel, "dst")
                 bba.u32(arc.srcWire.id, "src_idx")
                 bba.u32(arc.sinkWire.id, "dst_idx")
-                bba.u32(arc.delay, "delay")  # TODO:delay
+                bba.u32(get_pip_delay(get_wire_name(idx, arc.srcWire.rel, arc.srcWire.id), get_wire_name(idx, arc.sinkWire.rel, arc.sinkWire.id)), "delay")  # TODO:delay
                 bba.u16(get_tiletype_index(ddrg.to_str(arc.tiletype)), "tile_type")
                 bba.u8(int(arc.cls), "pip_type")
                 bba.u8(0, "padding")
@@ -181,7 +222,7 @@ def write_database(dev_name, chip, ddrg, endianness):
                     for bp in wire.belPins:
                         write_loc(bp.bel.rel, "rel_bel_loc")
                         bba.u32(bp.bel.id, "bel_index")
-                        bba.u32(portpins[ddrg.to_str(bp.pin)], "port")
+                        bba.u32(constids[ddrg.to_str(bp.pin)], "port")
             bba.l("loc%d_wires" % idx, "WireInfoPOD")
             for wire_idx in range(len(loctype.wires)):
                 wire = loctype.wires[wire_idx]
@@ -200,13 +241,13 @@ def write_database(dev_name, chip, ddrg, endianness):
                 for pin in bel.wires:
                     write_loc(pin.wire.rel, "rel_wire_loc")
                     bba.u32(pin.wire.id, "wire_index")
-                    bba.u32(portpins[ddrg.to_str(pin.pin)], "port")
+                    bba.u32(constids[ddrg.to_str(pin.pin)], "port")
                     bba.u32(int(pin.dir), "dir")
             bba.l("loc%d_bels" % idx, "BelInfoPOD")
             for bel_idx in range(len(loctype.bels)):
                 bel = loctype.bels[bel_idx]
                 bba.s(ddrg.to_str(bel.name), "name")
-                bba.u32(bel_types[ddrg.to_str(bel.type)], "type")
+                bba.u32(constids[ddrg.to_str(bel.type)], "type")
                 bba.u32(bel.z, "z")
                 bba.u32(len(bel.wires), "num_bel_wires")
                 bba.r("loc%d_bel%d_wires" % (idx, bel_idx), "bel_wires")
@@ -246,6 +287,8 @@ def write_database(dev_name, chip, ddrg, endianness):
             bba.u16(global_data[x, y][2], "tap_col")
             bba.u8(global_data[x, y][1], "tap_dir")
             bba.u8(global_data[x, y][0], "quad")
+            bba.u16(global_data[x, y][3][1], "spine_row")
+            bba.u16(global_data[x, y][3][0], "spine_col")
 
     for package, pkgdata in sorted(packages.items()):
         bba.l("package_data_%s" % package, "PackagePinPOD")
@@ -305,7 +348,7 @@ def main():
     args = parser.parse_args()
 
     # Read port pin file
-    with open(args.portspins) as f:
+    with open(args.constids) as f:
         for line in f:
             line = line.replace("(", " ")
             line = line.replace(")", " ")
@@ -314,8 +357,12 @@ def main():
                 continue
             assert len(line) == 2
             assert line[0] == "X"
-            idx = len(portpins) + 1
-            portpins[line[1]] = idx
+            idx = len(constids) + 1
+            constids[line[1]] = idx
+    
+
+    constids["SLICE"] = constids["TRELLIS_SLICE"]
+    constids["PIO"] = constids["TRELLIS_IO"]
 
     # print("Initialising chip...")
     chip = pytrellis.Chip(dev_names[args.device])

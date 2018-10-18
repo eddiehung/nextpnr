@@ -31,6 +31,7 @@
 #include "jsonparse.h"
 #include "log.h"
 #include "mainwindow.h"
+#include "project.h"
 #include "pythontab.h"
 
 static void initBasenameResource() { Q_INIT_RESOURCE(base); }
@@ -108,6 +109,7 @@ BaseMainWindow::BaseMainWindow(std::unique_ptr<Context> context, ArchArgs args, 
     connect(designview, &DesignWidget::selected, fpgaView, &FPGAViewWidget::onSelectedArchItem);
     connect(designview, &DesignWidget::zoomSelected, fpgaView, &FPGAViewWidget::zoomSelected);
     connect(designview, &DesignWidget::highlight, fpgaView, &FPGAViewWidget::onHighlightGroupChanged);
+    connect(designview, &DesignWidget::hover, fpgaView, &FPGAViewWidget::onHoverItemChanged);
 
     // Click event on device view
     connect(fpgaView, &FPGAViewWidget::clickedBel, designview, &DesignWidget::onClickedBel);
@@ -297,13 +299,11 @@ void BaseMainWindow::createMenusAndBars()
 void BaseMainWindow::load_json(std::string filename)
 {
     disableActions();
-    currentJson = filename;
     std::ifstream f(filename);
     if (parse_json_file(f, filename, ctx.get())) {
         log("Loading design successful.\n");
         Q_EMIT updateTreeView();
-        actionPack->setEnabled(true);
-        onJsonLoaded();
+        updateLoaded();
     } else {
         actionLoadJSON->setEnabled(true);
         log("Loading design failed.\n");
@@ -420,9 +420,54 @@ void BaseMainWindow::disableActions()
 
     actionNew->setEnabled(true);
     actionOpen->setEnabled(true);
-    actionSave->setEnabled(!currentJson.empty());
+
+    if (ctx->settings.find(ctx->id("input/json")) != ctx->settings.end())
+        actionSave->setEnabled(true);
+    else
+        actionSave->setEnabled(false);
 
     onDisableActions();
+}
+
+void BaseMainWindow::updateLoaded()
+{
+    disableActions();
+    actionPack->setEnabled(true);
+    onJsonLoaded();
+    onProjectLoaded();
+}
+
+void BaseMainWindow::projectLoad(std::string filename)
+{
+    ProjectHandler proj;
+    disableActions();
+    ctx = proj.load(filename);
+    Q_EMIT contextChanged(ctx.get());
+    log_info("Loaded project %s...\n", filename.c_str());
+    updateLoaded();
+}
+
+void BaseMainWindow::open_proj()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, QString("Open Project"), QString(), QString("*.proj"));
+    if (!fileName.isEmpty()) {
+        projectLoad(fileName.toStdString());
+    }
+}
+
+void BaseMainWindow::notifyChangeContext() { Q_EMIT contextChanged(ctx.get()); }
+void BaseMainWindow::save_proj()
+{
+    if (currentProj.empty()) {
+        QString fileName = QFileDialog::getSaveFileName(this, QString("Save Project"), QString(), QString("*.proj"));
+        if (fileName.isEmpty())
+            return;
+        currentProj = fileName.toStdString();
+    }
+    if (!currentProj.empty()) {
+        ProjectHandler proj;
+        proj.save(ctx.get(), currentProj);
+    }
 }
 
 NEXTPNR_NAMESPACE_END

@@ -107,11 +107,13 @@ class FPGAViewWidget : public QOpenGLWidget, protected QOpenGLFunctions
     void wheelEvent(QWheelEvent *event) Q_DECL_OVERRIDE;
     QSize minimumSizeHint() const override;
     QSize sizeHint() const override;
+    void leaveEvent(QEvent *event) override;
 
   public Q_SLOTS:
     void newContext(Context *ctx);
     void onSelectedArchItem(std::vector<DecalXY> decals, bool keep);
     void onHighlightGroupChanged(std::vector<DecalXY> decals, int group);
+    void onHoverItemChanged(DecalXY decal);
     void pokeRenderer(void);
     void zoomIn();
     void zoomOut();
@@ -125,7 +127,7 @@ class FPGAViewWidget : public QOpenGLWidget, protected QOpenGLFunctions
 
   private:
     const float zoomNear_ = 0.1f; // do not zoom closer than this
-    const float zoomFar_ = 30.0f; // do not zoom further than this
+    float zoomFar_ = 10.0f; // do not zoom further than this
     const float zoomLvl1_ = 1.0f;
     const float zoomLvl2_ = 5.0f;
 
@@ -289,7 +291,7 @@ class FPGAViewWidget : public QOpenGLWidget, protected QOpenGLFunctions
     QMutex rendererDataLock_;
 
     void clampZoom();
-    void zoomToBB(const PickQuadTree::BoundingBox &bb, float margin);
+    void zoomToBB(const PickQuadTree::BoundingBox &bb, float margin, bool clamp);
     void zoom(int level);
     void renderLines(void);
     void renderGraphicElement(LineShaderData &out, PickQuadTree::BoundingBox &bb, const GraphicElement &el, float x,

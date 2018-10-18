@@ -48,14 +48,18 @@ class BaseMainWindow : public QMainWindow
     explicit BaseMainWindow(std::unique_ptr<Context> context, ArchArgs args, QWidget *parent = 0);
     virtual ~BaseMainWindow();
     Context *getContext() { return ctx.get(); }
-
-    void load_json(std::string filename);
+    void updateLoaded();
+    void projectLoad(std::string filename);
+    void notifyChangeContext();
 
   protected:
     void createMenusAndBars();
     void disableActions();
+    void load_json(std::string filename);
+
     virtual void onDisableActions(){};
     virtual void onJsonLoaded(){};
+    virtual void onProjectLoaded(){};
     virtual void onPackFinished(){};
     virtual void onBudgetFinished(){};
     virtual void onPlaceFinished(){};
@@ -66,8 +70,9 @@ class BaseMainWindow : public QMainWindow
     void closeTab(int index);
 
     virtual void new_proj() = 0;
-    virtual void open_proj() = 0;
-    virtual bool save_proj() = 0;
+
+    void open_proj();
+    void save_proj();
 
     void open_json();
     void budget();
@@ -92,7 +97,7 @@ class BaseMainWindow : public QMainWindow
     std::unique_ptr<Context> ctx;
     TaskManager *task;
     bool timing_driven;
-    std::string currentJson;
+    std::string currentProj;
 
     // main widgets
     QTabWidget *tabWidget;

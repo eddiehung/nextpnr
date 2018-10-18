@@ -7,7 +7,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description="convert ICE40 chip database")
 parser.add_argument("filename", type=str, help="chipdb input filename")
-parser.add_argument("-p", "--portspins", type=str, help="path to portpins.inc")
+parser.add_argument("-p", "--constids", type=str, help="path to constids.inc")
 parser.add_argument("-g", "--gfxh", type=str, help="path to gfx.h")
 parser.add_argument("--fast", type=str, help="path to timing data for fast part")
 parser.add_argument("--slow", type=str, help="path to timing data for slow part")
@@ -45,19 +45,21 @@ wire_xy = dict()
 
 cbit_re = re.compile(r'B(\d+)\[(\d+)\]')
 
-portpins = dict()
-beltypes = dict()
+constids = dict()
 tiletypes = dict()
 wiretypes = dict()
 
 gfx_wire_ids = dict()
+gfx_wire_names = list()
 wire_segments = dict()
 
 fast_timings = None
 slow_timings = None
 
-with open(args.portspins) as f:
+with open(args.constids) as f:
     for line in f:
+        if line.startswith("//"):
+            continue
         line = line.replace("(", " ")
         line = line.replace(")", " ")
         line = line.split()
@@ -65,8 +67,19 @@ with open(args.portspins) as f:
             continue
         assert len(line) == 2
         assert line[0] == "X"
-        idx = len(portpins) + 1
-        portpins[line[1]] = idx
+        idx = len(constids) + 1
+        constids[line[1]] = idx
+
+constids["PLL"] = constids["ICESTORM_PLL"]
+constids["WARMBOOT"] = constids["SB_WARMBOOT"]
+constids["MAC16"] = constids["ICESTORM_DSP"]
+constids["HFOSC"] = constids["ICESTORM_HFOSC"]
+constids["LFOSC"] = constids["ICESTORM_LFOSC"]
+constids["I2C"] = constids["SB_I2C"]
+constids["SPI"] = constids["SB_SPI"]
+constids["LEDDA_IP"] = constids["SB_LEDDA_IP"]
+constids["RGBA_DRV"] = constids["SB_RGBA_DRV"]
+constids["SPRAM"] = constids["ICESTORM_SPRAM"]
 
 with open(args.gfxh) as f:
     state = 0
@@ -81,6 +94,136 @@ with open(args.gfxh) as f:
             idx = len(gfx_wire_ids)
             name = line.strip().rstrip(",")
             gfx_wire_ids[name] = idx
+            gfx_wire_names.append(name)
+
+def gfx_wire_alias(old, new):
+    assert old in gfx_wire_ids
+    assert new not in gfx_wire_ids
+    gfx_wire_ids[new] = gfx_wire_ids[old]
+
+# GFX aliases for RAM tiles
+
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_0", "TILE_WIRE_RAM_RADDR_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_1", "TILE_WIRE_RAM_RADDR_1")
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_2", "TILE_WIRE_RAM_RADDR_2")
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_3", "TILE_WIRE_RAM_RADDR_3")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_1_IN_0", "TILE_WIRE_RAM_RADDR_4")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_IN_1", "TILE_WIRE_RAM_RADDR_5")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_IN_2", "TILE_WIRE_RAM_RADDR_6")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_IN_3", "TILE_WIRE_RAM_RADDR_7")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_2_IN_0", "TILE_WIRE_RAM_RADDR_8")
+gfx_wire_alias("TILE_WIRE_LUTFF_2_IN_1", "TILE_WIRE_RAM_RADDR_9")
+gfx_wire_alias("TILE_WIRE_LUTFF_2_IN_2", "TILE_WIRE_RAM_RADDR_10")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_0", "TILE_WIRE_RAM_WADDR_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_1", "TILE_WIRE_RAM_WADDR_1")
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_2", "TILE_WIRE_RAM_WADDR_2")
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_3", "TILE_WIRE_RAM_WADDR_3")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_1_IN_0", "TILE_WIRE_RAM_WADDR_4")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_IN_1", "TILE_WIRE_RAM_WADDR_5")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_IN_2", "TILE_WIRE_RAM_WADDR_6")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_IN_3", "TILE_WIRE_RAM_WADDR_7")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_2_IN_0", "TILE_WIRE_RAM_WADDR_8")
+gfx_wire_alias("TILE_WIRE_LUTFF_2_IN_1", "TILE_WIRE_RAM_WADDR_9")
+gfx_wire_alias("TILE_WIRE_LUTFF_2_IN_2", "TILE_WIRE_RAM_WADDR_10")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_3_IN_0", "TILE_WIRE_RAM_MASK_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_3_IN_1", "TILE_WIRE_RAM_MASK_1")
+gfx_wire_alias("TILE_WIRE_LUTFF_3_IN_2", "TILE_WIRE_RAM_MASK_2")
+gfx_wire_alias("TILE_WIRE_LUTFF_3_IN_3", "TILE_WIRE_RAM_MASK_3")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_0", "TILE_WIRE_RAM_MASK_4")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_1", "TILE_WIRE_RAM_MASK_5")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_2", "TILE_WIRE_RAM_MASK_6")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_3", "TILE_WIRE_RAM_MASK_7")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_3_IN_0", "TILE_WIRE_RAM_MASK_8")
+gfx_wire_alias("TILE_WIRE_LUTFF_3_IN_1", "TILE_WIRE_RAM_MASK_9")
+gfx_wire_alias("TILE_WIRE_LUTFF_3_IN_2", "TILE_WIRE_RAM_MASK_10")
+gfx_wire_alias("TILE_WIRE_LUTFF_3_IN_3", "TILE_WIRE_RAM_MASK_11")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_0", "TILE_WIRE_RAM_MASK_12")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_1", "TILE_WIRE_RAM_MASK_13")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_2", "TILE_WIRE_RAM_MASK_14")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_3", "TILE_WIRE_RAM_MASK_15")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_5_IN_0", "TILE_WIRE_RAM_WDATA_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_IN_1", "TILE_WIRE_RAM_WDATA_1")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_IN_2", "TILE_WIRE_RAM_WDATA_2")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_IN_3", "TILE_WIRE_RAM_WDATA_3")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_6_IN_0", "TILE_WIRE_RAM_WDATA_4")
+gfx_wire_alias("TILE_WIRE_LUTFF_6_IN_1", "TILE_WIRE_RAM_WDATA_5")
+gfx_wire_alias("TILE_WIRE_LUTFF_6_IN_2", "TILE_WIRE_RAM_WDATA_6")
+gfx_wire_alias("TILE_WIRE_LUTFF_6_IN_3", "TILE_WIRE_RAM_WDATA_7")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_5_IN_0", "TILE_WIRE_RAM_WDATA_8")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_IN_1", "TILE_WIRE_RAM_WDATA_9")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_IN_2", "TILE_WIRE_RAM_WDATA_10")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_IN_3", "TILE_WIRE_RAM_WDATA_11")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_6_IN_0", "TILE_WIRE_RAM_WDATA_12")
+gfx_wire_alias("TILE_WIRE_LUTFF_6_IN_1", "TILE_WIRE_RAM_WDATA_13")
+gfx_wire_alias("TILE_WIRE_LUTFF_6_IN_2", "TILE_WIRE_RAM_WDATA_14")
+gfx_wire_alias("TILE_WIRE_LUTFF_6_IN_3", "TILE_WIRE_RAM_WDATA_15")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_0_OUT", "TILE_WIRE_RAM_RDATA_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_OUT", "TILE_WIRE_RAM_RDATA_1")
+gfx_wire_alias("TILE_WIRE_LUTFF_2_OUT", "TILE_WIRE_RAM_RDATA_2")
+gfx_wire_alias("TILE_WIRE_LUTFF_3_OUT", "TILE_WIRE_RAM_RDATA_3")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_OUT", "TILE_WIRE_RAM_RDATA_4")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_OUT", "TILE_WIRE_RAM_RDATA_5")
+gfx_wire_alias("TILE_WIRE_LUTFF_6_OUT", "TILE_WIRE_RAM_RDATA_6")
+gfx_wire_alias("TILE_WIRE_LUTFF_7_OUT", "TILE_WIRE_RAM_RDATA_7")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_0_OUT", "TILE_WIRE_RAM_RDATA_8")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_OUT", "TILE_WIRE_RAM_RDATA_9")
+gfx_wire_alias("TILE_WIRE_LUTFF_2_OUT", "TILE_WIRE_RAM_RDATA_10")
+gfx_wire_alias("TILE_WIRE_LUTFF_3_OUT", "TILE_WIRE_RAM_RDATA_11")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_OUT", "TILE_WIRE_RAM_RDATA_12")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_OUT", "TILE_WIRE_RAM_RDATA_13")
+gfx_wire_alias("TILE_WIRE_LUTFF_6_OUT", "TILE_WIRE_RAM_RDATA_14")
+gfx_wire_alias("TILE_WIRE_LUTFF_7_OUT", "TILE_WIRE_RAM_RDATA_15")
+
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_CEN", "TILE_WIRE_RAM_RCLKE")
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_CEN", "TILE_WIRE_RAM_WCLKE")
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_CLK", "TILE_WIRE_RAM_RCLK")
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_CLK", "TILE_WIRE_RAM_WCLK")
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_S_R", "TILE_WIRE_RAM_RE")
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_S_R", "TILE_WIRE_RAM_WE")
+
+# GFX aliases for IO tiles
+
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_0", "TILE_WIRE_IO_0_D_OUT_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_1", "TILE_WIRE_IO_0_D_OUT_1")
+gfx_wire_alias("TILE_WIRE_LUTFF_0_IN_3", "TILE_WIRE_IO_0_OUT_ENB")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_0_OUT", "TILE_WIRE_IO_0_D_IN_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_1_OUT", "TILE_WIRE_IO_0_D_IN_1")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_0", "TILE_WIRE_IO_1_D_OUT_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_1", "TILE_WIRE_IO_1_D_OUT_1")
+gfx_wire_alias("TILE_WIRE_LUTFF_4_IN_3", "TILE_WIRE_IO_1_OUT_ENB")
+
+gfx_wire_alias("TILE_WIRE_LUTFF_4_OUT", "TILE_WIRE_IO_1_D_IN_0")
+gfx_wire_alias("TILE_WIRE_LUTFF_5_OUT", "TILE_WIRE_IO_1_D_IN_1")
+
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_CEN", "TILE_WIRE_IO_GLOBAL_CEN")
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_CLK", "TILE_WIRE_IO_GLOBAL_INCLK")
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_S_R", "TILE_WIRE_IO_GLOBAL_OUTCLK")
+
+gfx_wire_alias("TILE_WIRE_FUNC_GLOBAL_G0", "TILE_WIRE_IO_GLOBAL_LATCH")
+
+for neigh in "BNL BNR BOT LFT RGT TNL TNR TOP".split():
+    for i in range(8):
+        gfx_wire_alias("TILE_WIRE_NEIGH_OP_%s_%d" % (neigh, i), "TILE_WIRE_LOGIC_OP_%s_%d" % (neigh, i))
+
+# End of GFX aliases
+
 
 def read_timings(filename):
     db = dict()
@@ -106,22 +249,6 @@ if args.fast is not None:
 
 if args.slow is not None:
     slow_timings = read_timings(args.slow)
-
-beltypes["ICESTORM_LC"] = 1
-beltypes["ICESTORM_RAM"] = 2
-beltypes["SB_IO"] = 3
-beltypes["SB_GB"] = 4
-beltypes["PLL"] = 5
-beltypes["WARMBOOT"] = 6
-beltypes["MAC16"] = 7
-beltypes["HFOSC"] = 8
-beltypes["LFOSC"] = 9
-beltypes["I2C"] = 10
-beltypes["SPI"] = 11
-beltypes["IO_I3C"] = 12
-beltypes["LEDDA_IP"] = 13
-beltypes["RGBA_DRV"] = 14
-beltypes["SPRAM"] = 15
 
 tiletypes["NONE"] = 0
 tiletypes["LOGIC"] = 1
@@ -168,6 +295,18 @@ def maj_wire_name(name):
     if name[2].startswith("sp12_v_b_"):
         return name[2] in ("sp12_v_b_0", "sp12_v_b_1")
     return False
+
+def norm_wire_xy(x, y, name):
+    if name.startswith("glb_netwk_"):
+        return None
+    if name.startswith("neigh_op_"):
+        return None
+    if name.startswith("logic_op_"):
+        return None
+    if name.startswith("io_global/latch"):
+        return None
+    return None # FIXME
+    return (x, y)
 
 def cmp_wire_names(newname, oldname):
     if maj_wire_name(newname):
@@ -512,11 +651,13 @@ with open(args.filename, "r") as f:
                 wire_names_r[mode[1]] = wname
             if mode[1] not in wire_xy:
                 wire_xy[mode[1]] = list()
-            wire_xy[mode[1]].append((int(line[0]), int(line[1])))
+            wire_xy[mode[1]].append(wname)
             if mode[1] not in wire_segments:
                 wire_segments[mode[1]] = dict()
             if ("TILE_WIRE_" + wname[2].upper().replace("/", "_")) in gfx_wire_ids:
-                wire_segments[mode[1]][(wname[0], wname[1])] = wname[2]
+                if (wname[0], wname[1]) not in wire_segments[mode[1]]:
+                    wire_segments[mode[1]][(wname[0], wname[1])] = list()
+                wire_segments[mode[1]][(wname[0], wname[1])].append(wname[2])
             continue
 
         if mode[0] in ("buffer", "routing"):
@@ -565,7 +706,9 @@ def add_wire(x, y, name):
     wire_names_r[wire_idx] = wname
     wire_segments[wire_idx] = dict()
     if ("TILE_WIRE_" + wname[2].upper().replace("/", "_")) in gfx_wire_ids:
-        wire_segments[wire_idx][(wname[0], wname[1])] = wname[2]
+        if (wname[0], wname[1]) not in wire_segments[wire_idx]:
+            wire_segments[wire_idx][(wname[0], wname[1])] = list()
+        wire_segments[wire_idx][(wname[0], wname[1])].append(wname[2])
     return wire_idx
 
 def add_switch(x, y, bel=-1):
@@ -584,21 +727,17 @@ def add_pip(src, dst, flags=0):
 
     pip_xy[(src, dst)] = (x, y, 0, len(switches) - 1, flags)
 
-# Add virtual padin wires
-for i in range(8):
-    add_wire(0, 0, "padin_%d" % i)
-
 def add_bel_input(bel, wire, port):
     if wire not in wire_belports:
         wire_belports[wire] = set()
     wire_belports[wire].add((bel, port))
-    bel_wires[bel].append((portpins[port], 0, wire))
+    bel_wires[bel].append((constids[port], 0, wire))
 
 def add_bel_output(bel, wire, port):
     if wire not in wire_belports:
         wire_belports[wire] = set()
     wire_belports[wire].add((bel, port))
-    bel_wires[bel].append((portpins[port], 1, wire))
+    bel_wires[bel].append((constids[port], 1, wire))
 
 def add_bel_lc(x, y, z):
     bel = len(bel_name)
@@ -768,7 +907,7 @@ def add_bel_ec(ec):
             extra_cell_config[bel].append(entry)
 
 cell_timings = {}
-tmport_to_portpin = {
+tmport_to_constids = {
     "posedge:clk": "CLK",
     "ce": "CEN",
     "sr": "SR",
@@ -793,14 +932,14 @@ tmport_to_portpin = {
 }
 
 for i in range(16):
-    tmport_to_portpin["RDATA[%d]" % i] = "RDATA_%d" % i
-    tmport_to_portpin["WDATA[%d]" % i] = "WDATA_%d" % i
-    tmport_to_portpin["MASK[%d]" % i] = "MASK_%d" % i
-    tmport_to_portpin["DATAOUT[%d]" % i] = "DATAOUT_%d" % i
+    tmport_to_constids["RDATA[%d]" % i] = "RDATA_%d" % i
+    tmport_to_constids["WDATA[%d]" % i] = "WDATA_%d" % i
+    tmport_to_constids["MASK[%d]" % i] = "MASK_%d" % i
+    tmport_to_constids["DATAOUT[%d]" % i] = "DATAOUT_%d" % i
 
 for i in range(11):
-    tmport_to_portpin["RADDR[%d]" % i] = "RADDR_%d" % i
-    tmport_to_portpin["WADDR[%d]" % i] = "WADDR_%d" % i
+    tmport_to_constids["RADDR[%d]" % i] = "RADDR_%d" % i
+    tmport_to_constids["WADDR[%d]" % i] = "WADDR_%d" % i
 
 def add_cell_timingdata(bel_type, timing_cell, fast_db, slow_db):
     timing_entries = []
@@ -808,9 +947,9 @@ def add_cell_timingdata(bel_type, timing_cell, fast_db, slow_db):
     for key in database.keys():
         skey = key.split(".")
         if skey[0] == timing_cell:
-            if skey[1] in tmport_to_portpin and skey[2] in tmport_to_portpin:
-                iport = tmport_to_portpin[skey[1]]
-                oport = tmport_to_portpin[skey[2]]
+            if skey[1] in tmport_to_constids and skey[2] in tmport_to_constids:
+                iport = tmport_to_constids[skey[1]]
+                oport = tmport_to_constids[skey[2]]
                 fastdel = fast_db[key] if fast_db is not None else 0
                 slowdel = slow_db[key] if slow_db is not None else 0
                 timing_entries.append((iport, oport, fastdel, slowdel))
@@ -936,6 +1075,10 @@ bba.post('NEXTPNR_NAMESPACE_END')
 bba.push("chipdb_blob_%s" % dev_name)
 bba.r("chip_info_%s" % dev_name, "chip_info")
 
+bba.l("tile_wire_names")
+for name in gfx_wire_names:
+    bba.s(name, name)
+
 for bel in range(len(bel_name)):
     bba.l("bel_wires_%d" % bel, "BelWirePOD")
     for data in sorted(bel_wires[bel]):
@@ -946,7 +1089,7 @@ for bel in range(len(bel_name)):
 bba.l("bel_data_%s" % dev_name, "BelInfoPOD")
 for bel in range(len(bel_name)):
     bba.s(bel_name[bel], "name")
-    bba.u32(beltypes[bel_type[bel]], "type")
+    bba.u32(constids[bel_type[bel]], "type")
     bba.u32(len(bel_wires[bel]), "num_bel_wires")
     bba.r("bel_wires_%d" % bel, "bel_wires")
     bba.u8(bel_pos[bel][0], "x")
@@ -1016,7 +1159,7 @@ for wire in range(num_wires):
         bba.l("wire%d_bels" % wire, "BelPortPOD")
         for belport in sorted(wire_belports[wire]):
             bba.u32(belport[0], "bel_index")
-            bba.u32(portpins[belport[1]], "port")
+            bba.u32(constids[belport[1]], "port")
     else:
         num_bel_pins = 0
 
@@ -1032,20 +1175,32 @@ for wire in range(num_wires):
     info["num_bel_pins"] = num_bel_pins
     info["list_bel_pins"] = ("wire%d_bels" % wire) if num_bel_pins > 0 else None
 
+    pos_xy = None
+    first = None
+
     if wire in wire_xy:
-        avg_x, avg_y = 0, 0
+        for x, y, n in wire_xy[wire]:
+            norm_xy = norm_wire_xy(x, y, n)
+            if norm_xy is None:
+                continue
+            if pos_xy is None:
+                pos_xy = norm_xy
+                first = (x, y, n)
+            elif pos_xy != norm_xy:
+                print("Conflicting positions for wire %s: (%d, %d, %s) -> (%d, %d), (%d, %d, %s) -> (%d, %d)" % \
+                        ((info["name"],) + first + pos_xy + (x, y, n) + norm_xy), file=sys.stderr)
+                assert 0
+        if (pos_xy is None) and (len(wire_xy[wire]) > 1):
+                # print("Only 'None' positions for wire %s." % info["name"], file=sys.stderr)
+                # assert 0
+                pass
 
-        for x, y in wire_xy[wire]:
-            avg_x += x
-            avg_y += y
-        avg_x /= len(wire_xy[wire])
-        avg_y /= len(wire_xy[wire])
-
-        info["x"] = int(round(avg_x))
-        info["y"] = int(round(avg_y))
-    else:
+    if pos_xy is None:
         info["x"] = wire_names_r[wire][0]
         info["y"] = wire_names_r[wire][1]
+    else:
+        info["x"] = pos_xy[0]
+        info["y"] = pos_xy[1]
 
     wireinfo.append(info)
 
@@ -1112,8 +1267,13 @@ for wire, info in enumerate(wireinfo):
     bba.r(info["list_downhill"], "pips_downhill")
     bba.u32(info["num_bel_pins"], "num_bel_pins")
     bba.r(info["list_bel_pins"], "bel_pins")
-    bba.u32(len(wire_segments[wire]), "num_segments")
-    if len(wire_segments[wire]):
+
+    num_segments = 0
+    for segs in wire_segments[wire].values():
+        num_segments += len(segs)
+    bba.u32(num_segments, "num_segments")
+
+    if num_segments:
         bba.r("wire_segments_%d" % wire, "segments")
     else:
         bba.u32(0, "segments")
@@ -1129,24 +1289,25 @@ for wire, info in enumerate(wireinfo):
 for wire in range(num_wires):
     if len(wire_segments[wire]):
         bba.l("wire_segments_%d" % wire, "WireSegmentPOD")
-        for xy, seg in sorted(wire_segments[wire].items()):
-            bba.u8(xy[0], "x")
-            bba.u8(xy[1], "y")
-            bba.u16(gfx_wire_ids["TILE_WIRE_" + seg.upper().replace("/", "_")], "index")
+        for xy, segs in sorted(wire_segments[wire].items()):
+            for seg in segs:
+                bba.u8(xy[0], "x")
+                bba.u8(xy[1], "y")
+                bba.u16(gfx_wire_ids["TILE_WIRE_" + seg.upper().replace("/", "_")], "index")
 
 bba.l("pip_data_%s" % dev_name, "PipInfoPOD")
 for info in pipinfo:
     src_seg = -1
     src_segname = wire_names_r[info["src"]]
     if (info["x"], info["y"]) in wire_segments[info["src"]]:
-        src_segname = wire_segments[info["src"]][(info["x"], info["y"])]
+        src_segname = wire_segments[info["src"]][(info["x"], info["y"])][0]
         src_seg = gfx_wire_ids["TILE_WIRE_" + src_segname.upper().replace("/", "_")]
         src_segname = src_segname.replace("/", ".")
 
     dst_seg = -1
     dst_segname = wire_names_r[info["dst"]]
     if (info["x"], info["y"]) in wire_segments[info["dst"]]:
-        dst_segname = wire_segments[info["dst"]][(info["x"], info["y"])]
+        dst_segname = wire_segments[info["dst"]][(info["x"], info["y"])][0]
         dst_seg = gfx_wire_ids["TILE_WIRE_" + dst_segname.upper().replace("/", "_")]
         dst_segname = dst_segname.replace("/", ".")
 
@@ -1246,18 +1407,18 @@ for info in packageinfo:
     bba.r(info[2], "pins")
 
 for cell, timings in sorted(cell_timings.items()):
-    beltype = beltypes[cell]
+    beltype = constids[cell]
     bba.l("cell_paths_%d" % beltype, "CellPathDelayPOD")
     for entry in timings:
         fromport, toport, fast, slow = entry
-        bba.u32(portpins[fromport], "from_port")
-        bba.u32(portpins[toport], "to_port")
+        bba.u32(constids[fromport], "from_port")
+        bba.u32(constids[toport], "to_port")
         bba.u32(fast, "fast_delay")
         bba.u32(slow, "slow_delay")
 
 bba.l("cell_timings_%s" % dev_name, "CellTimingPOD")
 for cell, timings in sorted(cell_timings.items()):
-    beltype = beltypes[cell]
+    beltype = constids[cell]
     bba.u32(beltype, "type")
     bba.u32(len(timings), "num_paths")
     bba.r("cell_paths_%d" % beltype, "path_delays")
@@ -1280,5 +1441,6 @@ bba.r("bits_info_%s" % dev_name, "bits_info")
 bba.r("bel_config_%s" % dev_name if len(extra_cell_config) > 0 else None, "bel_config")
 bba.r("package_info_%s" % dev_name, "packages_data")
 bba.r("cell_timings_%s" % dev_name, "cell_timing")
+bba.r("tile_wire_names", "tile_wire_names")
 
 bba.pop()

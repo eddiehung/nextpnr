@@ -240,9 +240,10 @@ void FPGAViewWidget::populateQuadTree(RendererData *data, const DecalXY &decal, 
             continue;
         }
 
+        bool res = true;
         if (el.type == GraphicElement::TYPE_BOX) {
             // Boxes are bounded by themselves.
-            data->qt->insert(PickQuadTree::BoundingBox(x + el.x1, y + el.y1, x + el.x2, y + el.y2), element);
+            res = data->qt->insert(PickQuadTree::BoundingBox(x + el.x1, y + el.y1, x + el.x2, y + el.y2), element);
         }
 
         if (el.type == GraphicElement::TYPE_LINE || el.type == GraphicElement::TYPE_ARROW) {
@@ -261,7 +262,11 @@ void FPGAViewWidget::populateQuadTree(RendererData *data, const DecalXY &decal, 
             x1 += 0.01;
             y1 += 0.01;
 
-            data->qt->insert(PickQuadTree::BoundingBox(x0, y0, x1, y1), element);
+            res = data->qt->insert(PickQuadTree::BoundingBox(x0, y0, x1, y1), element);
+        }
+
+        if (!res) {
+            NPNR_ASSERT_FALSE("populateQuadTree: could not insert element");
         }
     }
 }
@@ -271,7 +276,7 @@ QMatrix4x4 FPGAViewWidget::getProjection(void)
     QMatrix4x4 matrix;
 
     const float aspect = float(width()) / float(height());
-    matrix.perspective(90, aspect, zoomNear_, zoomFar_);
+    matrix.perspective(90, aspect, zoomNear_, zoomFar_ + 0.1f);
     return matrix;
 }
 
@@ -450,8 +455,17 @@ void FPGAViewWidget::renderLines(void)
         NPNR_ASSERT(data->bbGlobal.w() != 0);
         NPNR_ASSERT(data->bbGlobal.h() != 0);
 
+        // Enlarge the bounding box slightly for the picking - when we insert
+        // elements into it, we enlarge their bounding boxes slightly, so
+        // we need to give ourselves some sagery margin here.
+        auto bb = data->bbGlobal;
+        bb.setX0(bb.x0() - 1);
+        bb.setY0(bb.y0() - 1);
+        bb.setX1(bb.x1() + 1);
+        bb.setY1(bb.y1() + 1);
+
         // Populate picking quadtree.
-        data->qt = std::unique_ptr<PickQuadTree>(new PickQuadTree(data->bbGlobal));
+        data->qt = std::unique_ptr<PickQuadTree>(new PickQuadTree(bb));
         for (auto const &decal : belDecals) {
             populateQuadTree(data.get(), decal.first,
                              PickedElement::fromBel(decal.second, decal.first.x, decal.first.y));
@@ -542,6 +556,14 @@ void FPGAViewWidget::onHighlightGroupChanged(std::vector<DecalXY> decals, int gr
         rendererArgs_->highlightedDecals[group] = decals;
         rendererArgs_->changed = true;
     }
+    pokeRenderer();
+}
+
+void FPGAViewWidget::onHoverItemChanged(DecalXY decal)
+{
+    QMutexLocker locked(&rendererArgsLock_);
+    rendererArgs_->hoveredDecal = decal;
+    rendererArgs_->changed = true;
     pokeRenderer();
 }
 
@@ -734,9 +756,9 @@ void FPGAViewWidget::zoomIn() { zoom(10); }
 
 void FPGAViewWidget::zoomOut() { zoom(-10); }
 
-void FPGAViewWidget::zoomToBB(const PickQuadTree::BoundingBox &bb, float margin)
+void FPGAViewWidget::zoomToBB(const PickQuadTree::BoundingBox &bb, float margin, bool clamp)
 {
-    if (bb.w() < 0.00005 && bb.h() < 0.00005)
+    if (fabs(bb.w()) < 0.00005 && fabs(bb.h()) < 0.00005)
         return;
 
     viewMove_.setToIdentity();
@@ -747,14 +769,15 @@ void FPGAViewWidget::zoomToBB(const PickQuadTree::BoundingBox &bb, float margin)
     float distance_w = bb.w() / 2 + margin;
     float distance_h = bb.h() / 2 + margin;
     zoom_ = std::max(distance_w, distance_h);
-    clampZoom();
+    if (clamp)
+        clampZoom();
 }
 
 void FPGAViewWidget::zoomSelected()
 {
     {
         QMutexLocker lock(&rendererDataLock_);
-        zoomToBB(rendererData_->bbSelected, 0.5f);
+        zoomToBB(rendererData_->bbSelected, 0.5f, true);
     }
     update();
 }
@@ -763,8 +786,17 @@ void FPGAViewWidget::zoomOutbound()
 {
     {
         QMutexLocker lock(&rendererDataLock_);
-        zoomToBB(rendererData_->bbGlobal, 1.0f);
+        zoomToBB(rendererData_->bbGlobal, 1.0f, false);
+        zoomFar_ = zoom_;
     }
+}
+
+void FPGAViewWidget::leaveEvent(QEvent *event)
+{
+    QMutexLocker locked(&rendererArgsLock_);
+    rendererArgs_->hoveredDecal = DecalXY();
+    rendererArgs_->changed = true;
+    pokeRenderer();
 }
 
 NEXTPNR_NAMESPACE_END

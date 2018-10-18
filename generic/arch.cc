@@ -36,7 +36,7 @@ void Arch::addWire(IdString name, IdString type, int x, int y)
     wire_ids.push_back(name);
 }
 
-void Arch::addPip(IdString name, IdString type, IdString srcWire, IdString dstWire, DelayInfo delay)
+void Arch::addPip(IdString name, IdString type, IdString srcWire, IdString dstWire, DelayInfo delay, Loc loc)
 {
     NPNR_ASSERT(pips.count(name) == 0);
     PipInfo &pi = pips[name];
@@ -45,10 +45,21 @@ void Arch::addPip(IdString name, IdString type, IdString srcWire, IdString dstWi
     pi.srcWire = srcWire;
     pi.dstWire = dstWire;
     pi.delay = delay;
+    pi.loc = loc;
 
     wires.at(srcWire).downhill.push_back(name);
     wires.at(dstWire).uphill.push_back(name);
     pip_ids.push_back(name);
+
+    if (int(tilePipDimZ.size()) <= loc.x)
+        tilePipDimZ.resize(loc.x + 1);
+
+    if (int(tilePipDimZ[loc.x].size()) <= loc.y)
+        tilePipDimZ[loc.x].resize(loc.y + 1);
+
+    gridDimX = std::max(gridDimX, loc.x + 1);
+    gridDimY = std::max(gridDimY, loc.x + 1);
+    tilePipDimZ[loc.x][loc.y] = std::max(tilePipDimZ[loc.x][loc.y], loc.z + 1);
 }
 
 void Arch::addAlias(IdString name, IdString type, IdString srcWire, IdString dstWire, DelayInfo delay)
@@ -88,15 +99,15 @@ void Arch::addBel(IdString name, IdString type, Loc loc, bool gb)
 
     bels_by_tile[loc.x][loc.y].push_back(name);
 
-    if (int(tileDimZ.size()) <= loc.x)
-        tileDimZ.resize(loc.x + 1);
+    if (int(tileBelDimZ.size()) <= loc.x)
+        tileBelDimZ.resize(loc.x + 1);
 
-    if (int(tileDimZ[loc.x].size()) <= loc.y)
-        tileDimZ[loc.x].resize(loc.y + 1);
+    if (int(tileBelDimZ[loc.x].size()) <= loc.y)
+        tileBelDimZ[loc.x].resize(loc.y + 1);
 
     gridDimX = std::max(gridDimX, loc.x + 1);
     gridDimY = std::max(gridDimY, loc.x + 1);
-    tileDimZ[loc.x][loc.y] = std::max(tileDimZ[loc.x][loc.y], loc.z + 1);
+    tileBelDimZ[loc.x][loc.y] = std::max(tileBelDimZ[loc.x][loc.y], loc.z + 1);
 }
 
 void Arch::addBelInput(IdString bel, IdString name, IdString wire)
@@ -173,9 +184,15 @@ void Arch::setGroupDecal(GroupId group, DecalXY decalxy)
     refreshUiGroup(group);
 }
 
+void Arch::setWireAttr(IdString wire, IdString key, const std::string &value) { wires.at(wire).attrs[key] = value; }
+
+void Arch::setPipAttr(IdString pip, IdString key, const std::string &value) { pips.at(pip).attrs[key] = value; }
+
+void Arch::setBelAttr(IdString bel, IdString key, const std::string &value) { bels.at(bel).attrs[key] = value; }
+
 // ---------------------------------------------------------------
 
-Arch::Arch(ArchArgs) : chipName("generic") {}
+Arch::Arch(ArchArgs args) : chipName("generic"), args(args) {}
 
 void IdString::initialize_arch(const BaseCtx *ctx) {}
 
@@ -238,15 +255,17 @@ CellInfo *Arch::getConflictingBelCell(BelId bel) const { return bels.at(bel).bou
 
 const std::vector<BelId> &Arch::getBels() const { return bel_ids; }
 
-BelType Arch::getBelType(BelId bel) const { return bels.at(bel).type; }
+IdString Arch::getBelType(BelId bel) const { return bels.at(bel).type; }
 
-WireId Arch::getBelPinWire(BelId bel, PortPin pin) const { return bels.at(bel).pins.at(pin).wire; }
+const std::map<IdString, std::string> &Arch::getBelAttrs(BelId bel) const { return bels.at(bel).attrs; }
 
-PortType Arch::getBelPinType(BelId bel, PortPin pin) const { return bels.at(bel).pins.at(pin).type; }
+WireId Arch::getBelPinWire(BelId bel, IdString pin) const { return bels.at(bel).pins.at(pin).wire; }
 
-std::vector<PortPin> Arch::getBelPins(BelId bel) const
+PortType Arch::getBelPinType(BelId bel, IdString pin) const { return bels.at(bel).pins.at(pin).type; }
+
+std::vector<IdString> Arch::getBelPins(BelId bel) const
 {
-    std::vector<PortPin> ret;
+    std::vector<IdString> ret;
     for (auto &it : bels.at(bel).pins)
         ret.push_back(it.first);
     return ret;
@@ -264,6 +283,8 @@ WireId Arch::getWireByName(IdString name) const
 IdString Arch::getWireName(WireId wire) const { return wire; }
 
 IdString Arch::getWireType(WireId wire) const { return wires.at(wire).type; }
+
+const std::map<IdString, std::string> &Arch::getWireAttrs(WireId wire) const { return wires.at(wire).attrs; }
 
 uint32_t Arch::getWireChecksum(WireId wire) const
 {
@@ -317,6 +338,8 @@ IdString Arch::getPipName(PipId pip) const { return pip; }
 
 IdString Arch::getPipType(PipId pip) const { return pips.at(pip).type; }
 
+const std::map<IdString, std::string> &Arch::getPipAttrs(PipId pip) const { return pips.at(pip).attrs; }
+
 uint32_t Arch::getPipChecksum(PipId wire) const
 {
     // FIXME
@@ -351,6 +374,8 @@ NetInfo *Arch::getBoundPipNet(PipId pip) const { return pips.at(pip).bound_net; 
 NetInfo *Arch::getConflictingPipNet(PipId pip) const { return pips.at(pip).bound_net; }
 
 const std::vector<PipId> &Arch::getPips() const { return pip_ids; }
+
+Loc Arch::getPipLocation(PipId pip) const { return pips.at(pip).loc; }
 
 WireId Arch::getPipSrcWire(PipId pip) const { return pips.at(pip).srcWire; }
 
@@ -412,9 +437,9 @@ bool Arch::getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay
 
 // ---------------------------------------------------------------
 
-bool Arch::place() { return placer1(getCtx(), Placer1Cfg()); }
+bool Arch::place() { return placer1(getCtx(), Placer1Cfg(getCtx())); }
 
-bool Arch::route() { return router1(getCtx(), Router1Cfg()); }
+bool Arch::route() { return router1(getCtx(), Router1Cfg(getCtx())); }
 
 // ---------------------------------------------------------------
 
@@ -435,11 +460,11 @@ bool Arch::getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort
     return false;
 }
 
-IdString Arch::getPortClock(const CellInfo *cell, IdString port) const { return IdString(); }
-
-bool Arch::isClockPort(const CellInfo *cell, IdString port) const { return false; }
-bool Arch::isGlobalNet(const NetInfo *net) const { return false; }
-bool Arch::isIO(const CellInfo *cell) const { return false; }
+// Get the port class, also setting clockPort if applicable
+TimingPortClass Arch::getPortTimingClass(const CellInfo *cell, IdString port, IdString &clockPort) const
+{
+    return TMG_IGNORE;
+}
 
 bool Arch::isValidBelForCell(CellInfo *cell, BelId bel) const { return true; }
 bool Arch::isBelLocationValid(BelId bel) const { return true; }

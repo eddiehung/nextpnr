@@ -50,13 +50,13 @@ template <typename T> struct RelPtr
 NPNR_PACKED_STRUCT(struct BelWirePOD {
     LocationPOD rel_wire_loc;
     int32_t wire_index;
-    PortPin port;
+    int32_t port;
     int32_t type;
 });
 
 NPNR_PACKED_STRUCT(struct BelInfoPOD {
     RelPtr<char> name;
-    BelType type;
+    int32_t type;
     int32_t z;
     int32_t num_bel_wires;
     RelPtr<BelWirePOD> bel_wires;
@@ -65,7 +65,7 @@ NPNR_PACKED_STRUCT(struct BelInfoPOD {
 NPNR_PACKED_STRUCT(struct BelPortPOD {
     LocationPOD rel_bel_loc;
     int32_t bel_index;
-    PortPin port;
+    int32_t port;
 });
 
 NPNR_PACKED_STRUCT(struct PipInfoPOD {
@@ -147,6 +147,8 @@ NPNR_PACKED_STRUCT(struct GlobalInfoPOD {
     int16_t tap_col;
     TapDirection tap_dir;
     GlobalQuadrant quad;
+    int16_t spine_row;
+    int16_t spine_col;
 });
 
 NPNR_PACKED_STRUCT(struct ChipInfoPOD {
@@ -239,7 +241,7 @@ struct BelPinIterator
         BelPin ret;
         ret.bel.index = ptr->bel_index;
         ret.bel.location = wire_loc + ptr->rel_bel_loc;
-        ret.pin = ptr->port;
+        ret.pin.index = ptr->port;
         return ret;
     }
 };
@@ -390,6 +392,12 @@ struct ArchArgs
         LFE5U_25F,
         LFE5U_45F,
         LFE5U_85F,
+        LFE5UM_25F,
+        LFE5UM_45F,
+        LFE5UM_85F,
+        LFE5UM5G_25F,
+        LFE5UM5G_45F,
+        LFE5UM5G_85F,
     } type = NONE;
     std::string package;
     int speed = 6;
@@ -404,7 +412,7 @@ struct Arch : BaseCtx
     mutable std::unordered_map<IdString, WireId> wire_by_name;
     mutable std::unordered_map<IdString, PipId> pip_by_name;
 
-    std::unordered_map<BelId, CellInfo *> bel_to_cell;
+    std::vector<CellInfo *> bel_to_cell;
     std::unordered_map<WireId, NetInfo *> wire_to_net;
     std::unordered_map<PipId, NetInfo *> pip_to_net;
 
@@ -414,18 +422,15 @@ struct Arch : BaseCtx
     std::string getChipName() const;
 
     IdString archId() const { return id("ecp5"); }
+    ArchArgs archArgs() const { return args; }
     IdString archArgsToId(ArchArgs args) const;
 
-    IdString belTypeToId(BelType type) const;
-    BelType belTypeFromId(IdString id) const;
-
-    IdString portPinToId(PortPin type) const;
-    PortPin portPinFromId(IdString id) const;
     // -------------------------------------------------
 
     int getGridDimX() const { return chip_info->width; };
     int getGridDimY() const { return chip_info->height; };
-    int getTileDimZ(int, int) const { return 4; };
+    int getTileBelDimZ(int, int) const { return 4; };
+    int getTilePipDimZ(int, int) const { return 1; };
 
     // -------------------------------------------------
 
@@ -446,11 +451,18 @@ struct Arch : BaseCtx
 
     uint32_t getBelChecksum(BelId bel) const { return bel.index; }
 
+    const int max_loc_bels = 20;
+    int getBelFlatIndex(BelId bel) const
+    {
+        return (bel.location.y * chip_info->width + bel.location.x) * max_loc_bels + bel.index;
+    }
+
     void bindBel(BelId bel, CellInfo *cell, PlaceStrength strength)
     {
         NPNR_ASSERT(bel != BelId());
-        NPNR_ASSERT(bel_to_cell[bel] == nullptr);
-        bel_to_cell[bel] = cell;
+        int idx = getBelFlatIndex(bel);
+        NPNR_ASSERT(bel_to_cell.at(idx) == nullptr);
+        bel_to_cell[idx] = cell;
         cell->bel = bel;
         cell->belStrength = strength;
         refreshUiBel(bel);
@@ -459,10 +471,11 @@ struct Arch : BaseCtx
     void unbindBel(BelId bel)
     {
         NPNR_ASSERT(bel != BelId());
-        NPNR_ASSERT(bel_to_cell[bel] != nullptr);
-        bel_to_cell[bel]->bel = BelId();
-        bel_to_cell[bel]->belStrength = STRENGTH_NONE;
-        bel_to_cell[bel] = nullptr;
+        int idx = getBelFlatIndex(bel);
+        NPNR_ASSERT(bel_to_cell.at(idx) != nullptr);
+        bel_to_cell[idx]->bel = BelId();
+        bel_to_cell[idx]->belStrength = STRENGTH_NONE;
+        bel_to_cell[idx] = nullptr;
         refreshUiBel(bel);
     }
 
@@ -483,25 +496,19 @@ struct Arch : BaseCtx
     bool checkBelAvail(BelId bel) const
     {
         NPNR_ASSERT(bel != BelId());
-        return bel_to_cell.find(bel) == bel_to_cell.end() || bel_to_cell.at(bel) == nullptr;
+        return bel_to_cell[getBelFlatIndex(bel)] == nullptr;
     }
 
     CellInfo *getBoundBelCell(BelId bel) const
     {
         NPNR_ASSERT(bel != BelId());
-        if (bel_to_cell.find(bel) == bel_to_cell.end())
-            return nullptr;
-        else
-            return bel_to_cell.at(bel);
+        return bel_to_cell[getBelFlatIndex(bel)];
     }
 
     CellInfo *getConflictingBelCell(BelId bel) const
     {
         NPNR_ASSERT(bel != BelId());
-        if (bel_to_cell.find(bel) == bel_to_cell.end())
-            return nullptr;
-        else
-            return bel_to_cell.at(bel);
+        return bel_to_cell[getBelFlatIndex(bel)];
     }
 
     BelRange getBels() const
@@ -517,13 +524,21 @@ struct Arch : BaseCtx
         return range;
     }
 
-    BelType getBelType(BelId bel) const
+    IdString getBelType(BelId bel) const
     {
         NPNR_ASSERT(bel != BelId());
-        return locInfo(bel)->bel_data[bel.index].type;
+        IdString id;
+        id.index = locInfo(bel)->bel_data[bel.index].type;
+        return id;
     }
 
-    WireId getBelPinWire(BelId bel, PortPin pin) const;
+    std::vector<std::pair<IdString, std::string>> getBelAttrs(BelId) const
+    {
+        std::vector<std::pair<IdString, std::string>> ret;
+        return ret;
+    }
+
+    WireId getBelPinWire(BelId bel, IdString pin) const;
 
     BelPinRange getWireBelPins(WireId wire) const
     {
@@ -536,7 +551,7 @@ struct Arch : BaseCtx
         return range;
     }
 
-    std::vector<PortPin> getBelPins(BelId bel) const;
+    std::vector<IdString> getBelPins(BelId bel) const;
 
     // -------------------------------------------------
 
@@ -553,6 +568,12 @@ struct Arch : BaseCtx
     }
 
     IdString getWireType(WireId wire) const { return IdString(); }
+
+    std::vector<std::pair<IdString, std::string>> getWireAttrs(WireId) const
+    {
+        std::vector<std::pair<IdString, std::string>> ret;
+        return ret;
+    }
 
     uint32_t getWireChecksum(WireId wire) const { return wire.index; }
 
@@ -627,12 +648,33 @@ struct Arch : BaseCtx
         return range;
     }
 
+    IdString getWireBasename(WireId wire) const { return id(locInfo(wire)->wire_data[wire.index].name.get()); }
+
+    WireId getWireByLocAndBasename(Location loc, std::string basename) const
+    {
+        WireId wireId;
+        wireId.location = loc;
+        for (int i = 0; i < locInfo(wireId)->num_wires; i++) {
+            if (locInfo(wireId)->wire_data[i].name.get() == basename) {
+                wireId.index = i;
+                return wireId;
+            }
+        }
+        return WireId();
+    }
+
     // -------------------------------------------------
 
     PipId getPipByName(IdString name) const;
     IdString getPipName(PipId pip) const;
 
     IdString getPipType(PipId pip) const { return IdString(); }
+
+    std::vector<std::pair<IdString, std::string>> getPipAttrs(PipId) const
+    {
+        std::vector<std::pair<IdString, std::string>> ret;
+        return ret;
+    }
 
     uint32_t getPipChecksum(PipId pip) const { return pip.index; }
 
@@ -726,7 +768,7 @@ struct Arch : BaseCtx
     {
         DelayInfo delay;
         NPNR_ASSERT(pip != PipId());
-        delay.delay = locInfo(pip)->pip_data[pip.index].delay * 100;
+        delay.delay = locInfo(pip)->pip_data[pip.index].delay;
         return delay;
     }
 
@@ -776,6 +818,15 @@ struct Arch : BaseCtx
         return chip_info->tiletype_names[locInfo(pip)->pip_data[pip.index].tile_type].get();
     }
 
+    Loc getPipLocation(PipId pip) const
+    {
+        Loc loc;
+        loc.x = pip.location.x;
+        loc.y = pip.location.y;
+        loc.z = 0;
+        return loc;
+    }
+
     int8_t getPipClass(PipId pip) const { return locInfo(pip)->pip_data[pip.index].pip_type; }
 
     BelId getPackagePinBel(const std::string &pin) const;
@@ -785,7 +836,7 @@ struct Arch : BaseCtx
     std::string getPioFunctionName(BelId bel) const;
     BelId getPioByFunctionName(const std::string &name) const;
 
-    PortType getBelPinType(BelId bel, PortPin pin) const;
+    PortType getBelPinType(BelId bel, IdString pin) const;
 
     // -------------------------------------------------
 
@@ -827,10 +878,8 @@ struct Arch : BaseCtx
     // Get the delay through a cell from one port to another, returning false
     // if no path exists
     bool getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort, DelayInfo &delay) const;
-    // Get the associated clock to a port, or empty if the port is combinational
-    IdString getPortClock(const CellInfo *cell, IdString port) const;
-    // Return true if a port is a clock
-    bool isClockPort(const CellInfo *cell, IdString port) const;
+    // Get the port class, also setting clockPort if applicable
+    TimingPortClass getPortTimingClass(const CellInfo *cell, IdString port, IdString &clockPort) const;
     // Return true if a port is a net
     bool isGlobalNet(const NetInfo *net) const;
 
@@ -841,6 +890,8 @@ struct Arch : BaseCtx
 
     // Helper function for above
     bool slicesCompatible(const std::vector<const CellInfo *> &cells) const;
+
+    void assignArchInfo();
 
     std::vector<std::pair<std::string, std::string>> getTilesAtLocation(int row, int col);
     std::string getTileByTypeAndLocation(int row, int col, std::string type) const
@@ -863,6 +914,8 @@ struct Arch : BaseCtx
         }
         NPNR_ASSERT_FALSE_STR("no tile at (" + std::to_string(col) + ", " + std::to_string(row) + ") with type in set");
     }
+
+    GlobalInfoPOD globalInfoAtLoc(Location loc);
 
     IdString id_trellis_slice;
     IdString id_clk, id_lsr;

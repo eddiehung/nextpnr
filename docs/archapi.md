@@ -28,14 +28,6 @@ delay_t minDelay() const { return delay; }
 delay_t maxDelay() const { return delay; }
 ```
 
-### BelType
-
-A type representing a bel type name. `BelType()` must construct a unique null-value. Must provide `==` and `!=` operators and a specialization for `std::hash<BelType>`.
-
-### PortPin
-
-A type representing a port or pin name. `PortPin()` must construct a unique null-value. Must provide `==` and `!=` operators and a specialization for `std::hash<PortPin>`.
-
 ### BelId
 
 A type representing a bel name. `BelId()` must construct a unique null-value. Must provide `==` and `!=` operators and a specialization for `std::hash<BelId>`.
@@ -80,33 +72,21 @@ Constructor. ArchArgs is a architecture-specific type (usually a struct also def
 
 Return a string representation of the ArchArgs that was used to construct this object.
 
-### IdString belTypeToId(BelType type) const
-
-Convert a `BelType` to an `IdString`.
-
-### IdString portPinToId(PortPin type) const
-
-Convert a `PortPin` to an `IdString`.
-
-### BelType belTypeFromId(IdString id) const
-
-Convert `IdString` to `BelType`.
-
-### PortPin portPinFromId(IdString id) const
-
-Convert `IdString` to `PortPin`.
-
 ### int getGridDimX() const
 
-Get grid X dimension. All bels must have Y coordinates in the range `0 .. getGridDimX()-1` (inclusive).
+Get grid X dimension. All bels and pips must have Y coordinates in the range `0 .. getGridDimX()-1` (inclusive).
 
 ### int getGridDimY() const
 
-Get grid Y dimension. All bels must have Y coordinates in the range `0 .. getGridDimY()-1` (inclusive).
+Get grid Y dimension. All bels and pips must have Y coordinates in the range `0 .. getGridDimY()-1` (inclusive).
 
-### int getTileDimZ(int x, int y) const
+### int getTileBelDimZ(int x, int y) const
 
-Get Z dimension for the specified tile. All bels with the specified X and Y coordinates must have a Z coordinate in the range `0 .. getTileDimZ(X,Y)-1` (inclusive).
+Get Z dimension for the specified tile for bels. All bels with at specified X and Y coordinates must have a Z coordinate in the range `0 .. getTileDimZ(X,Y)-1` (inclusive).
+
+### int getTilePipDimZ(int x, int y) const
+
+Get Z dimension for the specified tile for pips. All pips with at specified X and Y coordinates must have a Z coordinate in the range `0 .. getTileDimZ(X,Y)-1` (inclusive).
 
 Bel Methods
 -----------
@@ -121,7 +101,7 @@ Get the name for a bel. (Bel names must be unique.)
 
 ### Loc getBelLocation(BelId bel) const
 
-Get the X/Y/Z location of a given bel.
+Get the X/Y/Z location of a given bel. Each bel must have a unique X/Y/Z location.
 
 ### BelId getBelByLocation(Loc loc) const
 
@@ -167,19 +147,24 @@ If the bel is unavailable, and unbinding a single cell would make it available, 
 
 Return a list of all bels on the device.
 
-### BelType getBelType(BelId bel) const
+### IdString getBelType(BelId bel) const
 
 Return the type of a given bel.
 
-### WireId getBelPinWire(BelId bel, PortPin pin) const
+### const\_range\<std\:\:pair\<IdString, std::string\>\> getBelAttrs(BelId bel) const
+
+Return the attributes for that bel. Bel attributes are only informal. They are displayed by the GUI but are otherwise
+unused. An implementation may simply return an empty range.
+
+### WireId getBelPinWire(BelId bel, IdString pin) const
 
 Return the wire connected to the given bel pin.
 
-### PortType getBelPinType(BelId bel, PortPin pin) const
+### PortType getBelPinType(BelId bel, IdString pin) const
 
 Return the type (input/output/inout) of the given bel pin.
 
-### const\_range\<PortPin\> getBelPins(BelId bel) const
+### const\_range\<IdString\> getBelPins(BelId bel) const
 
 Return a list of all pins on that bel.
 
@@ -199,6 +184,11 @@ Get the name for a wire. (Wire names must be unique.)
 Get the type of a wire. The wire type is purely informal and
 isn't used by any of the core algorithms. Implementations may
 simply return `IdString()`.
+
+### const\_range\<std\:\:pair\<IdString, std::string\>\> getWireAttrs(WireId wire) const
+
+Return the attributes for that wire. Wire attributes are only informal. They are displayed by the GUI but are otherwise
+unused. An implementation may simply return an empty range.
 
 ### uint32\_t getWireChecksum(WireId wire) const
 
@@ -261,6 +251,16 @@ Get the name for a pip. (Pip names must be unique.)
 
 Get the type of a pip. Pip types are purely informal and
 implementations may simply return `IdString()`.
+
+### const\_range\<std\:\:pair\<IdString, std::string\>\> getPipAttrs(PipId pip) const
+
+Return the attributes for that pip. Pip attributes are only informal. They are displayed by the GUI but are otherwise
+unused. An implementation may simply return an empty range.
+
+### Loc getPipLocation(PipId pip) const
+
+Get the X/Y/Z location of a given pip. Pip locations do not need to be unique, and in most cases they aren't. So
+for pips a X/Y/Z location refers to a group of pips, not an individual pip.
 
 ### uint32\_t getPipChecksum(PipId pip) const
 
@@ -455,13 +455,11 @@ Cell Delay Methods
 Returns the delay for the specified path through a cell in the `&delay` argument. The method returns
 false if there is no timing relationship from `fromPort` to `toPort`.
 
-### IdString getPortClock(const CellInfo \*cell, IdString port) const
+### TimingPortClass getPortTimingClass(const CellInfo *cell, IdString port, IdString &clockPort) const
 
-Returns the clock input port for the specified output port.
-
-### bool isClockPort(const CellInfo \*cell, IdString port) const
-
-Returns true if the specified port is a clock input.
+Return the _timing port class_ of a port. This can be a register or combinational input or output; clock input or
+output; general startpoint or endpoint; or a port ignored for timing purposes. For register ports, clockPort is set
+to the associated clock port.
 
 Placer Methods
 --------------

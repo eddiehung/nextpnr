@@ -35,36 +35,38 @@ bool Arch::slicesCompatible(const std::vector<const CellInfo *> &cells) const
 {
     // TODO: allow different LSR/CLK and MUX/SRMODE settings once
     // routing details are worked out
-    NetInfo *clk_sig = nullptr, *lsr_sig = nullptr;
-    std::string CLKMUX, LSRMUX, SRMODE;
+    IdString clk_sig, lsr_sig;
+    IdString CLKMUX, LSRMUX, SRMODE;
     bool first = true;
     for (auto cell : cells) {
-        if (first) {
-            clk_sig = port_or_nullptr(cell, id_clk);
-            lsr_sig = port_or_nullptr(cell, id_lsr);
-            CLKMUX = str_or_default(cell->params, id_clkmux, "CLK");
-            LSRMUX = str_or_default(cell->params, id_lsrmux, "LSR");
-            SRMODE = str_or_default(cell->params, id_srmode, "CE_OVER_LSR");
-        } else {
-            if (port_or_nullptr(cell, id_clk) != clk_sig)
-                return false;
-            if (port_or_nullptr(cell, id_lsr) != lsr_sig)
-                return false;
-            if (str_or_default(cell->params, id_clkmux, "CLK") != CLKMUX)
-                return false;
-            if (str_or_default(cell->params, id_lsrmux, "LSR") != LSRMUX)
-                return false;
-            if (str_or_default(cell->params, id_srmode, "CE_OVER_LSR") != SRMODE)
-                return false;
+        if (cell->sliceInfo.using_dff) {
+            if (first) {
+                clk_sig = cell->sliceInfo.clk_sig;
+                lsr_sig = cell->sliceInfo.lsr_sig;
+                CLKMUX = cell->sliceInfo.clkmux;
+                LSRMUX = cell->sliceInfo.lsrmux;
+                SRMODE = cell->sliceInfo.srmode;
+            } else {
+                if (cell->sliceInfo.clk_sig != clk_sig)
+                    return false;
+                if (cell->sliceInfo.lsr_sig != lsr_sig)
+                    return false;
+                if (cell->sliceInfo.clkmux != CLKMUX)
+                    return false;
+                if (cell->sliceInfo.lsrmux != LSRMUX)
+                    return false;
+                if (cell->sliceInfo.srmode != SRMODE)
+                    return false;
+            }
+            first = false;
         }
-        first = false;
     }
     return true;
 }
 
 bool Arch::isBelLocationValid(BelId bel) const
 {
-    if (getBelType(bel) == TYPE_TRELLIS_SLICE) {
+    if (getBelType(bel) == id_TRELLIS_SLICE) {
         std::vector<const CellInfo *> bel_cells;
         Loc bel_loc = getBelLocation(bel);
         for (auto bel_other : getBelsByTile(bel_loc.x, bel_loc.y)) {
@@ -85,8 +87,8 @@ bool Arch::isBelLocationValid(BelId bel) const
 
 bool Arch::isValidBelForCell(CellInfo *cell, BelId bel) const
 {
-    if (cell->type == id_trellis_slice) {
-        NPNR_ASSERT(getBelType(bel) == TYPE_TRELLIS_SLICE);
+    if (cell->type == id_TRELLIS_SLICE) {
+        NPNR_ASSERT(getBelType(bel) == id_TRELLIS_SLICE);
 
         std::vector<const CellInfo *> bel_cells;
         Loc bel_loc = getBelLocation(bel);

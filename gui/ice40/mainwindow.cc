@@ -24,8 +24,7 @@
 #include <QIcon>
 #include <QInputDialog>
 #include <QLineEdit>
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
+#include <fstream>
 #include "bitstream.h"
 #include "design_utils.h"
 #include "jsonparse.h"
@@ -47,8 +46,6 @@ MainWindow::MainWindow(std::unique_ptr<Context> context, ArchArgs args, QWidget 
     connect(this, &BaseMainWindow::contextChanged, this, &MainWindow::newContext);
 
     createMenu();
-
-    Q_EMIT contextChanged(ctx.get());
 }
 
 MainWindow::~MainWindow() {}
@@ -134,8 +131,6 @@ void MainWindow::new_proj()
 
         if (ok && !item.isEmpty()) {
             currentProj = "";
-            currentJson = "";
-            currentPCF = "";
             disableActions();
             chipArgs.package = package.toStdString().c_str();
             ctx = std::unique_ptr<Context>(new Context(chipArgs));
@@ -149,9 +144,8 @@ void MainWindow::new_proj()
 void MainWindow::load_pcf(std::string filename)
 {
     disableActions();
-    currentPCF = filename;
     std::ifstream f(filename);
-    if (apply_pcf(ctx.get(), f)) {
+    if (apply_pcf(ctx.get(), filename, f)) {
         log("Loading PCF successful.\n");
         actionPack->setEnabled(true);
     } else {
@@ -166,122 +160,12 @@ void MainWindow::newContext(Context *ctx)
     setWindowTitle(title.c_str());
 }
 
-void MainWindow::open_proj()
-{
-    QMap<std::string, int> arch;
-#ifdef ICE40_HX1K_ONLY
-    arch.insert("hx1k", ArchArgs::HX1K);
-#else
-    arch.insert("lp384", ArchArgs::LP384);
-    arch.insert("lp1k", ArchArgs::LP1K);
-    arch.insert("hx1k", ArchArgs::HX1K);
-    arch.insert("up5k", ArchArgs::UP5K);
-    arch.insert("lp8k", ArchArgs::LP8K);
-    arch.insert("hx8k", ArchArgs::HX8K);
-#endif
-
-    QString fileName = QFileDialog::getOpenFileName(this, QString("Open Project"), QString(), QString("*.proj"));
-    if (!fileName.isEmpty()) {
-        try {
-            namespace pt = boost::property_tree;
-
-            std::string fn = fileName.toStdString();
-            currentProj = fn;
-            disableActions();
-
-            pt::ptree root;
-            std::string filename = fileName.toStdString();
-            pt::read_json(filename, root);
-            log_info("Loading project %s...\n", filename.c_str());
-            log_break();
-
-            int version = root.get<int>("project.version");
-            if (version != 1)
-                log_error("Wrong project format version.\n");
-
-            std::string arch_name = root.get<std::string>("project.arch.name");
-            if (arch_name != "ice40")
-                log_error("Unsuported project architecture.\n");
-
-            std::string arch_type = root.get<std::string>("project.arch.type");
-            std::string arch_package = root.get<std::string>("project.arch.package");
-
-            chipArgs.type = (ArchArgs::ArchArgsTypes)arch.value(arch_type);
-            chipArgs.package = arch_package;
-            ctx = std::unique_ptr<Context>(new Context(chipArgs));
-            Q_EMIT contextChanged(ctx.get());
-
-            QFileInfo fi(fileName);
-            QDir::setCurrent(fi.absoluteDir().absolutePath());
-            log_info("Setting current dir to %s...\n", fi.absoluteDir().absolutePath().toStdString().c_str());
-            log_info("Loading project %s...\n", filename.c_str());
-            log_info("Context changed to %s (%s)\n", arch_type.c_str(), arch_package.c_str());
-
-            auto project = root.get_child("project");
-            std::string json;
-            std::string pcf;
-            if (project.count("input")) {
-                auto input = project.get_child("input");
-                if (input.count("json"))
-                    json = input.get<std::string>("json");
-                if (input.count("pcf"))
-                    pcf = input.get<std::string>("pcf");
-            }
-
-            if (!(QFileInfo::exists(json.c_str()) && QFileInfo(json.c_str()).isFile())) {
-                log_error("Json file does not exist.\n");
-            }
-            if (!pcf.empty()) {
-                if (!(QFileInfo::exists(pcf.c_str()) && QFileInfo(pcf.c_str()).isFile())) {
-                    log_error("PCF file does not exist.\n");
-                }
-            }
-
-            log_info("Loading json: %s...\n", json.c_str());
-            load_json(json);
-            if (!pcf.empty())
-                load_pcf(json);
-        } catch (log_execution_error_exception) {
-        }
-    }
-}
-
 void MainWindow::open_pcf()
 {
     QString fileName = QFileDialog::getOpenFileName(this, QString("Open PCF"), QString(), QString("*.pcf"));
     if (!fileName.isEmpty()) {
         load_pcf(fileName.toStdString());
     }
-}
-
-bool MainWindow::save_proj()
-{
-    if (currentProj.empty()) {
-        QString fileName = QFileDialog::getSaveFileName(this, QString("Save Project"), QString(), QString("*.proj"));
-        if (fileName.isEmpty())
-            return false;
-        currentProj = fileName.toStdString();
-    }
-    if (!currentProj.empty()) {
-        namespace pt = boost::property_tree;
-        QFileInfo fi(currentProj.c_str());
-        QDir dir(fi.absoluteDir().absolutePath());
-        std::ofstream f(currentProj);
-        pt::ptree root;
-        root.put("project.version", 1);
-        root.put("project.name", fi.baseName().toStdString());
-        root.put("project.arch.name", ctx->archId().c_str(ctx.get()));
-        root.put("project.arch.type", ctx->archArgsToId(chipArgs).c_str(ctx.get()));
-        root.put("project.arch.package", chipArgs.package);
-        if (!currentJson.empty())
-            root.put("project.input.json", dir.relativeFilePath(currentJson.c_str()).toStdString());
-        if (!currentPCF.empty())
-            root.put("project.input.pcf", dir.relativeFilePath(currentPCF.c_str()).toStdString());
-        pt::write_json(f, root);
-        log_info("Project %s saved...\n", fi.baseName().toStdString().c_str());
-        return true;
-    }
-    return false;
 }
 
 void MainWindow::save_asc()
@@ -304,5 +188,11 @@ void MainWindow::onDisableActions()
 
 void MainWindow::onJsonLoaded() { actionLoadPCF->setEnabled(true); }
 void MainWindow::onRouteFinished() { actionSaveAsc->setEnabled(true); }
+
+void MainWindow::onProjectLoaded()
+{
+    if (ctx->settings.find(ctx->id("input/pcf")) != ctx->settings.end())
+        actionLoadPCF->setEnabled(false);
+}
 
 NEXTPNR_NAMESPACE_END

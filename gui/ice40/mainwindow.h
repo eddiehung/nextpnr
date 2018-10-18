@@ -34,17 +34,17 @@ class MainWindow : public BaseMainWindow
 
   public:
     void createMenu();
-    void load_pcf(std::string filename);
 
   protected:
+    void load_pcf(std::string filename);
+
     void onDisableActions() override;
     void onJsonLoaded() override;
     void onRouteFinished() override;
+    void onProjectLoaded() override;
 
   protected Q_SLOTS:
     virtual void new_proj();
-    virtual void open_proj();
-    virtual bool save_proj();
 
     void open_pcf();
     void save_asc();
@@ -54,9 +54,6 @@ class MainWindow : public BaseMainWindow
   private:
     QAction *actionLoadPCF;
     QAction *actionSaveAsc;
-
-    std::string currentProj;
-    std::string currentPCF;
 };
 
 NEXTPNR_NAMESPACE_END

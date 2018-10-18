@@ -27,11 +27,11 @@ NEXTPNR_NAMESPACE_BEGIN
 // Read a w
 
 // Apply PCF constraints to a pre-packing design
-bool apply_pcf(Context *ctx, std::istream &in)
+bool apply_pcf(Context *ctx, std::string filename, std::istream &in)
 {
     try {
         if (!in)
-            log_error("failed to open PCF file");
+            log_error("failed to open PCF file\n");
         std::string line;
         while (std::getline(in, line)) {
             size_t cstart = line.find("#");
@@ -66,6 +66,7 @@ bool apply_pcf(Context *ctx, std::istream &in)
                 log_error("unsupported pcf command '%s'\n", cmd.c_str());
             }
         }
+        ctx->settings.emplace(ctx->id("input/pcf"), filename);
         return true;
     } catch (log_execution_error_exception) {
         return false;

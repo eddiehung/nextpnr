@@ -1276,7 +1276,7 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 			if (   curr_x_to < 1 || curr_x_to >= int(device_ctx.grid.width())
                 || curr_y_to < 1 || curr_y_to >= int(device_ctx.grid.height())
                 || curr_z_to < 0 || curr_z_to >= int(device_ctx.grid[curr_x_to][curr_y_to].size())
-                || npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) != curr_b_from->type) {
+                || npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to]) != curr_b_from->type) {
 				abort_swap = true;
 			} else {
                 auto bel_to = device_ctx.grid[curr_x_to][curr_y_to][curr_z_to];
@@ -1332,7 +1332,7 @@ static int find_affected_blocks(/*ClusterBlockId*/ CellInfo* b_from, int x_to, i
 //			if (   curr_x_to < 1 || curr_x_to >= int(device_ctx.grid.width())
 //                || curr_y_to < 1 || curr_y_to >= int(device_ctx.grid.height())
 //                || curr_z_to < 0 || curr_z_to >= int(device_ctx.grid[curr_x_to][curr_y_to].size())
-//                || npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to])) != curr_b_from->type) {
+//                || npnr_ctx->getBelType(device_ctx.grid[curr_x_to][curr_y_to][curr_z_to]) != curr_b_from->type) {
 //				abort_swap = true;
 //			} else {
 //                auto bel_to = device_ctx.grid[curr_x_to][curr_y_to][curr_z_to];
@@ -1822,7 +1822,7 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 			is_legal = false;
 		} else if(*px_to > max_x || *px_to < min_x || *py_to > max_y || *py_to < min_y) {
 			is_legal = false;
-		} else if(type != npnr_ctx->belTypeToId(npnr_ctx->getBelType(bel_to))) {
+		} else if(type != npnr_ctx->getBelType(bel_to)) {
 			is_legal = false;
 		} else {
 			/* Find z_to and test to validate that the "to" block is *not* fixed */
@@ -1852,7 +1852,7 @@ static bool find_to(/*t_type_ptr type,*/ float rlim,
 		vpr_throw(VPR_ERROR_PLACE, __FILE__, __LINE__,"in routine find_to: (x_to,y_to) = (%d,%d)\n", *px_to, *py_to);
 	}
 
-	VTR_ASSERT(type == npnr_ctx->belTypeToId(npnr_ctx->getBelType(bel_to)));
+	VTR_ASSERT(type == npnr_ctx->getBelType(bel_to));
 	return true;
 }
 
@@ -1966,8 +1966,8 @@ static float comp_td_point_to_point_delay(/*ClusterNetId*/ NetInfo* net_id, int 
 //		VTR_ASSERT_SAFE(cluster_ctx.clb_nlist.block_type(source_block) != nullptr);
 //		VTR_ASSERT_SAFE(cluster_ctx.clb_nlist.block_type(sink_block) != nullptr);
 
-        auto drv_wire = npnr_ctx->getBelPinWire(net_id->driver.cell->bel, npnr_ctx->portPinFromId(net_id->driver.port));
-        auto user_wire = npnr_ctx->getBelPinWire(net_id->users[ipin-1].cell->bel, npnr_ctx->portPinFromId(net_id->users[ipin-1].port));
+        auto drv_wire = npnr_ctx->getBelPinWire(net_id->driver.cell->bel, net_id->driver.port);
+        auto user_wire = npnr_ctx->getBelPinWire(net_id->users[ipin-1].cell->bel, net_id->users[ipin-1].port);
 
 //		int delta_x = abs(place_ctx.block_locs[sink_block].x - place_ctx.block_locs[source_block].x);
 //		int delta_y = abs(place_ctx.block_locs[sink_block].y - place_ctx.block_locs[source_block].y);
@@ -2803,8 +2803,7 @@ static void load_legal_placements() {
 //	free(index);
 
     for (auto bel : npnr_ctx->getBels()) {
-        auto belType = npnr_ctx->getBelType(bel);
-        auto type = npnr_ctx->belTypeToId(belType);
+        auto type = npnr_ctx->getBelType(bel);
         int itype = type.index;
         if (itype >= int(legal_pos.size()))
             legal_pos.resize(itype+1);
@@ -2847,7 +2846,7 @@ static int check_macro_can_be_placed(int imacro, int itype, int x, int y, int z)
 		// still within the chip's dimemsion and the member_z is allowed at that location on the grid
 		if (member_x < device_ctx.grid.width() && member_y < device_ctx.grid.height() 
                 && member_z < device_ctx.grid[member_x][member_y].size()
-                && npnr_ctx->belTypeToId(npnr_ctx->getBelType(device_ctx.grid[member_x][member_y][member_z])).index == itype
+                && npnr_ctx->getBelType(device_ctx.grid[member_x][member_y][member_z]) == itype
                 && npnr_ctx->checkBelAvail(device_ctx.grid[member_x][member_y][member_z])
 				&& npnr_ctx->isValidBelForCell(pl_macros[imacro].members[imember].blk_index, device_ctx.grid[member_x][member_y][member_z])) {
 			// Can still accomodate blocks here, check the next position

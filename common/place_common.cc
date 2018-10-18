@@ -115,7 +115,7 @@ bool place_single_cell(Context *ctx, CellInfo *cell, bool require_legality)
         if (cell->bel != BelId()) {
             ctx->unbindBel(cell->bel);
         }
-        BelType targetType = ctx->belTypeFromId(cell->type);
+        IdString targetType = cell->type;
         for (auto bel : ctx->getBels()) {
             if (ctx->getBelType(bel) == targetType && (!require_legality || ctx->isValidBelForCell(cell, bel))) {
                 if (ctx->checkBelAvail(bel)) {
@@ -228,7 +228,7 @@ class ConstraintLegaliseWorker
         if (locBel == BelId()) {
             return false;
         }
-        if (ctx->getBelType(locBel) != ctx->belTypeFromId(cell->type)) {
+        if (ctx->getBelType(locBel) != cell->type) {
             return false;
         }
         if (!ctx->checkBelAvail(locBel)) {
@@ -236,6 +236,12 @@ class ConstraintLegaliseWorker
             if (confCell->belStrength >= STRENGTH_STRONG) {
                 return false;
             }
+        }
+        // Don't place at tiles where any strongly bound Bels exist, as we might need to rip them up later
+        for (auto tilebel : ctx->getBelsByTile(loc.x, loc.y)) {
+            CellInfo *tcell = ctx->getBoundBelCell(tilebel);
+            if (tcell && tcell->belStrength >= STRENGTH_STRONG)
+                return false;
         }
         usedLocations.insert(loc);
         for (auto child : cell->constr_children) {
@@ -251,7 +257,7 @@ class ConstraintLegaliseWorker
                 ySearch = IncreasingDiameterSearch(loc.y + child->constr_y);
             }
             if (child->constr_z == child->UNCONSTR) {
-                zSearch = IncreasingDiameterSearch(loc.z, 0, ctx->getTileDimZ(loc.x, loc.y));
+                zSearch = IncreasingDiameterSearch(loc.z, 0, ctx->getTileBelDimZ(loc.x, loc.y));
             } else {
                 if (child->constr_abs_z) {
                     zSearch = IncreasingDiameterSearch(child->constr_z);
@@ -329,7 +335,8 @@ class ConstraintLegaliseWorker
                 yRootSearch = IncreasingDiameterSearch(cell->constr_y);
 
             if (cell->constr_z == cell->UNCONSTR)
-                zRootSearch = IncreasingDiameterSearch(currentLoc.z, 0, ctx->getTileDimZ(currentLoc.x, currentLoc.y));
+                zRootSearch =
+                        IncreasingDiameterSearch(currentLoc.z, 0, ctx->getTileBelDimZ(currentLoc.x, currentLoc.y));
             else
                 zRootSearch = IncreasingDiameterSearch(cell->constr_z);
             while (!xRootSearch.done()) {
@@ -374,6 +381,18 @@ class ConstraintLegaliseWorker
                         }
                         ctx->bindBel(target, ctx->cells.at(cp.first).get(), STRENGTH_LOCKED);
                         rippedCells.erase(cp.first);
+                    }
+                    for (auto cp : solution) {
+                        for (auto bel : ctx->getBelsByTile(cp.second.x, cp.second.y)) {
+                            CellInfo *belCell = ctx->getBoundBelCell(bel);
+                            if (belCell != nullptr && !solution.count(belCell->name)) {
+                                if (!ctx->isValidBelForCell(belCell, bel)) {
+                                    NPNR_ASSERT(belCell->belStrength < STRENGTH_STRONG);
+                                    ctx->unbindBel(bel);
+                                    rippedCells.insert(belCell->name);
+                                }
+                            }
+                        }
                     }
                     NPNR_ASSERT(constraints_satisfied(cell));
                     return true;

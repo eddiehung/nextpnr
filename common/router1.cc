@@ -532,6 +532,12 @@ void addNetRouteJobs(Context *ctx, const Router1Cfg &cfg, IdString net_name,
 {
     NetInfo *net_info = ctx->nets.at(net_name).get();
 
+#ifdef ARCH_ECP5
+    // ECP5 global nets currently appear part-unrouted due to arch database limitations
+    // Don't touch them in the router
+    if (net_info->is_global)
+        return;
+#endif
     if (net_info->driver.cell == nullptr)
         return;
 
@@ -681,6 +687,14 @@ void cleanupReroute(Context *ctx, const Router1Cfg &cfg, RipupScoreboard &scores
 } // namespace
 
 NEXTPNR_NAMESPACE_BEGIN
+
+Router1Cfg::Router1Cfg(Context *ctx) : Settings(ctx)
+{
+    maxIterCnt = get<int>("router1/maxIterCnt", 200);
+    cleanupReroute = get<bool>("router1/cleanupReroute", true);
+    fullCleanupReroute = get<bool>("router1/fullCleanupReroute", true);
+    useEstimate = get<bool>("router1/useEstimate", true);
+}
 
 bool router1(Context *ctx, const Router1Cfg &cfg)
 {
@@ -953,7 +967,7 @@ bool Context::getActualRouteDelay(WireId src_wire, WireId dst_wire, delay_t *del
                                   std::unordered_map<WireId, PipId> *route, bool useEstimate)
 {
     RipupScoreboard scores;
-    Router1Cfg cfg;
+    Router1Cfg cfg(this);
     cfg.useEstimate = useEstimate;
 
     Router router(this, cfg, scores, src_wire, dst_wire);

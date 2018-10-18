@@ -32,15 +32,18 @@ struct WireInfo;
 struct PipInfo
 {
     IdString name, type;
+    std::map<IdString, std::string> attrs;
     NetInfo *bound_net;
     WireId srcWire, dstWire;
     DelayInfo delay;
     DecalXY decalxy;
+    Loc loc;
 };
 
 struct WireInfo
 {
     IdString name, type;
+    std::map<IdString, std::string> attrs;
     NetInfo *bound_net;
     std::vector<PipId> downhill, uphill, aliases;
     BelPin uphill_bel_pin;
@@ -60,6 +63,7 @@ struct PinInfo
 struct BelInfo
 {
     IdString name, type;
+    std::map<IdString, std::string> attrs;
     CellInfo *bound_cell;
     std::unordered_map<IdString, PinInfo> pins;
     DecalXY decalxy;
@@ -94,12 +98,13 @@ struct Arch : BaseCtx
     std::unordered_map<DecalId, std::vector<GraphicElement>> decal_graphics;
 
     int gridDimX, gridDimY;
-    std::vector<std::vector<int>> tileDimZ;
+    std::vector<std::vector<int>> tileBelDimZ;
+    std::vector<std::vector<int>> tilePipDimZ;
 
     float grid_distance_to_delay;
 
     void addWire(IdString name, IdString type, int x, int y);
-    void addPip(IdString name, IdString type, IdString srcWire, IdString dstWire, DelayInfo delay);
+    void addPip(IdString name, IdString type, IdString srcWire, IdString dstWire, DelayInfo delay, Loc loc);
     void addAlias(IdString name, IdString type, IdString srcWire, IdString dstWire, DelayInfo delay);
 
     void addBel(IdString name, IdString type, Loc loc, bool gb);
@@ -118,25 +123,26 @@ struct Arch : BaseCtx
     void setBelDecal(BelId bel, DecalXY decalxy);
     void setGroupDecal(GroupId group, DecalXY decalxy);
 
+    void setWireAttr(IdString wire, IdString key, const std::string &value);
+    void setPipAttr(IdString pip, IdString key, const std::string &value);
+    void setBelAttr(IdString bel, IdString key, const std::string &value);
+
     // ---------------------------------------------------------------
     // Common Arch API. Every arch must provide the following methods.
 
+    ArchArgs args;
     Arch(ArchArgs args);
 
     std::string getChipName() const { return chipName; }
 
     IdString archId() const { return id("generic"); }
+    ArchArgs archArgs() const { return args; }
     IdString archArgsToId(ArchArgs args) const { return id("none"); }
-
-    IdString belTypeToId(BelType type) const { return type; }
-    IdString portPinToId(PortPin type) const { return type; }
-
-    BelType belTypeFromId(IdString id) const { return id; }
-    PortPin portPinFromId(IdString id) const { return id; }
 
     int getGridDimX() const { return gridDimX; }
     int getGridDimY() const { return gridDimY; }
-    int getTileDimZ(int x, int y) const { return tileDimZ[x][y]; }
+    int getTileBelDimZ(int x, int y) const { return tileBelDimZ[x][y]; }
+    int getTilePipDimZ(int x, int y) const { return tilePipDimZ[x][y]; }
 
     BelId getBelByName(IdString name) const;
     IdString getBelName(BelId bel) const;
@@ -151,14 +157,16 @@ struct Arch : BaseCtx
     CellInfo *getBoundBelCell(BelId bel) const;
     CellInfo *getConflictingBelCell(BelId bel) const;
     const std::vector<BelId> &getBels() const;
-    BelType getBelType(BelId bel) const;
-    WireId getBelPinWire(BelId bel, PortPin pin) const;
-    PortType getBelPinType(BelId bel, PortPin pin) const;
-    std::vector<PortPin> getBelPins(BelId bel) const;
+    IdString getBelType(BelId bel) const;
+    const std::map<IdString, std::string> &getBelAttrs(BelId bel) const;
+    WireId getBelPinWire(BelId bel, IdString pin) const;
+    PortType getBelPinType(BelId bel, IdString pin) const;
+    std::vector<IdString> getBelPins(BelId bel) const;
 
     WireId getWireByName(IdString name) const;
     IdString getWireName(WireId wire) const;
     IdString getWireType(WireId wire) const;
+    const std::map<IdString, std::string> &getWireAttrs(WireId wire) const;
     uint32_t getWireChecksum(WireId wire) const;
     void bindWire(WireId wire, NetInfo *net, PlaceStrength strength);
     void unbindWire(WireId wire);
@@ -172,6 +180,7 @@ struct Arch : BaseCtx
     PipId getPipByName(IdString name) const;
     IdString getPipName(PipId pip) const;
     IdString getPipType(PipId pip) const;
+    const std::map<IdString, std::string> &getPipAttrs(PipId pip) const;
     uint32_t getPipChecksum(PipId pip) const;
     void bindPip(PipId pip, NetInfo *net, PlaceStrength strength);
     void unbindPip(PipId pip);
@@ -179,6 +188,7 @@ struct Arch : BaseCtx
     NetInfo *getBoundPipNet(PipId pip) const;
     NetInfo *getConflictingPipNet(PipId pip) const;
     const std::vector<PipId> &getPips() const;
+    Loc getPipLocation(PipId pip) const;
     WireId getPipSrcWire(PipId pip) const;
     WireId getPipDstWire(PipId pip) const;
     DelayInfo getPipDelay(PipId pip) const;
@@ -213,12 +223,8 @@ struct Arch : BaseCtx
     DecalXY getGroupDecal(GroupId group) const;
 
     bool getCellDelay(const CellInfo *cell, IdString fromPort, IdString toPort, DelayInfo &delay) const;
-    IdString getPortClock(const CellInfo *cell, IdString port) const;
-    bool isClockPort(const CellInfo *cell, IdString port) const;
-    // Return true if a port is a net
-    bool isGlobalNet(const NetInfo *net) const;
-    // Return true if cell is a IO
-    bool isIO(const CellInfo* cell) const;
+    // Get the port class, also setting clockPort if applicable
+    TimingPortClass getPortTimingClass(const CellInfo *cell, IdString port, IdString &clockPort) const;
 
     bool isValidBelForCell(CellInfo *cell, BelId bel) const;
     bool isBelLocationValid(BelId bel) const;

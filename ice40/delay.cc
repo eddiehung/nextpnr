@@ -121,7 +121,7 @@ struct model_params_t
     int delta_sp4;
     int delta_sp12;
 
-    static const model_params_t &get(ArchArgs args)
+    static const model_params_t &get(const ArchArgs &args)
     {
         static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
                                                   -86797, 89,     3706, -316,   -575,  -158,   -296};
@@ -192,7 +192,7 @@ delay_t Arch::predictDelay(const NetInfo *net_info, const PortRef &sink) const
     auto driver_loc = getBelLocation(driver.cell->bel);
     auto sink_loc = getBelLocation(sink.cell->bel);
 
-    if (driver.port == id_cout) {
+    if (driver.port == id_COUT) {
         if (driver_loc.y == sink_loc.y)
             return 0;
         return 250;
