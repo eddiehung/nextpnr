@@ -782,6 +782,7 @@ struct Arch : BaseCtx
 
     bool pack();
     bool place();
+    bool place_vpr();
     bool route();
 
     // -------------------------------------------------
@@ -802,6 +803,7 @@ struct Arch : BaseCtx
     TimingPortClass getPortTimingClass(const CellInfo *cell, IdString port, IdString &clockDomain) const;
     // Return true if a port is a net
     bool isGlobalNet(const NetInfo *net) const;
+    bool isIO(const CellInfo* cell) const;
 
     // -------------------------------------------------
 

@@ -27,6 +27,7 @@
 #include "placer1.h"
 #include "router1.h"
 #include "util.h"
+#include "placer_vpr.h"
 
 NEXTPNR_NAMESPACE_BEGIN
 
@@ -609,6 +610,51 @@ bool Arch::getBudgetOverride(const NetInfo *net_info, const PortRef &sink, delay
 
 bool Arch::place() { return placer1(getCtx(), Placer1Cfg(getCtx())); }
 
+bool Arch::place_vpr() 
+{ 
+    auto ctx = getCtx();
+
+    // VPR's initial placement is greedy and will place each cell
+    //   into a randomly selected bel of the same type. 
+    //   However, the ice40's GBs have restrictions on which are 
+    //   not amenable to this greedy approach. 
+    //   Work around this my placing those restrictive GBs upfront.
+    std::vector<BelId> gb_reset;
+    std::vector<BelId> gb_cen;
+    for (auto bel : ctx->getBels()) {
+        auto type = ctx->getBelType(bel);
+        if (type == id_SB_GB) {
+            IdString glb_net = ctx->getWireName(ctx->getBelPinWire(bel, id_GLOBAL_BUFFER_OUTPUT));
+            int glb_id = std::stoi(std::string("") + glb_net.str(ctx).back());
+            if (glb_id % 2 == 0)
+                gb_reset.push_back(bel);
+            else
+                gb_cen.push_back(bel);
+        }
+    }
+    for (auto &c : ctx->cells) {
+        CellInfo *cell = c.second.get();
+        if (cell->type == id_SB_GB) {
+	    auto net = cell->ports.at(id_GLOBAL_BUFFER_OUTPUT).net;
+            NPNR_ASSERT(net != nullptr);
+            bool is_reset = net->is_reset, is_cen = net->is_enable;
+            NPNR_ASSERT(!is_reset || !is_cen);
+            if (is_reset) {
+                ctx->bindBel(gb_reset.back(), cell, STRENGTH_WEAK);
+                gb_reset.pop_back();
+            } 
+            else if (is_cen) {
+                ctx->bindBel(gb_cen.back(), cell, STRENGTH_WEAK);
+                gb_cen.pop_back();
+            }
+        }
+    }
+
+    return placer_vpr(ctx); 
+}
+
+// -----------------------------------------------------------------------
+
 bool Arch::route() { return router1(getCtx(), Router1Cfg(getCtx())); }
 
 // -----------------------------------------------------------------------
@@ -939,6 +985,11 @@ bool Arch::isGlobalNet(const NetInfo *net) const
     if (net == nullptr)
         return false;
     return net->driver.cell != nullptr && net->driver.port == id_GLOBAL_BUFFER_OUTPUT;
+}
+
+bool Arch::isIO(const CellInfo* cell) const
+{
+    return cell->type == id("SB_IO");
 }
 
 // Assign arch arg info

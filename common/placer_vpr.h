@@ -1,7 +1,7 @@
 /*
  *  nextpnr -- Next Generation Place and Route
  *
- *  Copyright (C) 2018  David Shah <david@symbioticeda.com>
+ *  Copyright (C) 2018  Clifford Wolf <clifford@symbioticeda.com>
  *
  *  Permission to use, copy, modify, and/or distribute this software for any
  *  purpose with or without fee is hereby granted, provided that the above
@@ -16,21 +16,15 @@
  *  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  */
-
-#ifndef TIMING_H
-#define TIMING_H
+#ifndef PLACER_VPR_H
+#define PLACER_VPR_H
 
 #include "nextpnr.h"
 
 NEXTPNR_NAMESPACE_BEGIN
 
-// Evenly redistribute the total path slack amongst all sinks on each path
-delay_t assign_budget(Context *ctx, bool quiet = false);
-
-// Perform timing analysis and print out the fmax, and optionally the
-//    critical path
-delay_t timing_analysis(Context *ctx, bool print_histogram = true, bool print_path = false, bool print_fmax = true);
+extern bool placer_vpr(Context *ctx);
 
 NEXTPNR_NAMESPACE_END
 
-#endif
+#endif // PLACER_VPR_H

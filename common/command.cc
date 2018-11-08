@@ -106,6 +106,8 @@ po::options_description CommandHandler::getGeneralOptions()
     general.add_options()("no-tmdriv", "disable timing-driven placement");
     general.add_options()("save", po::value<std::string>(), "project file to write");
     general.add_options()("load", po::value<std::string>(), "project file to read");
+
+    general.add_options()("vpr_place", "use VPR placer");
     return general;
 }
 
@@ -207,7 +209,10 @@ int CommandHandler::executeMain(std::unique_ptr<Context> ctx)
         ctx->check();
         print_utilisation(ctx.get());
         if (!vm.count("pack-only")) {
-            if (!ctx->place() && !ctx->force)
+            if (vm.count("vpr_place")) {
+		if (!ctx->place_vpr() && !ctx->force)
+		    log_error("Placing design failed.\n");
+	    } else if (!ctx->place() && !ctx->force)
                 log_error("Placing design failed.\n");
             ctx->check();
             if (!ctx->route() && !ctx->force)

@@ -171,6 +171,8 @@ class SAPlacer
         double avg_metric = curr_metric;
         temp = 10000;
 
+        tot_move = tot_accept = 0;
+
         // Main simulated annealing loop
         for (int iter = 1;; iter++) {
             n_move = n_accept = 0;
@@ -267,9 +269,15 @@ class SAPlacer
                 curr_metric += wl;
             }
 
+            tot_move += n_move;
+            tot_accept += n_accept;
+
             // Let the UI show visualization updates.
             ctx->yield();
         }
+
+        log_info("  swaps attempted: %d acceptance rate: %.3f\n", tot_move, double(tot_accept)/double(tot_move));
+
         // Final post-pacement validitiy check
         ctx->yield();
         for (auto bel : ctx->getBels()) {
@@ -476,6 +484,7 @@ class SAPlacer
     float temp = 1000;
     bool improved = false;
     int n_move, n_accept;
+    int tot_move, tot_accept;
     int diameter = 35, max_x = 1, max_y = 1;
     std::unordered_map<IdString, int> bel_types;
     std::vector<std::vector<std::vector<std::vector<BelId>>>> fast_bels;

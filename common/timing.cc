@@ -319,7 +319,7 @@ struct Timing
     }
 };
 
-void assign_budget(Context *ctx, bool quiet)
+delay_t assign_budget(Context *ctx, bool quiet)
 {
     if (!quiet) {
         log_break();
@@ -360,9 +360,11 @@ void assign_budget(Context *ctx, bool quiet)
 
     if (!quiet)
         log_info("Checksum: 0x%08x\n", ctx->checksum());
+
+    return timing.min_slack;
 }
 
-void timing_analysis(Context *ctx, bool print_histogram, bool print_path)
+delay_t timing_analysis(Context *ctx, bool print_histogram, bool print_path, bool print_fmax)
 {
     PortRefVector crit_path;
     DelayFrequency slack_histogram;
@@ -411,8 +413,10 @@ void timing_analysis(Context *ctx, bool print_histogram, bool print_path)
         }
     }
 
-    delay_t default_slack = delay_t((1.0e9 / ctx->getDelayNS(1)) / ctx->target_freq);
-    log_info("estimated Fmax = %.2f MHz\n", 1e3 / ctx->getDelayNS(default_slack - min_slack));
+    if (print_fmax) {
+        delay_t default_slack = delay_t((1.0e9 / ctx->getDelayNS(1)) / ctx->target_freq);
+        log_info("estimated Fmax = %.2f MHz\n", 1e3 / ctx->getDelayNS(default_slack - min_slack));
+    }
 
     if (print_histogram && slack_histogram.size() > 0) {
         unsigned num_bins = 20;
@@ -439,6 +443,8 @@ void timing_analysis(Context *ctx, bool print_histogram, bool print_path)
                      std::string(bins[i] * bar_width / max_freq, '*').c_str(),
                      (bins[i] * bar_width) % max_freq > 0 ? '+' : ' ');
     }
+
+    return min_slack;
 }
 
 NEXTPNR_NAMESPACE_END
