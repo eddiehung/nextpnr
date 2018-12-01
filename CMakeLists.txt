@@ -66,7 +66,7 @@ endif()
 find_package(Sanitizers)
 
 # List of Boost libraries to include
-set(boost_libs filesystem thread program_options)
+set(boost_libs filesystem thread program_options timer)
 
 if (BUILD_GUI AND NOT BUILD_PYTHON)
     message(FATAL_ERROR "GUI requires Python to build")
@@ -248,6 +248,8 @@ foreach (family ${ARCH})
         if (BUILD_PYTHON)
             target_link_libraries(${target} LINK_PUBLIC ${PYTHON_LIBRARIES})
         endif()
+
+        target_link_libraries(${target} LINK_PUBLIC z3)
     endforeach (target)
 endforeach (family)
 
