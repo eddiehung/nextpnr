@@ -163,9 +163,9 @@ class SAPlacer
         context z3;
         solver s(z3);
         std::unordered_map<BelId, std::pair<expr_vector,std::vector<CellInfo*>>> placement_by_bel;
-        std::unordered_map<Loc, expr> clk_by_tile;
-        std::unordered_map<Loc, expr> cen_by_tile;
-        std::unordered_map<Loc, expr> sr_by_tile;
+        std::unordered_map<Loc, std::pair<expr,expr>> clk_by_tile;
+        std::unordered_map<Loc, std::pair<expr,expr>> cen_by_tile;
+        std::unordered_map<Loc, std::pair<expr,expr>> sr_by_tile;
         std::unordered_map<Loc, expr> inputs_by_tile;
         expr_vector placement(z3);
         const std::string delim = ".=>.";
@@ -207,7 +207,7 @@ class SAPlacer
                         if (jt == clk_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".clk" << std::endl;
-                            jt = clk_by_tile.emplace(loc, z3.int_const(ss.str().c_str())).first;
+                            jt = clk_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
                         assert(cell->lcInfo.clk);
                         // I use an implication here to say that the "clock" variable of
@@ -215,9 +215,12 @@ class SAPlacer
                         // thus placing a cell from a different clock will create a 
                         // conflicting implication
                         if (cell->lcInfo.negClk)
-                            s.add(implies(e, jt->second == -cell->lcInfo.clk->name.index));
+                            s.add(implies(e, jt->second.first == -cell->lcInfo.clk->name.index));
                         else
-                            s.add(implies(e, jt->second == cell->lcInfo.clk->name.index));
+                            s.add(implies(e, jt->second.first == cell->lcInfo.clk->name.index));
+                        // I also set an implication that the clock is being used
+                        // so that we can count it as a tile input later
+                        s.add(implies(e, jt->second.second));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock-enable net (or none at all)
@@ -226,12 +229,14 @@ class SAPlacer
                         if (jt == cen_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".cen" << std::endl;
-                            jt = cen_by_tile.emplace(loc, z3.int_const(ss.str().c_str())).first;
+                            jt = cen_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
-                        if (cell->lcInfo.cen)
-                            s.add(implies(e, jt->second == cell->lcInfo.cen->name.index));
+                        if (cell->lcInfo.cen) {
+                            s.add(implies(e, jt->second.first == cell->lcInfo.cen->name.index));
+                            s.add(implies(e, jt->second.second));
+                        }
                         else
-                            s.add(implies(e, jt->second == 0));
+                            s.add(implies(e, jt->second.first == 0));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
@@ -240,12 +245,14 @@ class SAPlacer
                         if (jt == sr_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".sr" << std::endl;
-                            jt = sr_by_tile.emplace(loc, z3.int_const(ss.str().c_str())).first;
+                            jt = sr_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
-                        if (cell->lcInfo.sr)
-                            s.add(implies(e, jt->second == cell->lcInfo.sr->name.index));
+                        if (cell->lcInfo.sr) {
+                            s.add(implies(e, jt->second.first == cell->lcInfo.sr->name.index));
+                            s.add(implies(e, jt->second.second));
+                        }
                         else
-                            s.add(implies(e, jt->second == 0));
+                            s.add(implies(e, jt->second.first == 0));
                     }
                 }
 
@@ -280,23 +287,22 @@ class SAPlacer
                 }
             }
             // Now account for clk, cen, sr inputs
-            //   TODO: Is it enough to check that no placement
-            //         has implied this value to be the value zero
-            //         (which is an impossible net identifier)
-            tile_placement.push_back(clk_by_tile.at(loc) != 0);
+            tile_placement.push_back(clk_by_tile.at(i.first).second);
+            tile_placement.push_back(cen_by_tile.at(i.first).second);
+            tile_placement.push_back(sr_by_tile.at(i.first).second);
             input_count.push_back(1);
-            tile_placement.push_back(cen_by_tile.at(loc) != 0);
             input_count.push_back(1);
-            tile_placement.push_back(sr_by_tile.at(loc) != 0);
             input_count.push_back(1);
             // Check that the total is less than 33
             //   where total is cell_i.inputs     * p_{i,0}   + cell_i.inputs     * p_{i,1) + ...
             //                  cell_{i+1}.inputs * p_{i+1,0} + cell_{i+1}.inputs * p_{i+1,1} + ...
+            //                  any_clk_used * 1 + any_cen_used * 1 + any_sr_used * 1
             //                  < 33
             s.add(pble(tile_placement, input_count.data(), 33));
         }
         std::cout << "|cells| * |bels| = " << placement.size() << std::endl;
 
+        //set_param("verbose", 10);
         boost::timer::cpu_timer timer;
         std::cout << s.check() << "\n";
         std::cout << timer.format() << std::endl;
@@ -313,6 +319,7 @@ class SAPlacer
             if (e.is_true()) {
                 auto vname = v.name().str();
                 auto it = vname.find(delim);
+                if (it == std::string::npos) continue;
                 auto cell = ctx->cells.at(ctx->id(vname.substr(0, it))).get();
                 auto bel = ctx->getBelByName(ctx->id(vname.substr(it+delim.size(), std::string::npos)));
                 assert(ctx->isValidBelForCell(cell, bel));
