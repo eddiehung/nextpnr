@@ -206,7 +206,7 @@ class SAPlacer
                         auto jt = clk_by_tile.find(loc);
                         if (jt == clk_by_tile.end()) {
                             ss.str("");
-                            ss << "x" << loc.x << "y" << loc.y << ".clk" << std::endl;
+                            ss << "x" << loc.x << "y" << loc.y << ".clk";
                             jt = clk_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
                         assert(cell->lcInfo.clk);
@@ -228,7 +228,7 @@ class SAPlacer
                         auto jt = cen_by_tile.find(loc);
                         if (jt == cen_by_tile.end()) {
                             ss.str("");
-                            ss << "x" << loc.x << "y" << loc.y << ".cen" << std::endl;
+                            ss << "x" << loc.x << "y" << loc.y << ".cen";
                             jt = cen_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
                         if (cell->lcInfo.cen) {
@@ -244,7 +244,7 @@ class SAPlacer
                         auto jt = sr_by_tile.find(loc);
                         if (jt == sr_by_tile.end()) {
                             ss.str("");
-                            ss << "x" << loc.x << "y" << loc.y << ".sr" << std::endl;
+                            ss << "x" << loc.x << "y" << loc.y << ".sr";
                             jt = sr_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
                         if (cell->lcInfo.sr) {
@@ -301,6 +301,7 @@ class SAPlacer
             s.add(pble(tile_placement, input_count.data(), 33));
         }
         std::cout << "|cells| * |bels| = " << placement.size() << std::endl;
+        std::cout << s.to_smt2() << std::endl;
 
         //set_param("verbose", 10);
         boost::timer::cpu_timer timer;
