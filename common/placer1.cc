@@ -42,7 +42,6 @@
 #include "timing.h"
 #include "util.h"
 #include <boost/timer/timer.hpp>
-#include <fstream>
 
 #include "z3++.h"
 using namespace z3;
@@ -168,53 +167,33 @@ class SAPlacer
         std::unordered_map<Loc, std::pair<expr,expr>> cen_by_tile;
         std::unordered_map<Loc, std::pair<expr,expr>> sr_by_tile;
         std::unordered_map<Loc, expr> inputs_by_tile;
+        expr_vector placement(z3);
         const std::string delim = ".=>.";
         std::stringstream ss;
-        std::unordered_map<int, int> clk2int;
-        std::unordered_map<unsigned, int> cen2int;
-        std::unordered_map<unsigned, int> sr2int;
-        for (auto cell : autoplaced) {
-            if (!cell->lcInfo.dffEnable) continue;
-
-            if (cell->lcInfo.negClk)
-                clk2int.emplace(-cell->lcInfo.clk->name.index, clk2int.size());
-            else
-                clk2int.emplace(cell->lcInfo.clk->name.index, clk2int.size());
-
-            if (cell->lcInfo.cen)
-                cen2int.emplace(cell->lcInfo.cen->name.index, cen2int.size()+1);
-
-            if (cell->lcInfo.sr)
-                sr2int.emplace(cell->lcInfo.sr->name.index, sr2int.size()+1);
-        }
         // I build a matrix of bools sized iN * jN,
         // each bool (p_{i,j}) representing the placement
         // of cell_i into bel_j
-        auto allBels = ctx->getBels();
-        auto numBels = allBels.e.cursor-allBels.b.cursor;
-        std::vector<int> all_ones(numBels, 1);
-        auto bv_one = z3.bv_val(1, 1);
-        expr_vector placement(z3);
         for (auto cell : autoplaced) {
-            expr cell_placement = z3.bv_const(cell->name.c_str(ctx), numBels);
             expr_vector one_bel_per_cell(z3);
-            for (auto bel : allBels) {
-                auto e = cell_placement.extract(bel.index, bel.index);
+            for (auto bel : ctx->getBels()) {
                 // Eliminate any invalid cell-bel pairs
-                if (ctx->getBelType(bel) != cell->type) {
-                    s.add(e != bv_one);
+                if (ctx->getBelType(bel) != cell->type)
                     continue;
-                }
-                if (!ctx->isValidBelForCell(cell, bel)) {
-                    s.add(e != bv_one);
+                if (!ctx->isValidBelForCell(cell, bel))
                     continue;
-                }
+                // Create a bool variable named cell.delim.bel
+                // for placement of cell_i onto bel_j
+                ss.str("");
+                ss << cell->name.str(ctx);
+                ss << delim;
+                ss << ctx->getBelName(bel).str(ctx);
+                auto e = z3.bool_const(ss.str().c_str());
                 // Add it to a vector that will later enforce the
                 // constraint that each cell must be placed onto
                 // one and only one bel
-                one_bel_per_cell.push_back(e == bv_one);
+                one_bel_per_cell.push_back(e);
                 auto it = placement_by_bel.emplace(bel, std::make_pair(expr_vector{z3}, std::vector<CellInfo*>{})).first;
-                it->second.first.push_back(e == bv_one);
+                it->second.first.push_back(e);
                 it->second.second.push_back(cell);
                 // Now encode the tile constraints,
                 // which are only relevant if DFFs are used
@@ -223,12 +202,12 @@ class SAPlacer
                     loc.z = 0;
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock net and polarity
-                    if (clk2int.size() > 1) {
+                    {
                         auto jt = clk_by_tile.find(loc);
                         if (jt == clk_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".clk";
-                            jt = clk_by_tile.emplace(loc, std::make_pair(z3.bv_const(ss.str().c_str(), static_cast<int>(ceil(log2(clk2int.size())))), z3.bool_const((ss.str()+"_b").c_str()))).first;
+                            jt = clk_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
                         assert(cell->lcInfo.clk);
                         // I use an implication here to say that the "clock" variable of
@@ -236,67 +215,59 @@ class SAPlacer
                         // thus placing a cell from a different clock will create a 
                         // conflicting implication
                         if (cell->lcInfo.negClk)
-                            s.add(implies(e == bv_one, jt->second.first == clk2int.at(-cell->lcInfo.clk->name.index)));
+                            s.add(implies(e, jt->second.first == -cell->lcInfo.clk->name.index));
                         else
-                            s.add(implies(e == bv_one, jt->second.first == clk2int.at(cell->lcInfo.clk->name.index)));
+                            s.add(implies(e, jt->second.first == cell->lcInfo.clk->name.index));
                         // I also set an implication that the clock is being used
                         // so that we can count it as a tile input later
-                        if (cell->lcInfo.clk->is_global)
-                            s.add(implies(e == bv_one, jt->second.second));
+                        s.add(implies(e, jt->second.second));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock-enable net (or none at all)
-                    if (!cen2int.empty())
                     {
                         auto jt = cen_by_tile.find(loc);
                         if (jt == cen_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".cen";
-                            jt = cen_by_tile.emplace(loc, std::make_pair(z3.bv_const(ss.str().c_str(), static_cast<int>(ceil(log2(cen2int.size()+1)))), z3.bool_const((ss.str()+"_b").c_str()))).first;
+                            jt = cen_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
                         if (cell->lcInfo.cen) {
-                            s.add(implies(e == bv_one, jt->second.first == cen2int.at(cell->lcInfo.cen->name.index)));
-                            if (cell->lcInfo.cen->is_global)
-                                s.add(implies(e == bv_one, jt->second.second));
+                            s.add(implies(e, jt->second.first == cell->lcInfo.cen->name.index));
+                            s.add(implies(e, jt->second.second));
                         }
                         else
-                            s.add(implies(e == bv_one, jt->second.first == 0));
+                            s.add(implies(e, jt->second.first == 0));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
-                    if (!sr2int.empty())
                     {
                         auto jt = sr_by_tile.find(loc);
                         if (jt == sr_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".sr";
-                            jt = sr_by_tile.emplace(loc, std::make_pair(z3.bv_const(ss.str().c_str(), static_cast<int>(ceil(log2(sr2int.size())))), z3.bool_const((ss.str()+"_b").c_str()))).first;
+                            jt = sr_by_tile.emplace(loc, std::make_pair(z3.int_const(ss.str().c_str()), z3.bool_const(ss.str().c_str()))).first;
                         }
                         if (cell->lcInfo.sr) {
-                            s.add(implies(e == bv_one, jt->second.first == sr2int.at(cell->lcInfo.sr->name.index)));
-                            if (cell->lcInfo.sr->is_global)
-                                s.add(implies(e == bv_one, jt->second.second));
+                            s.add(implies(e, jt->second.first == cell->lcInfo.sr->name.index));
+                            s.add(implies(e, jt->second.second));
                         }
                         else
-                            s.add(implies(e == bv_one, jt->second.first == 0));
+                            s.add(implies(e, jt->second.first == 0));
                     }
                 }
+
+                placement.push_back(e);
             }
-            placement.push_back(cell_placement);
             // Constraint that each cell_i must have
             // exactly one p_{i,j} set for all j
-            s.add(pbeq(one_bel_per_cell, all_ones.data(), 1));
+            //  TODO: No "exactly"?
+            s.add(atleast(one_bel_per_cell, 1));
+            s.add(atmost(one_bel_per_cell, 1));
         }
         // Constraint that each bel_j must have
         // at most one p_{i,j} set for all i
-        s.add(distinct(placement));
-        //try {
-        //    s.add(mk_and(placement) == z3.bv_val(0, numBels));
-        //}
-        //catch(const z3::exception& e) {
-        //    std::cout << e << std::endl;
-        //    throw;
-        //}
+        for (auto i : placement_by_bel)
+            s.add(atmost(i.second.first, 1));
         // Now constrain the number of local inputs
         // of each tile to be less than 32
         for (auto i : clk_by_tile) {
@@ -327,15 +298,12 @@ class SAPlacer
             //                  cell_{i+1}.inputs * p_{i+1,0} + cell_{i+1}.inputs * p_{i+1,1} + ...
             //                  any_clk_used * 1 + any_cen_used * 1 + any_sr_used * 1
             //                  < 33
-            s.add(pble(tile_placement, input_count.data(), 32));
+            s.add(pble(tile_placement, input_count.data(), 33));
         }
-        //std::cout << "|cells| * |bels| = " << placement.size() << std::endl;
-        //std::ofstream fs("last.smt2");
-        //fs << "(set-logic ALL)" << std::endl;
-        //fs << s.to_smt2() << std::endl;
-        //fs.close();
+        std::cout << "|cells| * |bels| = " << placement.size() << std::endl;
+        std::cout << s.to_smt2() << std::endl;
 
-        set_param("verbose", 10);
+        //set_param("verbose", 10);
         boost::timer::cpu_timer timer;
         std::cout << s.check() << "\n";
         std::cout << timer.format() << std::endl;
@@ -348,29 +316,16 @@ class SAPlacer
             func_decl v = m[i];
             // this problem contains only constants
             assert(v.arity() == 0); 
-            auto vname = v.name().str();
             auto e = m.get_const_interp(v);
-            CellInfo* cell;
-            BelId bel;
-            if (e.is_bv()) {
-                auto it = ctx->cells.find(ctx->id(vname));
-                if (it == ctx->cells.end()) continue;
-                cell = it->second.get();
-                for (int i = 0; i < numBels; ++i) {
-                    if ((e.extract(i,i) == bv_one).simplify().is_true()) {
-                        bel.index = i;
-                        break;
-                    }
-                }
-            }
-            else if (e.is_true()) {
+            if (e.is_true()) {
+                auto vname = v.name().str();
                 auto it = vname.find(delim);
                 if (it == std::string::npos) continue;
-                cell = ctx->cells.at(ctx->id(vname.substr(0, it))).get();
-                bel = ctx->getBelByName(ctx->id(vname.substr(it+delim.size(), std::string::npos)));
+                auto cell = ctx->cells.at(ctx->id(vname.substr(0, it))).get();
+                auto bel = ctx->getBelByName(ctx->id(vname.substr(it+delim.size(), std::string::npos)));
+                assert(ctx->isValidBelForCell(cell, bel));
+                ctx->bindBel(bel, cell, STRENGTH_WEAK);
             }
-            assert(ctx->isValidBelForCell(cell, bel));
-            ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
 
         for (auto bel : ctx->getBels()) {
