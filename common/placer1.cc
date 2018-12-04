@@ -173,9 +173,11 @@ class SAPlacer
         // I build a matrix of bools sized iN * jN,
         // each bool (p_{i,j}) representing the placement
         // of cell_i into bel_j
+        auto all_bels = ctx->getBels();
+        std::vector<int> all_ones(all_bels.e.cursor - all_bels.b.cursor, 1);
         for (auto cell : autoplaced) {
             expr_vector one_bel_per_cell(z3);
-            for (auto bel : ctx->getBels()) {
+            for (auto bel : all_bels) {
                 // Eliminate any invalid cell-bel pairs
                 if (ctx->getBelType(bel) != cell->type)
                     continue;
@@ -220,7 +222,8 @@ class SAPlacer
                             s.add(implies(e, jt->second.first == cell->lcInfo.clk->name.index));
                         // I also set an implication that the clock is being used
                         // so that we can count it as a tile input later
-                        s.add(implies(e, jt->second.second));
+                        if (!cell->lcInfo.clk->is_global)
+                            s.add(implies(e, jt->second.second));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock-enable net (or none at all)
@@ -233,7 +236,8 @@ class SAPlacer
                         }
                         if (cell->lcInfo.cen) {
                             s.add(implies(e, jt->second.first == cell->lcInfo.cen->name.index));
-                            s.add(implies(e, jt->second.second));
+                            if (!cell->lcInfo.cen->is_global)
+                                s.add(implies(e, jt->second.second));
                         }
                         else
                             s.add(implies(e, jt->second.first == 0));
@@ -249,7 +253,8 @@ class SAPlacer
                         }
                         if (cell->lcInfo.sr) {
                             s.add(implies(e, jt->second.first == cell->lcInfo.sr->name.index));
-                            s.add(implies(e, jt->second.second));
+                            if (!cell->lcInfo.sr->is_global)
+                                s.add(implies(e, jt->second.second));
                         }
                         else
                             s.add(implies(e, jt->second.first == 0));
@@ -263,6 +268,7 @@ class SAPlacer
             //  TODO: No "exactly"?
             s.add(atleast(one_bel_per_cell, 1));
             s.add(atmost(one_bel_per_cell, 1));
+            //s.add(pbeq(one_bel_per_cell, all_ones.data(), 1));
         }
         // Constraint that each bel_j must have
         // at most one p_{i,j} set for all i
@@ -298,12 +304,12 @@ class SAPlacer
             //                  cell_{i+1}.inputs * p_{i+1,0} + cell_{i+1}.inputs * p_{i+1,1} + ...
             //                  any_clk_used * 1 + any_cen_used * 1 + any_sr_used * 1
             //                  < 33
-            s.add(pble(tile_placement, input_count.data(), 33));
+            s.add(pble(tile_placement, input_count.data(), 32));
         }
         std::cout << "|cells| * |bels| = " << placement.size() << std::endl;
-        std::cout << s.to_smt2() << std::endl;
+        //std::cout << s.to_smt2() << std::endl;
 
-        //set_param("verbose", 10);
+        set_param("verbose", 10);
         boost::timer::cpu_timer timer;
         std::cout << s.check() << "\n";
         std::cout << timer.format() << std::endl;
