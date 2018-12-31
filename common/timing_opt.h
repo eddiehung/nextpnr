@@ -1,8 +1,7 @@
 /*
  *  nextpnr -- Next Generation Place and Route
  *
- *  Copyright (C) 2018  Miodrag Milanovic <miodrag@symbioticeda.com>
- *  Copyright (C) 2018  Alex Tsui
+ *  Copyright (C) 2018  David Shah <david@symbioticeda.com>
  *
  *  Permission to use, copy, modify, and/or distribute this software for any
  *  purpose with or without fee is hereby granted, provided that the above
@@ -18,39 +17,21 @@
  *
  */
 
-#ifndef PYCONSOLE_H
-#define PYCONSOLE_H
-
-#include <QColor>
-#include <QMimeData>
-#include <QTextEdit>
-#include "ParseHelper.h"
-#include "ParseListener.h"
 #include "nextpnr.h"
-
-class QWidget;
-class QKeyEvent;
+#include "settings.h"
 
 NEXTPNR_NAMESPACE_BEGIN
 
-class PythonConsole : public QTextEdit, public ParseListener
+struct TimingOptCfg : public Settings
 {
-    Q_OBJECT
+    TimingOptCfg(Context *ctx) : Settings(ctx) {}
 
-  public:
-    PythonConsole(QWidget *parent = 0);
-
-    void displayString(QString text);
-    void moveCursorToEnd();
-    virtual void parseEvent(const ParseMessage &message);
-    void execute_python(std::string filename);
-
-  protected:
-    static const QColor NORMAL_COLOR;
-    static const QColor ERROR_COLOR;
-    static const QColor OUTPUT_COLOR;
+    // The timing optimiser will *only* optimise cells of these types
+    // Normally these would only be logic cells (or tiles if applicable), the algorithm makes little sense
+    // for other cell types
+    std::unordered_set<IdString> cellTypes;
 };
 
-NEXTPNR_NAMESPACE_END
+extern bool timing_opt(Context *ctx, TimingOptCfg cfg);
 
-#endif // PYCONSOLE_H
+NEXTPNR_NAMESPACE_END
