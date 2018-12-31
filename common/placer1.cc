@@ -321,6 +321,10 @@ class SAPlacer
         for (auto i : placement_by_bel)
             s.add(atmost(i.second, 1));
 
+        // TODO: Enforce constraint that each tile can have at most 32 inputs
+        // non-global inputs -- this can only be an issue when non-global clk/cen/sr
+        // nets are used
+
         set_param("verbose", 10);
         boost::timer::cpu_timer timer;
         std::cout << s.check() << "\n";
