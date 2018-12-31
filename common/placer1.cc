@@ -247,7 +247,7 @@ class SAPlacer
                                 else 
                                     clk_name.index = i;
                                 ss << clk_name.str(ctx);
-                                clk.push_back(z3.bool_const(ss.str().c_str()));
+                                one_clk_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
                             s.add(atmost(one_clk_per_tile, 1));
                             jt = clk_by_tile.emplace(loc, std::move(one_clk_per_tile)).first;
@@ -275,7 +275,7 @@ class SAPlacer
                                 ss << cen_name.str(ctx);
                                 one_cen_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
-                            s.add(atmost(cen, 1));
+                            s.add(atmost(one_cen_per_tile, 1));
                             jt = cen_by_tile.emplace(loc, std::move(one_cen_per_tile)).first;
                         }
                         if (cell->lcInfo.cen)
@@ -292,16 +292,16 @@ class SAPlacer
                             expr_vector one_sr_per_tile(z3);
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".sr=<none>";
-                            sr.push_back(z3.bool_const(ss.str().c_str()));
+                            one_sr_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             for (auto i : sr2index_ordered) {
                                 ss.str("");
                                 ss << "x" << loc.x << "y" << loc.y << ".sr=";
                                 sr_name.index = i;
                                 ss << sr_name.str(ctx);
-                                sr.push_back(z3.bool_const(ss.str().c_str()));
+                                one_sr_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
-                            s.add(atmost(sr, 1));
-                            jt = sr_by_tile.emplace(loc, std::move(sr)).first;
+                            s.add(atmost(one_sr_per_tile, 1));
+                            jt = sr_by_tile.emplace(loc, std::move(one_sr_per_tile)).first;
                         }
                         if (cell->lcInfo.sr)
                             s.add(implies(e, jt->second[sr2index.at(cell->lcInfo.sr->name.index)+1]));
