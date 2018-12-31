@@ -265,9 +265,6 @@ class SAPlacer
                         if (jt == cen_by_tile.end()) {
                             IdString cen_name;
                             expr_vector one_cen_per_tile(z3);
-                            ss.str("");
-                            ss << "x" << loc.x << "y" << loc.y << ".cen=<none>";
-                            one_cen_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             for (auto i : cen2index_ordered) {
                                 ss.str("");
                                 ss << "x" << loc.x << "y" << loc.y << ".cen=";
@@ -279,9 +276,9 @@ class SAPlacer
                             jt = cen_by_tile.emplace(loc, std::move(one_cen_per_tile)).first;
                         }
                         if (cell->lcInfo.cen)
-                            s.add(implies(e, jt->second[cen2index.at(cell->lcInfo.cen->name.index)+1]));
+                            s.add(implies(e, jt->second[cen2index.at(cell->lcInfo.cen->name.index)]));
                         else
-                            s.add(implies(e, jt->second[0]));
+                            s.add(implies(e, !mk_or(jt->second)));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
@@ -290,9 +287,6 @@ class SAPlacer
                         if (jt == sr_by_tile.end()) {
                             IdString sr_name;
                             expr_vector one_sr_per_tile(z3);
-                            ss.str("");
-                            ss << "x" << loc.x << "y" << loc.y << ".sr=<none>";
-                            one_sr_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             for (auto i : sr2index_ordered) {
                                 ss.str("");
                                 ss << "x" << loc.x << "y" << loc.y << ".sr=";
@@ -304,9 +298,9 @@ class SAPlacer
                             jt = sr_by_tile.emplace(loc, std::move(one_sr_per_tile)).first;
                         }
                         if (cell->lcInfo.sr)
-                            s.add(implies(e, jt->second[sr2index.at(cell->lcInfo.sr->name.index)+1]));
+                            s.add(implies(e, jt->second[sr2index.at(cell->lcInfo.sr->name.index)]));
                         else
-                            s.add(implies(e, jt->second[0]));
+                            s.add(implies(e, !mk_or(jt->second)));
                     }
                 }
             }
