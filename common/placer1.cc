@@ -156,6 +156,7 @@ class SAPlacer
         // Place cells randomly initially
         log_info("Creating initial placement for remaining %d cells.\n", int(autoplaced.size()));
 
+        boost::timer::cpu_timer timer;
         // Assume there are 
         //   c0...cM (unconstrained) cells
         //   s0...sN (available) sites/bels
@@ -299,8 +300,11 @@ class SAPlacer
                         }
                         if (cell->lcInfo.cen)
                             s.add_clause({Lit{e, true}, Lit{jt->second[cen2index.at(cell->lcInfo.cen->name.index)], false}});
-                        else
-                            s.add_clause({Lit{e, true}, nor(jt->second)});
+                        else {
+                            for (auto i : jt->second)
+                                s.add_clause({Lit{e, true}, Lit{i, true}});
+                            //s.add_clause({Lit{e, true}, nor(jt->second)});
+                        }
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
@@ -315,8 +319,11 @@ class SAPlacer
                         }
                         if (cell->lcInfo.sr)
                             s.add_clause({Lit{e, true}, Lit{jt->second[sr2index.at(cell->lcInfo.sr->name.index)], false}});
-                        else
-                            s.add_clause({Lit{e, true}, nor(jt->second)});
+                        else {
+                            for (auto i : jt->second)
+                                s.add_clause({Lit{e, true}, Lit{i, true}});
+                            //s.add_clause({Lit{e, true}, nor(jt->second)});
+                        }
                     }
                 }
             }
@@ -335,10 +342,11 @@ class SAPlacer
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
 
+        std::cout << "Clauses generated in " << timer.format();
         std::cout << "Solving for " << s.nVars() << " variables" << std::endl;
-        boost::timer::cpu_timer timer;
+        timer.start();
         assert(s.solve() == l_True);
-        std::cout << timer.format() << std::endl;
+        std::cout << "Solved in " << timer.format();
 
         auto m = s.get_model();
         for (auto i : placement) {
