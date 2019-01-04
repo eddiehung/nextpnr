@@ -163,22 +163,60 @@ class SAPlacer
         s.set_verbosity(1);
         std::unordered_map<uint32_t, std::pair<CellInfo*,BelId>> placement;
         auto new_var = [&s]() { auto nvars = s.nVars(); s.new_var(); return nvars; };
-        auto atmost = [&s](const std::vector<uint32_t> &v)
+        auto exactly1 = [&s,&new_var](const std::vector<uint32_t> &v)
         {
+#if 1
+            // At-most-1
             for (auto it = v.begin(); it != v.end(); ++it) {
                 for (auto jt = std::next(it); jt != v.end(); ++jt) {
                     s.add_clause({Lit{*it, true}, Lit{*jt, true}});
                 }
             }
-        };
-        auto exactly = [&s,&atmost](const std::vector<uint32_t> &v)
-        {
+            // At-least-1
             std::vector<Lit> l;
             l.reserve(v.size());
             for (auto i : v)
-                l.push_back(Lit{i, false});
+                l.emplace_back(i, false);
+            return l;
+#else
+            auto v1 = new_var();
+            uint32_t v2;
+            s.add_xor_clause({v[0], v[1], v1}, false);
+            for (auto it = std::next(v.begin(), 2); it != v.end(); ++it) {
+                v2 = new_var();
+                s.add_xor_clause({v1, *it, v2}, false);
+                v1 = v2;
+            }
+            return std::vector<Lit>{Lit{v1,false}};
+#endif
+        };
+        auto nor = [&s,&new_var](const std::vector<uint32_t> &v)
+        {
+            std::vector<Lit> l;
+            l.reserve(v.size()+1);
+            for (auto i : v)
+                l.emplace_back(i, false);
+            auto v1 = new_var();
+            l.emplace_back(v1, false);
             s.add_clause(l);
-            atmost(v);
+            auto not_v1 = Lit{v1, true};
+            for (auto i : v)
+                s.add_clause({not_v1, Lit{i, true}});
+            return l.back();
+        };
+        auto atmost1 = [&s,&nor,&exactly1](const std::vector<uint32_t> &v)
+        {
+#if 1
+            for (auto it = v.begin(); it != v.end(); ++it) {
+                for (auto jt = std::next(it); jt != v.end(); ++jt) {
+                    s.add_clause({Lit{*it, true}, Lit{*jt, true}});
+                }
+            }
+#else
+            auto c = exactly1(v);
+            c.push_back(nor(v));
+            s.add_clause(c);
+#endif
         };
 
         std::unordered_map<BelId, std::vector<uint32_t>> placement_by_bel;
@@ -239,7 +277,7 @@ class SAPlacer
                             std::vector<uint32_t> one_clk_per_tile;
                             for (auto i = 0; i < clk2index.size(); ++i)
                                 one_clk_per_tile.push_back(new_var());
-                            atmost(one_clk_per_tile);
+                            atmost1(one_clk_per_tile);
                             jt = clk_by_tile.emplace(loc, std::move(one_clk_per_tile)).first;
                         }
                         assert(cell->lcInfo.clk);
@@ -256,15 +294,13 @@ class SAPlacer
                             std::vector<uint32_t> one_cen_per_tile;
                             for (auto i = 0; i < cen2index.size(); ++i)
                                 one_cen_per_tile.push_back(new_var());
-                            atmost(one_cen_per_tile);
+                            atmost1(one_cen_per_tile);
                             jt = cen_by_tile.emplace(loc, std::move(one_cen_per_tile)).first;
                         }
                         if (cell->lcInfo.cen)
                             s.add_clause({Lit{e, true}, Lit{jt->second[cen2index.at(cell->lcInfo.cen->name.index)], false}});
-                        else {
-                            for (auto i : jt->second)
-                                s.add_clause({Lit{e, true}, Lit{i, true}});
-                        }
+                        else
+                            s.add_clause({Lit{e, true}, nor(jt->second)});
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
@@ -274,26 +310,24 @@ class SAPlacer
                             std::vector<uint32_t> one_sr_per_tile;
                             for (auto i = 0; i < sr2index.size(); ++i)
                                 one_sr_per_tile.push_back(new_var());
-                            atmost(one_sr_per_tile);
+                            atmost1(one_sr_per_tile);
                             jt = sr_by_tile.emplace(loc, std::move(one_sr_per_tile)).first;
                         }
                         if (cell->lcInfo.sr)
                             s.add_clause({Lit{e, true}, Lit{jt->second[sr2index.at(cell->lcInfo.sr->name.index)], false}});
-                        else {
-                            for (auto i : jt->second)
-                                s.add_clause({Lit{e, true}, Lit{i, true}});
-                        }
+                        else
+                            s.add_clause({Lit{e, true}, nor(jt->second)});
                     }
                 }
             }
             // Constraint that each cell_i must have
             // exactly one x_{i,j} set for all j
-            exactly(one_bel_per_cell);
+            s.add_clause(exactly1(one_bel_per_cell));
         }
         // Constraint that each bel_j must have
         // at most one x_{i,j} set for all i
         for (const auto& i : placement_by_bel)
-            atmost(i.second);
+            atmost1(i.second);
 
         //s.simplify();
 
@@ -311,6 +345,7 @@ class SAPlacer
             if (m[i.first] == l_True) {
                 auto cell = i.second.first;
                 auto bel = i.second.second;
+                std::cout << cell->name.str(ctx) << " -> " << ctx->getBelName(bel).str(ctx) << std::endl;
                 assert(ctx->isValidBelForCell(cell, bel));
                 ctx->bindBel(bel, cell, STRENGTH_WEAK);
             }
