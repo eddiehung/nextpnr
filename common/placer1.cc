@@ -277,8 +277,7 @@ class SAPlacer
             }
             // Constraint that each cell_i must have
             // exactly one p_{i,j} set for all j
-            //  TODO: No "exactly"?
-            s.add(atleast(one_bel_per_cell, 1));
+            s.add(mk_or(one_bel_per_cell));
             s.add(atmost(one_bel_per_cell, 1));
         }
         // Constraint that each bel_j must have
