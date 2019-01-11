@@ -163,15 +163,12 @@ class SAPlacer
         context z3;
         solver s(z3);
         std::unordered_map<BelId, expr_vector> placement_by_bel;
-        std::unordered_map<Loc, expr_vector> clk_by_tile;
-        std::unordered_map<Loc, expr_vector> cen_by_tile;
-        std::unordered_map<Loc, expr_vector> sr_by_tile;
-        std::unordered_map<int, int> clk2index;
-        std::vector<int> clk2index_ordered;
-        std::unordered_map<int, int> cen2index;
-        std::vector<int> cen2index_ordered;
-        std::unordered_map<int, int> sr2index;
-        std::vector<int> sr2index_ordered;
+        std::unordered_map<Loc, expr> clk_by_tile, cen_by_tile, sr_by_tile;
+        std::unordered_set<const NetInfo*> clk_set, nclk_set, cen_set, sr_set;
+        std::vector<const char*> clk_names, cen_names, sr_names;
+        cen_names.emplace_back("");
+        sr_names.emplace_back("");
+        std::vector<std::string> nclk_names;
 
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
@@ -179,24 +176,43 @@ class SAPlacer
 
             assert(cell->lcInfo.clk);
             if (cell->lcInfo.negClk) {
-                if (clk2index.emplace(-cell->lcInfo.clk->name.index, clk2index.size()).second)
-                    clk2index_ordered.push_back(-cell->lcInfo.clk->name.index);
+                if (nclk_set.emplace(cell->lcInfo.clk).second)
+                    nclk_names.push_back("~" + cell->lcInfo.clk->name.str(ctx));
             }
             else {
-                if (clk2index.emplace(cell->lcInfo.clk->name.index, clk2index.size()).second)
-                    clk2index_ordered.push_back(cell->lcInfo.clk->name.index);
+                if (clk_set.emplace(cell->lcInfo.clk).second)
+                    clk_names.push_back(cell->lcInfo.clk->name.c_str(ctx));
             }
 
             if (cell->lcInfo.cen) {
-                if (cen2index.emplace(cell->lcInfo.cen->name.index, cen2index.size()).second)
-                    cen2index_ordered.push_back(cell->lcInfo.cen->name.index);
+                if (cen_set.emplace(cell->lcInfo.cen).second)
+                    cen_names.push_back(cell->lcInfo.cen->name.c_str(ctx));
             }
 
             if (cell->lcInfo.sr) {
-                if (sr2index.emplace(cell->lcInfo.sr->name.index, sr2index.size()).second)
-                    sr2index_ordered.push_back(cell->lcInfo.sr->name.index);
+                if (sr_set.emplace(cell->lcInfo.sr).second)
+                    sr_names.push_back(cell->lcInfo.sr->name.c_str(ctx));
             }
         }
+
+        func_decl_vector clk_cs(z3), clk_ts(z3), cen_cs(z3), cen_ts(z3), sr_cs(z3), sr_ts(z3);
+        for (const auto &i : nclk_names)
+            clk_names.push_back(i.c_str());
+        sort clk_sort = z3.enumeration_sort("clk_sort", clk_names.size(), clk_names.data(), clk_cs, clk_ts);
+        sort cen_sort = z3.enumeration_sort("cen_sort", cen_names.size(), cen_names.data(), cen_cs, cen_ts);
+        sort sr_sort = z3.enumeration_sort("sr_sort", sr_names.size(), sr_names.data(), sr_cs, sr_ts);
+
+        std::unordered_map<const NetInfo*, expr> clk2enum, nclk2enum, cen2enum, sr2enum;
+        for (auto i = 0u; i < clk_names.size(); ++i)
+            clk2enum.emplace(ctx->nets.at(ctx->id(clk_names[i])).get(), clk_cs[i]());
+        for (auto i = 0u; i < nclk_names.size(); ++i)
+            clk2enum.emplace(ctx->nets.at(ctx->id(nclk_names[i])).get(), clk_cs[clk_names.size() + i]());
+        cen2enum.emplace(nullptr, cen_cs[0]());
+        for (auto i = 1u; i < cen_names.size(); ++i)
+            cen2enum.emplace(ctx->nets.at(ctx->id(cen_names[i])).get(), cen_cs[i]());
+        sr2enum.emplace(nullptr, sr_cs[0]());
+        for (auto i = 1u; i < sr_names.size(); ++i)
+            sr2enum.emplace(ctx->nets.at(ctx->id(sr_names[i])).get(), sr_cs[i]());
 
         const std::string delim = ".=>.";
         std::stringstream ss;
@@ -235,72 +251,37 @@ class SAPlacer
                     {
                         auto jt = clk_by_tile.find(loc);
                         if (jt == clk_by_tile.end()) {
-                            IdString clk_name;
-                            expr_vector one_clk_per_tile(z3);
-                            for (auto i : clk2index_ordered) {
-                                ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".clk=";
-                                if (i < 0) {
-                                    ss << "~";
-                                    clk_name.index = -i;
-                                }
-                                else 
-                                    clk_name.index = i;
-                                ss << clk_name.str(ctx);
-                                one_clk_per_tile.push_back(z3.bool_const(ss.str().c_str()));
-                            }
-                            s.add(atmost(one_clk_per_tile, 1));
-                            jt = clk_by_tile.emplace(loc, std::move(one_clk_per_tile)).first;
+                            ss.str("");
+                            ss << "x" << loc.x << "y" << loc.y << ".clk";
+                            jt = clk_by_tile.emplace(loc, z3.constant(ss.str().c_str(), clk_sort)).first;
                         }
                         assert(cell->lcInfo.clk);
                         if (cell->lcInfo.negClk)
-                            s.add(implies(e, jt->second[clk2index.at(-cell->lcInfo.clk->name.index)]));
+                            s.add(implies(e, jt->second == nclk2enum.at(cell->lcInfo.clk)));
                         else
-                            s.add(implies(e, jt->second[clk2index.at(cell->lcInfo.clk->name.index)]));
+                            s.add(implies(e, jt->second == clk2enum.at(cell->lcInfo.clk)));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock-enable net (or none at all)
                     {
                         auto jt = cen_by_tile.find(loc);
                         if (jt == cen_by_tile.end()) {
-                            IdString cen_name;
-                            expr_vector one_cen_per_tile(z3);
-                            for (auto i : cen2index_ordered) {
-                                ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".cen=";
-                                cen_name.index = i;
-                                ss << cen_name.str(ctx);
-                                one_cen_per_tile.push_back(z3.bool_const(ss.str().c_str()));
-                            }
-                            s.add(atmost(one_cen_per_tile, 1));
-                            jt = cen_by_tile.emplace(loc, std::move(one_cen_per_tile)).first;
+                            ss.str("");
+                            ss << "x" << loc.x << "y" << loc.y << ".cen";
+                            jt = cen_by_tile.emplace(loc, z3.constant(ss.str().c_str(), cen_sort)).first;
                         }
-                        if (cell->lcInfo.cen)
-                            s.add(implies(e, jt->second[cen2index.at(cell->lcInfo.cen->name.index)]));
-                        else
-                            s.add(implies(e, !mk_or(jt->second)));
+                        s.add(implies(e, jt->second == cen2enum.at(cell->lcInfo.cen)));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
                     {
                         auto jt = sr_by_tile.find(loc);
                         if (jt == sr_by_tile.end()) {
-                            IdString sr_name;
-                            expr_vector one_sr_per_tile(z3);
-                            for (auto i : sr2index_ordered) {
-                                ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".sr=";
-                                sr_name.index = i;
-                                ss << sr_name.str(ctx);
-                                one_sr_per_tile.push_back(z3.bool_const(ss.str().c_str()));
-                            }
-                            s.add(atmost(one_sr_per_tile, 1));
-                            jt = sr_by_tile.emplace(loc, std::move(one_sr_per_tile)).first;
+                            ss.str("");
+                            ss << "x" << loc.x << "y" << loc.y << ".sr";
+                            jt = sr_by_tile.emplace(loc, z3.constant(ss.str().c_str(), sr_sort)).first;
                         }
-                        if (cell->lcInfo.sr)
-                            s.add(implies(e, jt->second[sr2index.at(cell->lcInfo.sr->name.index)]));
-                        else
-                            s.add(implies(e, !mk_or(jt->second)));
+                        s.add(implies(e, jt->second == sr2enum.at(cell->lcInfo.sr)));
                     }
                 }
             }
