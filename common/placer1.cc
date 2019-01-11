@@ -163,39 +163,24 @@ class SAPlacer
         context z3;
         solver s(z3);
         std::unordered_map<BelId, expr_vector> placement_by_bel;
-        std::unordered_map<Loc, expr_vector> clk_by_tile;
-        std::unordered_map<Loc, expr_vector> cen_by_tile;
-        std::unordered_map<Loc, expr_vector> sr_by_tile;
-        std::unordered_map<int, int> clk2index;
-        std::vector<int> clk2index_ordered;
-        std::unordered_map<int, int> cen2index;
-        std::vector<int> cen2index_ordered;
-        std::unordered_map<int, int> sr2index;
-        std::vector<int> sr2index_ordered;
+        std::unordered_map<Loc, expr_vector> clk_by_tile, cen_by_tile, sr_by_tile;
+        std::unordered_map<int, int> clk2index, cen2index, sr2index;
 
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
             if (!cell->lcInfo.dffEnable) continue;
 
             assert(cell->lcInfo.clk);
-            if (cell->lcInfo.negClk) {
-                if (clk2index.emplace(-cell->lcInfo.clk->name.index, clk2index.size()).second)
-                    clk2index_ordered.push_back(-cell->lcInfo.clk->name.index);
-            }
-            else {
-                if (clk2index.emplace(cell->lcInfo.clk->name.index, clk2index.size()).second)
-                    clk2index_ordered.push_back(cell->lcInfo.clk->name.index);
-            }
+            if (cell->lcInfo.negClk)
+                clk2index.emplace(-cell->lcInfo.clk->name.index, clk2index.size());
+            else
+                clk2index.emplace(cell->lcInfo.clk->name.index, clk2index.size());
 
-            if (cell->lcInfo.cen) {
-                if (cen2index.emplace(cell->lcInfo.cen->name.index, cen2index.size()).second)
-                    cen2index_ordered.push_back(cell->lcInfo.cen->name.index);
-            }
+            if (cell->lcInfo.cen)
+                cen2index.emplace(cell->lcInfo.cen->name.index, cen2index.size());
 
-            if (cell->lcInfo.sr) {
-                if (sr2index.emplace(cell->lcInfo.sr->name.index, sr2index.size()).second)
-                    sr2index_ordered.push_back(cell->lcInfo.sr->name.index);
-            }
+            if (cell->lcInfo.sr)
+                sr2index.emplace(cell->lcInfo.sr->name.index, sr2index.size());
         }
 
         const std::string delim = ".=>.";
@@ -235,18 +220,10 @@ class SAPlacer
                     {
                         auto jt = clk_by_tile.find(loc);
                         if (jt == clk_by_tile.end()) {
-                            IdString clk_name;
                             expr_vector one_clk_per_tile(z3);
-                            for (auto i : clk2index_ordered) {
+                            for (auto i : clk2index) {
                                 ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".clk=";
-                                if (i < 0) {
-                                    ss << "~";
-                                    clk_name.index = -i;
-                                }
-                                else 
-                                    clk_name.index = i;
-                                ss << clk_name.str(ctx);
+                                ss << "x" << loc.x << "y" << loc.y << ".clk=" << one_clk_per_tile.size();
                                 one_clk_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
                             s.add(atmost(one_clk_per_tile, 1));
@@ -263,13 +240,10 @@ class SAPlacer
                     {
                         auto jt = cen_by_tile.find(loc);
                         if (jt == cen_by_tile.end()) {
-                            IdString cen_name;
                             expr_vector one_cen_per_tile(z3);
-                            for (auto i : cen2index_ordered) {
+                            for (auto i : cen2index) {
                                 ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".cen=";
-                                cen_name.index = i;
-                                ss << cen_name.str(ctx);
+                                ss << "x" << loc.x << "y" << loc.y << ".cen=" << one_cen_per_tile.size();
                                 one_cen_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
                             s.add(atmost(one_cen_per_tile, 1));
@@ -285,13 +259,10 @@ class SAPlacer
                     {
                         auto jt = sr_by_tile.find(loc);
                         if (jt == sr_by_tile.end()) {
-                            IdString sr_name;
                             expr_vector one_sr_per_tile(z3);
-                            for (auto i : sr2index_ordered) {
+                            for (auto i : sr2index) {
                                 ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".sr=";
-                                sr_name.index = i;
-                                ss << sr_name.str(ctx);
+                                ss << "x" << loc.x << "y" << loc.y << ".sr=" << one_sr_per_tile.size();
                                 one_sr_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
                             s.add(atmost(one_sr_per_tile, 1));
@@ -319,7 +290,8 @@ class SAPlacer
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
 
-        set_param("verbose", 10);
+        set_param("verbose", 1);
+        //set_param("verbose", 10);
         boost::timer::cpu_timer timer;
         std::cout << s.check() << "\n";
         std::cout << timer.format() << std::endl;
