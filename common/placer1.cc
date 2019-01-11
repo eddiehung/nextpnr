@@ -164,7 +164,7 @@ class SAPlacer
         solver s(z3);
         std::unordered_map<BelId, expr_vector> placement_by_bel;
         std::unordered_map<Loc, expr_vector> clk_by_tile, cen_by_tile, sr_by_tile;
-        std::unordered_map<int, int> clk2index, cen2index, sr2index;
+        std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
 
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
@@ -172,15 +172,15 @@ class SAPlacer
 
             assert(cell->lcInfo.clk);
             if (cell->lcInfo.negClk)
-                clk2index.emplace(-cell->lcInfo.clk->name.index, clk2index.size());
+                nclk2index.emplace(cell->lcInfo.clk, clk2index.size() + nclk2index.size());
             else
-                clk2index.emplace(cell->lcInfo.clk->name.index, clk2index.size());
+                clk2index.emplace(cell->lcInfo.clk, clk2index.size() + nclk2index.size());
 
             if (cell->lcInfo.cen)
-                cen2index.emplace(cell->lcInfo.cen->name.index, cen2index.size());
+                cen2index.emplace(cell->lcInfo.cen, cen2index.size());
 
             if (cell->lcInfo.sr)
-                sr2index.emplace(cell->lcInfo.sr->name.index, sr2index.size());
+                sr2index.emplace(cell->lcInfo.sr, sr2index.size());
         }
 
         const std::string delim = ".=>.";
@@ -223,7 +223,12 @@ class SAPlacer
                             expr_vector one_clk_per_tile(z3);
                             for (auto i : clk2index) {
                                 ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".clk=" << one_clk_per_tile.size();
+                                ss << "x" << loc.x << "y" << loc.y << ".clk=" << i.second;
+                                one_clk_per_tile.push_back(z3.bool_const(ss.str().c_str()));
+                            }
+                            for (auto i : nclk2index) {
+                                ss.str("");
+                                ss << "x" << loc.x << "y" << loc.y << ".clk=" << i.second;
                                 one_clk_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
                             s.add(atmost(one_clk_per_tile, 1));
@@ -231,9 +236,9 @@ class SAPlacer
                         }
                         assert(cell->lcInfo.clk);
                         if (cell->lcInfo.negClk)
-                            s.add(implies(e, jt->second[clk2index.at(-cell->lcInfo.clk->name.index)]));
+                            s.add(implies(e, jt->second[nclk2index.at(cell->lcInfo.clk)]));
                         else
-                            s.add(implies(e, jt->second[clk2index.at(cell->lcInfo.clk->name.index)]));
+                            s.add(implies(e, jt->second[clk2index.at(cell->lcInfo.clk)]));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock-enable net (or none at all)
@@ -243,14 +248,14 @@ class SAPlacer
                             expr_vector one_cen_per_tile(z3);
                             for (auto i : cen2index) {
                                 ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".cen=" << one_cen_per_tile.size();
+                                ss << "x" << loc.x << "y" << loc.y << ".cen=" << i.second;
                                 one_cen_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
                             s.add(atmost(one_cen_per_tile, 1));
                             jt = cen_by_tile.emplace(loc, std::move(one_cen_per_tile)).first;
                         }
                         if (cell->lcInfo.cen)
-                            s.add(implies(e, jt->second[cen2index.at(cell->lcInfo.cen->name.index)]));
+                            s.add(implies(e, jt->second[cen2index.at(cell->lcInfo.cen)]));
                         else
                             s.add(implies(e, !mk_or(jt->second)));
                     }
@@ -262,14 +267,14 @@ class SAPlacer
                             expr_vector one_sr_per_tile(z3);
                             for (auto i : sr2index) {
                                 ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".sr=" << one_sr_per_tile.size();
+                                ss << "x" << loc.x << "y" << loc.y << ".sr=" << i.second;
                                 one_sr_per_tile.push_back(z3.bool_const(ss.str().c_str()));
                             }
                             s.add(atmost(one_sr_per_tile, 1));
                             jt = sr_by_tile.emplace(loc, std::move(one_sr_per_tile)).first;
                         }
                         if (cell->lcInfo.sr)
-                            s.add(implies(e, jt->second[sr2index.at(cell->lcInfo.sr->name.index)]));
+                            s.add(implies(e, jt->second[sr2index.at(cell->lcInfo.sr)]));
                         else
                             s.add(implies(e, !mk_or(jt->second)));
                     }
