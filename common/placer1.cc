@@ -163,7 +163,10 @@ class SAPlacer
         context z3;
         solver s(z3);
         std::unordered_map<BelId, expr_vector> placement_by_bel;
-        std::unordered_map<const CellInfo*, std::pair<expr,expr>> cell_to_loc;
+        struct Loc_expr{
+            expr x, y, z;
+        };
+        std::unordered_map<const CellInfo*, Loc_expr> cell_to_loc;
         std::unordered_map<Loc, expr_vector> clk_by_tile, cen_by_tile, sr_by_tile;
         std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
 
@@ -172,7 +175,7 @@ class SAPlacer
             CellInfo *ci = cell.second.get();
             if (ci->bel != BelId()) {
                 auto loc = ctx->getBelLocation(ci->bel);
-                cell_to_loc.emplace(ci, std::make_pair(z3.int_val(loc.x), z3.int_val(loc.y)));
+                cell_to_loc.emplace(ci, Loc_expr{z3.int_val(loc.x), z3.int_val(loc.y), z3.int_val(loc.z)});
             }
         }
 
@@ -205,9 +208,14 @@ class SAPlacer
             ss.str("");
             ss << cell->name.str(ctx) << ".y";
             auto y = z3.int_const(ss.str().c_str());
+            ss.str("");
+            ss << cell->name.str(ctx) << ".z";
+            auto z = z3.int_const(ss.str().c_str());
             s.add(x >= 0 && x < ctx->getGridDimX());
             s.add(y >= 0 && y < ctx->getGridDimY());
-            cell_to_loc.emplace(cell, std::make_pair(x, y));
+            if (cell->type == id_ICESTORM_LC)
+                s.add(z >= 0 && z < 8);
+            cell_to_loc.emplace(cell, Loc_expr{x,y,z});
             expr_vector one_bel_per_cell(z3);
             for (auto bel : all_bels) {
                 // Eliminate any invalid cell-bel pairs
@@ -231,6 +239,8 @@ class SAPlacer
                 auto loc = ctx->getBelLocation(bel);
                 s.add(implies(e, x == loc.x));
                 s.add(implies(e, y == loc.y));
+                if (cell->type == id_ICESTORM_LC)
+                    s.add(implies(e, z == loc.z));
                 // Now encode the tile constraints,
                 // which are only relevant if DFFs are used
                 if (cell->lcInfo.dffEnable) {
@@ -383,8 +393,8 @@ class SAPlacer
                 /*if (ctx->timing_driven)*/ {
                     auto sink_loc = cell_to_loc.at(load_cell);
 
-                    auto dx = driver_loc.first - sink_loc.first;
-                    auto dy = driver_loc.second - sink_loc.second;
+                    auto dx = driver_loc.x - sink_loc.x;
+                    auto dy = driver_loc.y - sink_loc.y;
                     auto adx = ite(dx < 0, -dx, dx);
                     auto ady = ite(dy < 0, -dy, dy);
                     auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood), p.model0_offset + p.model0_norm1 * (adx + ady) / 128);
@@ -404,8 +414,12 @@ class SAPlacer
 
             auto parent_loc = cell_to_loc.at(parent);
             auto this_loc = cell_to_loc.at(cell);
-            s.add(parent_loc.first == this_loc.first + cell->constr_x);
-            s.add(parent_loc.second == this_loc.second + cell->constr_y);
+            s.add(this_loc.x == parent_loc.x + cell->constr_x);
+            s.add(this_loc.y == parent_loc.y + cell->constr_y);
+            if (cell->constr_abs_z)
+                s.add(this_loc.z == cell->constr_z);
+            else
+                s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
 
         set_param("verbose", 9);
@@ -493,6 +507,8 @@ class SAPlacer
                 log_info("  at iteration #%d: temp = %f, cost = "
                          "%.0f, est tns = %.02fns\n",
                          iter, temp, double(curr_metric), curr_tns);
+
+            break;
 
             for (int m = 0; m < 15; ++m) {
                 // Loop through all automatically placed cells
