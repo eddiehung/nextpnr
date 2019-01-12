@@ -218,8 +218,7 @@ class SAPlacer
             auto z = z3.int_const(ss.str().c_str());
             s.add(x >= 0 && x < ctx->getGridDimX());
             s.add(y >= 0 && y < ctx->getGridDimY());
-            //if (cell->type == id_ICESTORM_LC)
-                s.add(z >= 0 && z < 8);
+//            s.add(z >= 0 && z < 8);
             cell_to_loc.emplace(cell, Loc_expr{x,y,z});
             expr_vector one_bel_per_cell(z3);
             for (auto bel : all_bels) {
@@ -245,7 +244,7 @@ class SAPlacer
                 s.add(implies(e, x == loc.x));
                 s.add(implies(e, y == loc.y));
 //                if (cell->type == id_ICESTORM_LC)
-                    s.add(implies(e, z == loc.z));
+//                    s.add(implies(e, z == loc.z));
                 // Now encode the tile constraints,
                 // which are only relevant if DFFs are used
                 if (cell->lcInfo.dffEnable) {
@@ -381,6 +380,7 @@ class SAPlacer
             }
         };
         const model_params_t &p = model_params_t::get(ctx->args);
+        auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
         for (auto &net : ctx->nets) {
             auto driver = net.second->driver;
             CellInfo *driver_cell = driver.cell;
@@ -390,9 +390,11 @@ class SAPlacer
             for (auto load : net.second->users) {
                 if (load.cell == nullptr)
                     continue;
-                if (load.budget < 0)
+                if (load.budget < 0 || load.budget >= period)
                     continue;
                 CellInfo *load_cell = load.cell;
+                if (load_cell->type != id_ICESTORM_LC)
+                    continue;
                 /*if (ctx->timing_driven)*/ {
                     auto sink_loc = cell_to_loc.at(load_cell);
 
@@ -403,13 +405,12 @@ class SAPlacer
                         s.add(delay >= 0 && delay <= load.budget);
                     }
                     else {
+                        assert(load_cell->type == id_ICESTORM_LC);
                         auto dx = sink_loc.x - driver_loc.x;
                         auto adx = abs(dx);
                         auto ady = abs(dy);
-                        auto neighbourhood = adx <= 1 && ady <= 1;
-                        s.add(implies(neighbourhood, p.neighbourhood <= load.budget));
-                        s.add(implies(!neighbourhood, ((p.model0_offset + p.model0_norm1 * (adx + ady)) / 128) <= load.budget));
-                        //s.add(implies(!neighbourhood, (p.model0_offset + p.model0_norm1 * (adx + ady)) <= (load.budget * 128)));
+                        auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood*128), p.model0_offset + p.model0_norm1 * (adx + ady));
+                        s.add(delay <= load.budget*128);
                     }
                 }
             }
