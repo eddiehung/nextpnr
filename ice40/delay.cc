@@ -192,27 +192,25 @@ delay_t Arch::predictDelay(const NetInfo *net_info, const PortRef &sink) const
     auto driver_loc = getBelLocation(driver.cell->bel);
     auto sink_loc = getBelLocation(sink.cell->bel);
 
-    if (driver.port == id_COUT && driver_loc.x == sink_loc.x) {
+    if (driver.port == id_COUT) {
         if (driver_loc.y == sink_loc.y)
             return 0;
-        if (driver_loc.y == sink_loc.y - 1) {
-            switch (args.type) {
+        switch (args.type) {
 #ifndef ICE40_HX1K_ONLY
-            case ArchArgs::HX8K:
+        case ArchArgs::HX8K:
 #endif
-            case ArchArgs::HX1K:
-                return 190;
+        case ArchArgs::HX1K:
+            return 190;
 #ifndef ICE40_HX1K_ONLY
-            case ArchArgs::LP384:
-            case ArchArgs::LP1K:
-            case ArchArgs::LP8K:
-                return 290;
-            case ArchArgs::UP5K:
-                return 560;
+        case ArchArgs::LP384:
+        case ArchArgs::LP1K:
+        case ArchArgs::LP8K:
+            return 290;
+        case ArchArgs::UP5K:
+            return 560;
 #endif
-            default:
-                log_error("Unsupported iCE40 chip type.\n");
-            }
+        default:
+            log_error("Unsupported iCE40 chip type.\n");
         }
     }
 

@@ -161,9 +161,11 @@ class SAPlacer
         //   s0...sN (available) sites/bels
 
         context z3;
-        solver s(z3);
+        //set_param("parallel.enable", true);
+        auto z3_logic = getenv("Z3_LOGIC");
+        solver s = z3_logic ? solver{z3, z3_logic} : solver{z3};
         std::unordered_map<BelId, expr_vector> placement_by_bel;
-        struct Loc_expr{
+        struct Loc_expr {
             expr x, y, z;
         };
         std::unordered_map<const CellInfo*, Loc_expr> cell_to_loc;
@@ -213,7 +215,7 @@ class SAPlacer
             auto z = z3.int_const(ss.str().c_str());
             s.add(x >= 0 && x < ctx->getGridDimX());
             s.add(y >= 0 && y < ctx->getGridDimY());
-            if (cell->type == id_ICESTORM_LC)
+            //if (cell->type == id_ICESTORM_LC)
                 s.add(z >= 0 && z < 8);
             cell_to_loc.emplace(cell, Loc_expr{x,y,z});
             expr_vector one_bel_per_cell(z3);
@@ -239,7 +241,7 @@ class SAPlacer
                 auto loc = ctx->getBelLocation(bel);
                 s.add(implies(e, x == loc.x));
                 s.add(implies(e, y == loc.y));
-                if (cell->type == id_ICESTORM_LC)
+//                if (cell->type == id_ICESTORM_LC)
                     s.add(implies(e, z == loc.z));
                 // Now encode the tile constraints,
                 // which are only relevant if DFFs are used
@@ -381,29 +383,30 @@ class SAPlacer
             CellInfo *driver_cell = driver.cell;
             if (!driver_cell)
                 continue;
-            if (driver.port == id_COUT)
-                continue;
             auto driver_loc = cell_to_loc.at(driver_cell);
             for (auto load : net.second->users) {
                 if (load.cell == nullptr)
                     continue;
-                if (load.budget <= 0)
+                if (load.budget < 0)
                     continue;
                 CellInfo *load_cell = load.cell;
                 /*if (ctx->timing_driven)*/ {
                     auto sink_loc = cell_to_loc.at(load_cell);
 
-                    auto dx = driver_loc.x - sink_loc.x;
-                    auto dy = driver_loc.y - sink_loc.y;
-                    auto adx = ite(dx < 0, -dx, dx);
-                    auto ady = ite(dy < 0, -dy, dy);
-                    auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood), p.model0_offset + p.model0_norm1 * (adx + ady) / 128);
-
-                    //if (driver.port == id_COUT) {
-                    //    delay = ite(/*dx == 0 &&*/ dy == 0, z3.int_val(0), 
-                    //            ite(/*dx == 0 &&*/ dy == -1, z3.int_val(190), /*delay*/z3.int_val(190)));
-                    //}
-                    s.add(delay <= load.budget);
+                    auto dy = sink_loc.y - driver_loc.y;
+                    if (driver.port == id_COUT) {
+                        continue; // FIXME
+                        auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
+                        s.add(delay >= 0 && delay <= load.budget);
+                    }
+                    else {
+                        auto dx = sink_loc.x - driver_loc.x;
+                        auto adx = ite(dx >= 0, dx, -dx);
+                        auto ady = ite(dy >= 0, dy, -dy);
+                        auto neighbourhood = adx <= 1 && adx <= 1;
+                        s.add(implies(neighbourhood, p.neighbourhood <= load.budget));
+                        s.add(implies(!neighbourhood, ((p.model0_offset + p.model0_norm1 * (adx + ady)) / 128) <= load.budget));
+                    }
                 }
             }
         }
@@ -422,7 +425,8 @@ class SAPlacer
                 s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
 
-        set_param("verbose", 9);
+        if (getenv("Z3_VERBOSITY"))
+            set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
         boost::timer::cpu_timer timer;
         std::cout << s.check() << "\n";
         std::cout << timer.format() << std::endl;
