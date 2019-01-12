@@ -161,7 +161,7 @@ class SAPlacer
         //   s0...sN (available) sites/bels
 
         context z3;
-        //set_param("parallel.enable", true);
+        set_param("parallel.enable", true);
         auto z3_logic = getenv("Z3_LOGIC");
         solver s = z3_logic ? solver{z3, z3_logic} : solver{z3};
         std::unordered_map<BelId, expr_vector> placement_by_bel;
@@ -403,7 +403,7 @@ class SAPlacer
                         auto dx = sink_loc.x - driver_loc.x;
                         auto adx = ite(dx >= 0, dx, -dx);
                         auto ady = ite(dy >= 0, dy, -dy);
-                        auto neighbourhood = adx <= 1 && adx <= 1;
+                        auto neighbourhood = adx <= 1 && ady <= 1;
                         s.add(implies(neighbourhood, p.neighbourhood <= load.budget));
                         s.add(implies(!neighbourhood, ((p.model0_offset + p.model0_norm1 * (adx + ady)) / 128) <= load.budget));
                     }
