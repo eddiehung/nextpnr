@@ -52,7 +52,6 @@ wirelen_t get_net_metric(const Context *ctx, const NetInfo *net, MetricType type
         if (timing_driven) {
             delay_t net_delay = ctx->predictDelay(net, load);
             auto slack = load.budget - net_delay;
-            if (slack < 0) printf("%s %d\n", driver_cell->name.c_str(ctx), slack);
             if (slack < 0)
                 negative_slack += slack;
             worst_slack = std::min(slack, worst_slack);
