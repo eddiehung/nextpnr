@@ -167,6 +167,7 @@ class SAPlacer
             set_param("smt.random_seed", boost::lexical_cast<int>(getenv("Z3_RANDOM_SEED")));
         auto z3_logic = getenv("Z3_LOGIC");
         solver s = z3_logic ? solver{z3, z3_logic} : solver{z3};
+        //optimize s(z3);
         std::unordered_map<BelId, expr_vector> placement_by_bel;
         struct Loc_expr {
             expr x, y, z;
@@ -379,8 +380,10 @@ class SAPlacer
                 NPNR_ASSERT(0);
             }
         };
+        unsigned i = 0;
         const model_params_t &p = model_params_t::get(ctx->args);
         auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
+        auto min_slack = z3.int_const("min_slack");
         for (auto &net : ctx->nets) {
             auto driver = net.second->driver;
             CellInfo *driver_cell = driver.cell;
@@ -409,12 +412,25 @@ class SAPlacer
                         auto dx = sink_loc.x - driver_loc.x;
                         auto adx = abs(dx);
                         auto ady = abs(dy);
+#if 0
                         auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood*128), p.model0_offset + p.model0_norm1 * (adx + ady));
-                        s.add(delay <= load.budget*128);
+#else
+                        ss.str("");
+                        ss << "d" << i++;
+                        auto delay = z3.int_const(ss.str().c_str());
+                        auto neighbourhood = adx <= 1 && ady <= 1;
+                        s.add((neighbourhood && delay == (p.neighbourhood * 128))
+                              || (!neighbourhood && delay == (p.model0_offset + p.model0_norm1 * (adx + ady))));
+#endif
+                        auto slack = load.budget * 128 - delay;
+                        s.add(min_slack <= slack);
+                        //s.add(slack >= 0);
                     }
                 }
             }
         }
+
+        s.add(min_slack >= 0);
 
         for (auto cell : autoplaced) {
             auto parent = cell->constr_parent;
@@ -429,6 +445,11 @@ class SAPlacer
             else
                 s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
+
+        //s.maximize(min_slack);
+        //params sp(z3);
+        //sp.set("timeout", 120000u);
+        //s.set(sp);
 
         if (getenv("Z3_VERBOSITY"))
             set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
