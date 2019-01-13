@@ -43,8 +43,10 @@
 #include "util.h"
 #include <boost/timer/timer.hpp>
 
-#include "z3++.h"
-using namespace z3;
+#include "ortools/sat/cp_model.h"
+#include "ortools/sat/model.h"
+using namespace operations_research;
+using namespace operations_research::sat;
 
 NEXTPNR_NAMESPACE_BEGIN
 
@@ -160,30 +162,13 @@ class SAPlacer
         //   c0...cM (unconstrained) cells
         //   s0...sN (available) sites/bels
 
-        context z3;
-        if (getenv("Z3_PARALLEL"))
-            set_param("parallel.enable", true);
-        if (getenv("Z3_RANDOM_SEED"))
-            set_param("smt.random_seed", boost::lexical_cast<int>(getenv("Z3_RANDOM_SEED")));
-        auto z3_logic = getenv("Z3_LOGIC");
-        solver s = z3_logic ? solver{z3, z3_logic} : solver{z3};
-        //optimize s(z3);
-        std::unordered_map<BelId, expr_vector> placement_by_bel;
-        struct Loc_expr {
-            expr x, y, z;
-        };
-        std::unordered_map<const CellInfo*, Loc_expr> cell_to_loc;
-        std::unordered_map<Loc, expr_vector> clk_by_tile, cen_by_tile, sr_by_tile;
+        CpModelBuilder s;
+        std::vector<IntVar> placement;
+        std::unordered_map<CellInfo*, IntVar> cell_to_placement;
+        std::unordered_map<Loc, IntVar> clk_by_tile, cen_by_tile, sr_by_tile;
         std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
-
-        std::stringstream ss;
-        for (auto &cell : ctx->cells) {
-            CellInfo *ci = cell.second.get();
-            if (ci->bel != BelId()) {
-                auto loc = ctx->getBelLocation(ci->bel);
-                cell_to_loc.emplace(ci, Loc_expr{z3.int_val(loc.x), z3.int_val(loc.y), z3.int_val(loc.z)});
-            }
-        }
+        cen2index.emplace(nullptr, 0);
+        sr2index.emplace(nullptr, 0);
 
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
@@ -202,298 +187,234 @@ class SAPlacer
                 sr2index.emplace(cell->lcInfo.sr, sr2index.size());
         }
 
-        const std::string delim = ".=>.";
         // I build a matrix of bools sized cM * sN,
         // each bool (x_{i,j}) representing the placement
         // of cell_i into site_j
         auto all_bels = ctx->getBels();
+        Domain bel_domain(all_bels.b.cursor, all_bels.e.cursor);
+        Domain clk_domain(0, clk2index.size());
+        Domain cen_domain(0, cen2index.size());
+        Domain sr_domain(0, sr2index.size());
         for (auto cell : autoplaced) {
-            ss.str("");
-            ss << cell->name.str(ctx) << ".x";
-            auto x = z3.int_const(ss.str().c_str());
-            ss.str("");
-            ss << cell->name.str(ctx) << ".y";
-            auto y = z3.int_const(ss.str().c_str());
-            ss.str("");
-            ss << cell->name.str(ctx) << ".z";
-            auto z = z3.int_const(ss.str().c_str());
-            s.add(x >= 0 && x < ctx->getGridDimX());
-            s.add(y >= 0 && y < ctx->getGridDimY());
-//            s.add(z >= 0 && z < 8);
-            cell_to_loc.emplace(cell, Loc_expr{x,y,z});
-            expr_vector one_bel_per_cell(z3);
+            auto p = s.NewIntVar(bel_domain);
+            placement.emplace_back(p);
+            cell_to_placement.emplace(cell, p);
+            auto allowed_bels = s.AddAllowedAssignments({p});
             for (auto bel : all_bels) {
                 // Eliminate any invalid cell-bel pairs
                 if (ctx->getBelType(bel) != cell->type)
                     continue;
                 if (!ctx->isValidBelForCell(cell, bel))
                     continue;
-                // Create a bool variable named cell.delim.bel
-                // for placement of cell_i onto bel_j
-                ss.str("");
-                ss << cell->name.str(ctx);
-                ss << delim;
-                ss << ctx->getBelName(bel).str(ctx);
-                auto e = z3.bool_const(ss.str().c_str());
-                // Add it to a vector that will later enforce the
-                // constraint that each cell must be placed onto
-                // one and only one bel
-                one_bel_per_cell.push_back(e);
-                auto it = placement_by_bel.emplace(bel, expr_vector{z3}).first;
-                it->second.push_back(e);
-                auto loc = ctx->getBelLocation(bel);
-                s.add(implies(e, x == loc.x));
-                s.add(implies(e, y == loc.y));
-//                if (cell->type == id_ICESTORM_LC)
-//                    s.add(implies(e, z == loc.z));
-                // Now encode the tile constraints,
+                allowed_bels.AddTuple({bel.index});
                 // which are only relevant if DFFs are used
                 if (cell->lcInfo.dffEnable) {
+                    auto loc = ctx->getBelLocation(bel);
                     loc.z = 0;
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock net and polarity
-                    if (clk2index.size() > 1) {
-                        expr clk_clause(z3);
+                    auto e = s.NewBoolVar();
+                    s.AddEquality(p, bel.index).OnlyEnforceIf(e);
+                    s.AddNotEqual(p, bel.index).OnlyEnforceIf(e.Not());
+                    if ((clk2index.size() + nclk2index.size()) > 1) {
                         auto jt = clk_by_tile.find(loc);
-                        if (jt == clk_by_tile.end()) {
-                            expr_vector one_clk_per_tile(z3);
-                            for (auto i : clk2index) {
-                                ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".clk=" << i.second;
-                                one_clk_per_tile.push_back(z3.bool_const(ss.str().c_str()));
-                            }
-                            for (auto i : nclk2index) {
-                                ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".clk=" << i.second;
-                                one_clk_per_tile.push_back(z3.bool_const(ss.str().c_str()));
-                            }
-                            s.add(atmost(one_clk_per_tile, 1));
-                            jt = clk_by_tile.emplace(loc, std::move(one_clk_per_tile)).first;
-                        }
+                        if (jt == clk_by_tile.end())
+                            jt = clk_by_tile.emplace(loc, s.NewIntVar(clk_domain)).first;
                         assert(cell->lcInfo.clk);
                         if (cell->lcInfo.negClk)
-                            clk_clause = jt->second[nclk2index.at(cell->lcInfo.clk)];
+                            s.AddEquality(jt->second, nclk2index.at(cell->lcInfo.clk)).OnlyEnforceIf(e);
                         else
-                            clk_clause = jt->second[clk2index.at(cell->lcInfo.clk)];
-                        s.add(implies(e, clk_clause));
+                            s.AddEquality(jt->second, clk2index.at(cell->lcInfo.clk)).OnlyEnforceIf(e);
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock-enable net (or none at all)
-                    if (!cen2index.empty()) {
-                        expr cen_clause(z3);
+                    if (cen2index.size() > 1) {
                         auto jt = cen_by_tile.find(loc);
-                        if (jt == cen_by_tile.end()) {
-                            expr_vector one_cen_per_tile(z3);
-                            for (auto i : cen2index) {
-                                ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".cen=" << i.second;
-                                one_cen_per_tile.push_back(z3.bool_const(ss.str().c_str()));
-                            }
-                            s.add(atmost(one_cen_per_tile, 1));
-                            jt = cen_by_tile.emplace(loc, std::move(one_cen_per_tile)).first;
-                        }
-                        if (cell->lcInfo.cen)
-                            cen_clause = jt->second[cen2index.at(cell->lcInfo.cen)];
-                        else
-                            cen_clause = !mk_or(jt->second);
-                        s.add(implies(e, cen_clause));
+                        if (jt == cen_by_tile.end())
+                            jt = cen_by_tile.emplace(loc, s.NewIntVar(cen_domain)).first;
+                        s.AddEquality(jt->second, cen2index.at(cell->lcInfo.cen)).OnlyEnforceIf(e);
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
-                    if (!sr2index.empty()) {
-                        expr sr_clause(z3);
+                    if (sr2index.size() > 1) {
                         auto jt = sr_by_tile.find(loc);
-                        if (jt == sr_by_tile.end()) {
-                            expr_vector one_sr_per_tile(z3);
-                            for (auto i : sr2index) {
-                                ss.str("");
-                                ss << "x" << loc.x << "y" << loc.y << ".sr=" << i.second;
-                                one_sr_per_tile.push_back(z3.bool_const(ss.str().c_str()));
-                            }
-                            s.add(atmost(one_sr_per_tile, 1));
-                            jt = sr_by_tile.emplace(loc, std::move(one_sr_per_tile)).first;
-                        }
-                        if (cell->lcInfo.sr)
-                            sr_clause = jt->second[sr2index.at(cell->lcInfo.sr)];
-                        else
-                            sr_clause = !mk_or(jt->second);
-                        s.add(implies(e, sr_clause));
-                    }
-                }
-            }
-
-            // Constraint that each cell_i must have
-            // exactly one p_{i,j} set for all j
-            s.add(mk_or(one_bel_per_cell));
-            s.add(atmost(one_bel_per_cell, 1));
-        }
-        // Constraint that each bel_j must have
-        // at most one p_{i,j} set for all i
-        for (auto i : placement_by_bel)
-            s.add(atmost(i.second, 1));
-
-        // TODO: Enforce constraint that each tile can have at most 32 inputs
-        // non-global inputs -- this can only be an issue when non-global clk/cen/sr
-        // nets are used
-        
-        struct model_params_t
-        {
-            int neighbourhood;
-        
-            int model0_offset;
-            int model0_norm1;
-        
-            int model1_offset;
-            int model1_norm1;
-            int model1_norm2;
-            int model1_norm3;
-        
-            int model2_offset;
-            int model2_linear;
-            int model2_sqrt;
-        
-            int delta_local;
-            int delta_lutffin;
-            int delta_sp4;
-            int delta_sp12;
-        
-            static const model_params_t &get(const ArchArgs &args)
-            {
-                static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
-                                                          -86797, 89,     3706, -316,   -575,  -158,   -296};
-        
-                static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
-                                                          -309793, 30,     11056, -474,   -856,  -363,   -536};
-        
-                static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
-                                                          -162662, 94,     4705,  -1099,  -1761, -418,   -838};
-        
-                if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
-                    return model_hx8k;
-        
-                if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
-                    return model_lp8k;
-        
-                if (args.type == ArchArgs::UP5K)
-                    return model_up5k;
-        
-                NPNR_ASSERT(0);
-            }
-        };
-        unsigned i = 0;
-        const model_params_t &p = model_params_t::get(ctx->args);
-        auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
-        auto min_slack = z3.int_const("min_slack");
-        for (auto &net : ctx->nets) {
-            auto driver = net.second->driver;
-            CellInfo *driver_cell = driver.cell;
-            if (!driver_cell)
-                continue;
-            auto driver_loc = cell_to_loc.at(driver_cell);
-            for (auto load : net.second->users) {
-                if (load.cell == nullptr)
-                    continue;
-                if (load.budget < 0 || load.budget >= period)
-                    continue;
-                CellInfo *load_cell = load.cell;
-                if (load_cell->type != id_ICESTORM_LC)
-                    continue;
-                /*if (ctx->timing_driven)*/ {
-                    auto sink_loc = cell_to_loc.at(load_cell);
-
-                    auto dy = sink_loc.y - driver_loc.y;
-                    if (driver.port == id_COUT) {
-                        continue; // FIXME
-                        auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
-                        s.add(delay >= 0 && delay <= load.budget);
-                    }
-                    else {
-                        assert(load_cell->type == id_ICESTORM_LC);
-                        auto dx = sink_loc.x - driver_loc.x;
-                        auto adx = abs(dx);
-                        auto ady = abs(dy);
-#if 0
-                        auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood*128), p.model0_offset + p.model0_norm1 * (adx + ady));
-#else
-                        ss.str("");
-                        ss << "d" << i++;
-                        auto delay = z3.int_const(ss.str().c_str());
-                        auto neighbourhood = adx <= 1 && ady <= 1;
-                        s.add((neighbourhood && delay == (p.neighbourhood * 128))
-                              || (!neighbourhood && delay == (p.model0_offset + p.model0_norm1 * (adx + ady))));
-#endif
-                        auto slack = load.budget * 128 - delay;
-                        s.add(min_slack <= slack);
-                        //s.add(slack >= 0);
+                        if (jt == sr_by_tile.end())
+                            jt = sr_by_tile.emplace(loc, s.NewIntVar(sr_domain)).first;
+                        s.AddEquality(jt->second, sr2index.at(cell->lcInfo.sr)).OnlyEnforceIf(e);
                     }
                 }
             }
         }
 
-        s.add(min_slack >= 0);
+        s.AddAllDifferent(placement);
 
-        for (auto cell : autoplaced) {
-            auto parent = cell->constr_parent;
-            if (!parent) continue;
+//        // TODO: Enforce constraint that each tile can have at most 32 inputs
+//        // non-global inputs -- this can only be an issue when non-global clk/cen/sr
+//        // nets are used
+//        
+//        struct model_params_t
+//        {
+//            int neighbourhood;
+//        
+//            int model0_offset;
+//            int model0_norm1;
+//        
+//            int model1_offset;
+//            int model1_norm1;
+//            int model1_norm2;
+//            int model1_norm3;
+//        
+//            int model2_offset;
+//            int model2_linear;
+//            int model2_sqrt;
+//        
+//            int delta_local;
+//            int delta_lutffin;
+//            int delta_sp4;
+//            int delta_sp12;
+//        
+//            static const model_params_t &get(const ArchArgs &args)
+//            {
+//                static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
+//                                                          -86797, 89,     3706, -316,   -575,  -158,   -296};
+//        
+//                static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
+//                                                          -309793, 30,     11056, -474,   -856,  -363,   -536};
+//        
+//                static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
+//                                                          -162662, 94,     4705,  -1099,  -1761, -418,   -838};
+//        
+//                if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
+//                    return model_hx8k;
+//        
+//                if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
+//                    return model_lp8k;
+//        
+//                if (args.type == ArchArgs::UP5K)
+//                    return model_up5k;
+//        
+//                NPNR_ASSERT(0);
+//            }
+//        };
+//        unsigned i = 0;
+//        const model_params_t &p = model_params_t::get(ctx->args);
+//        auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
+//        auto min_slack = z3.int_const("min_slack");
+//        for (auto &net : ctx->nets) {
+//            auto driver = net.second->driver;
+//            CellInfo *driver_cell = driver.cell;
+//            if (!driver_cell)
+//                continue;
+//            auto driver_loc = cell_to_loc.at(driver_cell);
+//            for (auto load : net.second->users) {
+//                if (load.cell == nullptr)
+//                    continue;
+//                if (load.budget < 0 || load.budget >= period)
+//                    continue;
+//                CellInfo *load_cell = load.cell;
+//                if (load_cell->type != id_ICESTORM_LC)
+//                    continue;
+//                /*if (ctx->timing_driven)*/ {
+//                    auto sink_loc = cell_to_loc.at(load_cell);
+//
+//                    auto dy = sink_loc.y - driver_loc.y;
+//                    if (driver.port == id_COUT) {
+//                        continue; // FIXME
+//                        auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
+//                        s.add(delay >= 0 && delay <= load.budget);
+//                    }
+//                    else {
+//                        assert(load_cell->type == id_ICESTORM_LC);
+//                        auto dx = sink_loc.x - driver_loc.x;
+//                        auto adx = abs(dx);
+//                        auto ady = abs(dy);
+//#if 0
+//                        auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood*128), p.model0_offset + p.model0_norm1 * (adx + ady));
+//#else
+//                        ss.str("");
+//                        ss << "d" << i++;
+//                        auto delay = z3.int_const(ss.str().c_str());
+//                        auto neighbourhood = adx <= 1 && ady <= 1;
+//                        s.add((neighbourhood && delay == (p.neighbourhood * 128))
+//                              || (!neighbourhood && delay == (p.model0_offset + p.model0_norm1 * (adx + ady))));
+//#endif
+//                        auto slack = load.budget * 128 - delay;
+//                        s.add(min_slack <= slack);
+//                        //s.add(slack >= 0);
+//                    }
+//                }
+//            }
+//        }
+//
+//        s.add(min_slack >= 0);
+//
+//        for (auto cell : autoplaced) {
+//            auto parent = cell->constr_parent;
+//            if (!parent) continue;
+//
+//            auto parent_loc = cell_to_loc.at(parent);
+//            auto this_loc = cell_to_loc.at(cell);
+//            s.add(this_loc.x == parent_loc.x + cell->constr_x);
+//            s.add(this_loc.y == parent_loc.y + cell->constr_y);
+//            if (cell->constr_abs_z)
+//                s.add(this_loc.z == cell->constr_z);
+//            else
+//                s.add(this_loc.z == parent_loc.z + cell->constr_z);
+//        }
+//
 
-            auto parent_loc = cell_to_loc.at(parent);
-            auto this_loc = cell_to_loc.at(cell);
-            s.add(this_loc.x == parent_loc.x + cell->constr_x);
-            s.add(this_loc.y == parent_loc.y + cell->constr_y);
-            if (cell->constr_abs_z)
-                s.add(this_loc.z == cell->constr_z);
-            else
-                s.add(this_loc.z == parent_loc.z + cell->constr_z);
-        }
-
-        //s.maximize(min_slack);
-        //params sp(z3);
-        //sp.set("timeout", 120000u);
-        //s.set(sp);
-
-        if (getenv("Z3_VERBOSITY"))
-            set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
+        Model m;
         boost::timer::cpu_timer timer;
-        std::cout << s.check() << "\n";
+        auto r = SolveWithModel(s, &m);
         std::cout << timer.format() << std::endl;
-        std::cout << s.statistics() << "\n";
+        //std::cout << r << "\n";
+        std::cout << CpSolverResponseStats(r) << "\n";
 
-        model m = s.get_model();
-        //std::cout << m << "\n";
-        // traversing the model
-        for (unsigned i = 0; i < m.size(); i++) {
-            func_decl v = m[i];
-            // this problem contains only constants
-            assert(v.arity() == 0); 
-            auto e = m.get_const_interp(v);
-            if (e.is_true()) {
-                auto vname = v.name().str();
-                auto it = vname.find(delim);
-                if (it == std::string::npos) continue;
-                auto cell = ctx->cells.at(ctx->id(vname.substr(0, it))).get();
-                auto bel = ctx->getBelByName(ctx->id(vname.substr(it+delim.size(), std::string::npos)));
-                assert(ctx->isValidBelForCell(cell, bel));
-                ctx->bindBel(bel, cell, STRENGTH_WEAK);
-            }
+        BelId bel;
+        for (auto i : cell_to_placement) {
+            auto cell = i.first;
+            bel.index = SolutionIntegerValue(r, i.second);
+            assert(ctx->isValidBelForCell(cell, bel));
+            ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
 
-        for (auto bel : ctx->getBels()) {
-            CellInfo *cell = ctx->getBoundBelCell(bel);
-            if (!ctx->isBelLocationValid(bel)) {
-                std::string cell_text = "no cell";
-                if (cell != nullptr)
-                    cell_text = std::string("cell '") + ctx->nameOf(cell) + "'";
-                if (ctx->force) {
-                    log_warning("post-placement validity check failed for Bel '%s' "
-                                "(%s)\n",
-                                ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
-                } else {
-                    log_error("post-placement validity check failed for Bel '%s' "
-                              "(%s)\n",
-                              ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
-                }
-            }
-        }
+
+//        model m = s.get_model();
+//        //std::cout << m << "\n";
+//        // traversing the model
+//        for (unsigned i = 0; i < m.size(); i++) {
+//            func_decl v = m[i];
+//            // this problem contains only constants
+//            assert(v.arity() == 0); 
+//            auto e = m.get_const_interp(v);
+//            if (e.is_true()) {
+//                auto vname = v.name().str();
+//                auto it = vname.find(delim);
+//                if (it == std::string::npos) continue;
+//                auto cell = ctx->cells.at(ctx->id(vname.substr(0, it))).get();
+//                auto bel = ctx->getBelByName(ctx->id(vname.substr(it+delim.size(), std::string::npos)));
+//                assert(ctx->isValidBelForCell(cell, bel));
+//                ctx->bindBel(bel, cell, STRENGTH_WEAK);
+//            }
+//        }
+//
+//        for (auto bel : ctx->getBels()) {
+//            CellInfo *cell = ctx->getBoundBelCell(bel);
+//            if (!ctx->isBelLocationValid(bel)) {
+//                std::string cell_text = "no cell";
+//                if (cell != nullptr)
+//                    cell_text = std::string("cell '") + ctx->nameOf(cell) + "'";
+//                if (ctx->force) {
+//                    log_warning("post-placement validity check failed for Bel '%s' "
+//                                "(%s)\n",
+//                                ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
+//                } else {
+//                    log_error("post-placement validity check failed for Bel '%s' "
+//                              "(%s)\n",
+//                              ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
+//                }
+//            }
+//        }
 
 #if 0
         for (auto cell : autoplaced) {
