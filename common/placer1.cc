@@ -176,21 +176,27 @@ class SAPlacer
         std::unordered_map<const CellInfo*, Loc_expr> cell_to_loc;
         std::unordered_map<Loc, expr> clk_by_tile, cen_by_tile, sr_by_tile;
         std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
-        cen2index.emplace(nullptr, 0);
-        sr2index.emplace(nullptr, 0);
+
+        const unsigned x_bits = ceil(log2(ctx->getGridDimX()));
+        const unsigned y_bits = ceil(log2(ctx->getGridDimY()));
+        const unsigned z_bits = ceil(log2(ctx->getTileBelDimZ(0,0)));
 
         std::stringstream ss;
         for (auto &cell : ctx->cells) {
             CellInfo *ci = cell.second.get();
             if (ci->bel != BelId()) {
                 auto loc = ctx->getBelLocation(ci->bel);
-                cell_to_loc.emplace(ci, Loc_expr{z3.int_val(loc.x), z3.int_val(loc.y), z3.int_val(loc.z)});
+                cell_to_loc.emplace(ci, Loc_expr{z3.bv_val(loc.x,  x_bits), z3.bv_val(loc.y, y_bits), z3.bv_val(loc.z, z_bits)});
             }
         }
 
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
-            if (!cell->lcInfo.dffEnable) continue;
+            if (!cell->lcInfo.dffEnable) {
+                cen2index.emplace(nullptr, 0);
+                sr2index.emplace(nullptr, 0);
+                continue;
+            }
 
             assert(cell->lcInfo.clk);
             if (cell->lcInfo.negClk)
@@ -205,7 +211,6 @@ class SAPlacer
                 sr2index.emplace(cell->lcInfo.sr, sr2index.size());
         }
 
-        const std::string delim = ".=>.";
         // I build a matrix of bools sized cM * sN,
         // each bool (x_{i,j}) representing the placement
         // of cell_i into site_j
@@ -214,24 +219,25 @@ class SAPlacer
         for (auto cell : autoplaced) {
             ss.str("");
             ss << cell->name.str(ctx) << ".x";
-            auto x = z3.int_const(ss.str().c_str());
+            auto x = z3.bv_const(ss.str().c_str(), x_bits);
             ss.str("");
             ss << cell->name.str(ctx) << ".y";
-            auto y = z3.int_const(ss.str().c_str());
+            auto y = z3.bv_const(ss.str().c_str(), y_bits);
             ss.str("");
             ss << cell->name.str(ctx) << ".z";
-            auto z = z3.int_const(ss.str().c_str());
-            s.add(x >= 0 && x < ctx->getGridDimX());
-            s.add(y >= 0 && y < ctx->getGridDimY());
-//            s.add(z >= 0 && z < 8);
+            auto z = z3.bv_const(ss.str().c_str(), z_bits);
             cell_to_loc.emplace(cell, Loc_expr{x,y,z});
 
-            // Create a bool variable named cell.delim.bel
-            // for placement of cell_i onto bel_j
+            // FIXME: Why does adding these make it go unsat?
+            //s.add(uge(x, 0) && ult(x, ctx->getGridDimX()));
+            //s.add(uge(y, 0) && ult(y, ctx->getGridDimY()));
+            //s.add(uge(z, 0) && ult(z, ctx->getTileBelDimZ(0,0)));
+
+            // Create an int variable named cell
             ss.str("");
             ss << cell->name.str(ctx);
-            auto p = z3.int_const(ss.str().c_str());
-            s.add(p >= all_bels.b.cursor && p < all_bels.e.cursor);
+            auto p = z3.bv_const(ss.str().c_str(), ceil(log2(all_bels.e.cursor - all_bels.b.cursor)));
+            s.add(uge(x, all_bels.b.cursor) && ult(x, all_bels.e.cursor));
             placement_by_cell.emplace(cell, p);
             placement.push_back(p);
 
@@ -260,12 +266,12 @@ class SAPlacer
                     loc.z = 0;
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock net and polarity
-                    if (clk2index.size() > 1) {
+                    if ((clk2index.size() + nclk2index.size()) > 1) {
                         auto jt = clk_by_tile.find(loc);
                         if (jt == clk_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".clk";
-                            auto c = z3.int_const(ss.str().c_str());
+                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(clk2index.size()+nclk2index.size())));
                             s.add(c >= 0 && c < (clk2index.size()+nclk2index.size()));
                             jt = clk_by_tile.emplace(loc, c).first;
                         }
@@ -282,7 +288,7 @@ class SAPlacer
                         if (jt == cen_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".cen";
-                            auto c = z3.int_const(ss.str().c_str());
+                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(cen2index.size())));
                             s.add(c >= 0 && c < cen2index.size());
                             jt = cen_by_tile.emplace(loc, c).first;
                         }
@@ -290,12 +296,12 @@ class SAPlacer
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
-                    if (!sr2index.empty()) {
+                    if (sr2index.size() > 1) {
                         auto jt = sr_by_tile.find(loc);
                         if (jt == sr_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".sr";
-                            auto c = z3.int_const(ss.str().c_str());
+                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(sr2index.size())));
                             s.add(c >= 0 && c < sr2index.size());
                             jt = sr_by_tile.emplace(loc, c).first;
                         }
@@ -354,10 +360,9 @@ class SAPlacer
                 NPNR_ASSERT(0);
             }
         };
-        unsigned i = 0;
         const model_params_t &p = model_params_t::get(ctx->args);
         auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
-        auto min_slack = z3.int_const("min_slack");
+        auto min_slack = z3.bv_const("min_slack", 32);
         for (auto &net : ctx->nets) {
             auto driver = net.second->driver;
             CellInfo *driver_cell = driver.cell;
@@ -365,40 +370,28 @@ class SAPlacer
                 continue;
             auto driver_loc = cell_to_loc.at(driver_cell);
             for (auto load : net.second->users) {
-                if (load.cell == nullptr)
+                CellInfo *load_cell = load.cell;
+                if (load_cell == nullptr || load_cell == driver_cell)
                     continue;
                 if (load.budget < 0 || load.budget >= period)
                     continue;
-                CellInfo *load_cell = load.cell;
                 if (load_cell->type != id_ICESTORM_LC)
                     continue;
                 /*if (ctx->timing_driven)*/ {
                     auto sink_loc = cell_to_loc.at(load_cell);
 
-                    auto dy = sink_loc.y - driver_loc.y;
                     if (driver.port == id_COUT) {
                         continue; // FIXME
-                        auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
-                        s.add(delay >= 0 && delay <= load.budget);
+                        //auto delay = ite(dy == 0, z3.bv_val(0,32), z3.bv_val(190,32));
+                        //s.add(delay >= 0 && delay <= load.budget);
                     }
                     else {
                         assert(load_cell->type == id_ICESTORM_LC);
-                        auto dx = sink_loc.x - driver_loc.x;
-                        auto adx = abs(dx);
-                        auto ady = abs(dy);
-#if 0
-                        auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood*128), p.model0_offset + p.model0_norm1 * (adx + ady));
-#else
-                        ss.str("");
-                        ss << "d" << i++;
-                        auto delay = z3.int_const(ss.str().c_str());
-                        auto neighbourhood = adx <= 1 && ady <= 1;
-                        s.add((neighbourhood && delay == (p.neighbourhood * 128))
-                              || (!neighbourhood && delay == (p.model0_offset + p.model0_norm1 * (adx + ady))));
-#endif
+                        auto adx = zext(ite(uge(sink_loc.x, driver_loc.x), sink_loc.x - driver_loc.x, driver_loc.x - sink_loc.x), 32-x_bits);
+                        auto ady = zext(ite(uge(sink_loc.y, driver_loc.y), sink_loc.y - driver_loc.y, driver_loc.y - sink_loc.y), 32-y_bits);
+                        auto delay = ite(adx <= 1 && ady <= 1, z3.bv_val(p.neighbourhood * 128, 32), p.model0_offset + p.model0_norm1 * (adx+ady));
                         auto slack = load.budget * 128 - delay;
                         s.add(min_slack <= slack);
-                        //s.add(slack >= 0);
                     }
                 }
             }
@@ -407,7 +400,7 @@ class SAPlacer
 #if 1
         s.add(min_slack >= 0);
 #else
-        s.maximize(min_slack);
+        //s.maximize(min_slack);
         params sp(z3);
         //sp.set("timeout", 120000u);
         s.set(sp);
@@ -444,20 +437,12 @@ class SAPlacer
         model m = s.get_model();
         //std::cout << m << "\n";
         // traversing the model
-        for (unsigned i = 0; i < m.size(); i++) {
-            func_decl v = m[i];
-            // this problem contains only constants
-            assert(v.arity() == 0); 
-            auto e = m.get_const_interp(v);
-            if (e.is_true()) {
-                auto vname = v.name().str();
-                auto it = vname.find(delim);
-                if (it == std::string::npos) continue;
-                auto cell = ctx->cells.at(ctx->id(vname.substr(0, it))).get();
-                auto bel = ctx->getBelByName(ctx->id(vname.substr(it+delim.size(), std::string::npos)));
-                assert(ctx->isValidBelForCell(cell, bel));
-                ctx->bindBel(bel, cell, STRENGTH_WEAK);
-            }
+        BelId bel;
+        for (auto i : placement_by_cell) {
+            auto cell = i.first;
+            bel.index = m[i.second];
+            assert(ctx->isValidBelForCell(cell, bel));
+            ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
 
         for (auto bel : ctx->getBels()) {
