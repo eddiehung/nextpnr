@@ -165,7 +165,11 @@ class SAPlacer
         CpModelBuilder s;
         std::vector<IntVar> placement;
         std::unordered_map<CellInfo*, IntVar> cell_to_placement;
-        std::unordered_map<Loc, IntVar> clk_by_tile, cen_by_tile, sr_by_tile;
+        struct LocVar {
+            IntVar x, y, z;
+        };
+        std::unordered_map<CellInfo*, LocVar> cell_to_loc;
+        std::unordered_map<Loc, std::vector<BoolVar>> clk_by_tile, cen_by_tile, sr_by_tile;
         std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
         cen2index.emplace(nullptr, 0);
         sr2index.emplace(nullptr, 0);
@@ -195,21 +199,29 @@ class SAPlacer
         Domain clk_domain(0, clk2index.size());
         Domain cen_domain(0, cen2index.size());
         Domain sr_domain(0, sr2index.size());
+        Domain x_domain(0, ctx->getGridDimX());
+        Domain y_domain(0, ctx->getGridDimY());
+        Domain xy_domain(0, ctx->getGridDimX() + ctx->getGridDimY());
+        Domain z_domain(0, ctx->getTileBelDimZ(0,0));
+        Domain natural_domain(0, std::numeric_limits<delay_t>::max());
+        Domain integer_domain(std::numeric_limits<delay_t>::min(), std::numeric_limits<delay_t>::max());
         for (auto cell : autoplaced) {
             auto p = s.NewIntVar(bel_domain);
             placement.emplace_back(p);
             cell_to_placement.emplace(cell, p);
-            auto allowed_bels = s.AddAllowedAssignments({p});
+            LocVar l{s.NewIntVar(x_domain), s.NewIntVar(y_domain), s.NewIntVar(z_domain)};
+            auto allowed_bels = s.AddAllowedAssignments({p,l.x,l.y,l.z});
+            cell_to_loc.emplace(cell, std::move(l));
             for (auto bel : all_bels) {
                 // Eliminate any invalid cell-bel pairs
                 if (ctx->getBelType(bel) != cell->type)
                     continue;
                 if (!ctx->isValidBelForCell(cell, bel))
                     continue;
-                allowed_bels.AddTuple({bel.index});
+                auto loc = ctx->getBelLocation(bel);
+                allowed_bels.AddTuple({bel.index,loc.x,loc.y,loc.z});
                 // which are only relevant if DFFs are used
                 if (cell->lcInfo.dffEnable) {
-                    auto loc = ctx->getBelLocation(bel);
                     loc.z = 0;
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock net and polarity
@@ -218,29 +230,47 @@ class SAPlacer
                     s.AddNotEqual(p, bel.index).OnlyEnforceIf(e.Not());
                     if ((clk2index.size() + nclk2index.size()) > 1) {
                         auto jt = clk_by_tile.find(loc);
-                        if (jt == clk_by_tile.end())
-                            jt = clk_by_tile.emplace(loc, s.NewIntVar(clk_domain)).first;
+                        if (jt == clk_by_tile.end()) {
+                            std::vector<BoolVar> one_clk_per_tile;
+                            for (auto i : clk2index)
+                                one_clk_per_tile.push_back(s.NewBoolVar());
+                            for (auto i : nclk2index)
+                                one_clk_per_tile.push_back(s.NewBoolVar());
+                            s.AddEquality(LinearExpr::BooleanSum(one_clk_per_tile), 1);
+                            jt = clk_by_tile.emplace(loc, std::move(one_clk_per_tile)).first;
+                        }
+
                         assert(cell->lcInfo.clk);
                         if (cell->lcInfo.negClk)
-                            s.AddEquality(jt->second, nclk2index.at(cell->lcInfo.clk)).OnlyEnforceIf(e);
+                            s.AddImplication(e, jt->second[nclk2index.at(cell->lcInfo.clk)]);
                         else
-                            s.AddEquality(jt->second, clk2index.at(cell->lcInfo.clk)).OnlyEnforceIf(e);
+                            s.AddImplication(e, jt->second[clk2index.at(cell->lcInfo.clk)]);
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock-enable net (or none at all)
                     if (cen2index.size() > 1) {
                         auto jt = cen_by_tile.find(loc);
-                        if (jt == cen_by_tile.end())
-                            jt = cen_by_tile.emplace(loc, s.NewIntVar(cen_domain)).first;
-                        s.AddEquality(jt->second, cen2index.at(cell->lcInfo.cen)).OnlyEnforceIf(e);
+                        if (jt == cen_by_tile.end()) {
+                            std::vector<BoolVar> one_cen_per_tile;
+                            for (auto i : cen2index)
+                                one_cen_per_tile.push_back(s.NewBoolVar());
+                            s.AddEquality(LinearExpr::BooleanSum(one_cen_per_tile), 1);
+                            jt = cen_by_tile.emplace(loc, std::move(one_cen_per_tile)).first;
+                        }
+                        s.AddImplication(e, jt->second[cen2index.at(cell->lcInfo.cen)]);
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
                     if (sr2index.size() > 1) {
                         auto jt = sr_by_tile.find(loc);
-                        if (jt == sr_by_tile.end())
-                            jt = sr_by_tile.emplace(loc, s.NewIntVar(sr_domain)).first;
-                        s.AddEquality(jt->second, sr2index.at(cell->lcInfo.sr)).OnlyEnforceIf(e);
+                        if (jt == sr_by_tile.end()) {
+                            std::vector<BoolVar> one_sr_per_tile;
+                            for (auto i : sr2index)
+                                one_sr_per_tile.push_back(s.NewBoolVar());
+                            s.AddEquality(LinearExpr::BooleanSum(one_sr_per_tile), 1);
+                            jt = sr_by_tile.emplace(loc, std::move(one_sr_per_tile)).first;
+                        }
+                        s.AddImplication(e, jt->second[sr2index.at(cell->lcInfo.sr)]);
                     }
                 }
             }
@@ -251,103 +281,114 @@ class SAPlacer
 //        // TODO: Enforce constraint that each tile can have at most 32 inputs
 //        // non-global inputs -- this can only be an issue when non-global clk/cen/sr
 //        // nets are used
-//        
-//        struct model_params_t
-//        {
-//            int neighbourhood;
-//        
-//            int model0_offset;
-//            int model0_norm1;
-//        
-//            int model1_offset;
-//            int model1_norm1;
-//            int model1_norm2;
-//            int model1_norm3;
-//        
-//            int model2_offset;
-//            int model2_linear;
-//            int model2_sqrt;
-//        
-//            int delta_local;
-//            int delta_lutffin;
-//            int delta_sp4;
-//            int delta_sp12;
-//        
-//            static const model_params_t &get(const ArchArgs &args)
-//            {
-//                static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
-//                                                          -86797, 89,     3706, -316,   -575,  -158,   -296};
-//        
-//                static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
-//                                                          -309793, 30,     11056, -474,   -856,  -363,   -536};
-//        
-//                static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
-//                                                          -162662, 94,     4705,  -1099,  -1761, -418,   -838};
-//        
-//                if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
-//                    return model_hx8k;
-//        
-//                if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
-//                    return model_lp8k;
-//        
-//                if (args.type == ArchArgs::UP5K)
-//                    return model_up5k;
-//        
-//                NPNR_ASSERT(0);
-//            }
-//        };
-//        unsigned i = 0;
-//        const model_params_t &p = model_params_t::get(ctx->args);
-//        auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
-//        auto min_slack = z3.int_const("min_slack");
-//        for (auto &net : ctx->nets) {
-//            auto driver = net.second->driver;
-//            CellInfo *driver_cell = driver.cell;
-//            if (!driver_cell)
-//                continue;
-//            auto driver_loc = cell_to_loc.at(driver_cell);
-//            for (auto load : net.second->users) {
-//                if (load.cell == nullptr)
-//                    continue;
-//                if (load.budget < 0 || load.budget >= period)
-//                    continue;
-//                CellInfo *load_cell = load.cell;
-//                if (load_cell->type != id_ICESTORM_LC)
-//                    continue;
-//                /*if (ctx->timing_driven)*/ {
-//                    auto sink_loc = cell_to_loc.at(load_cell);
-//
-//                    auto dy = sink_loc.y - driver_loc.y;
-//                    if (driver.port == id_COUT) {
-//                        continue; // FIXME
-//                        auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
-//                        s.add(delay >= 0 && delay <= load.budget);
-//                    }
-//                    else {
-//                        assert(load_cell->type == id_ICESTORM_LC);
-//                        auto dx = sink_loc.x - driver_loc.x;
-//                        auto adx = abs(dx);
-//                        auto ady = abs(dy);
-//#if 0
-//                        auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood*128), p.model0_offset + p.model0_norm1 * (adx + ady));
-//#else
-//                        ss.str("");
-//                        ss << "d" << i++;
-//                        auto delay = z3.int_const(ss.str().c_str());
-//                        auto neighbourhood = adx <= 1 && ady <= 1;
-//                        s.add((neighbourhood && delay == (p.neighbourhood * 128))
-//                              || (!neighbourhood && delay == (p.model0_offset + p.model0_norm1 * (adx + ady))));
-//#endif
-//                        auto slack = load.budget * 128 - delay;
-//                        s.add(min_slack <= slack);
-//                        //s.add(slack >= 0);
-//                    }
-//                }
-//            }
-//        }
-//
-//        s.add(min_slack >= 0);
-//
+        
+        struct model_params_t
+        {
+            int neighbourhood;
+        
+            int model0_offset;
+            int model0_norm1;
+        
+            int model1_offset;
+            int model1_norm1;
+            int model1_norm2;
+            int model1_norm3;
+        
+            int model2_offset;
+            int model2_linear;
+            int model2_sqrt;
+        
+            int delta_local;
+            int delta_lutffin;
+            int delta_sp4;
+            int delta_sp12;
+        
+            static const model_params_t &get(const ArchArgs &args)
+            {
+                static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
+                                                          -86797, 89,     3706, -316,   -575,  -158,   -296};
+        
+                static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
+                                                          -309793, 30,     11056, -474,   -856,  -363,   -536};
+        
+                static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
+                                                          -162662, 94,     4705,  -1099,  -1761, -418,   -838};
+        
+                if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
+                    return model_hx8k;
+        
+                if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
+                    return model_lp8k;
+        
+                if (args.type == ArchArgs::UP5K)
+                    return model_up5k;
+        
+                NPNR_ASSERT(0);
+            }
+        };
+        const model_params_t &p = model_params_t::get(ctx->args);
+        auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
+        auto min_slack = s.NewIntVar(integer_domain);
+        for (auto &net : ctx->nets) {
+            auto driver = net.second->driver;
+            CellInfo *driver_cell = driver.cell;
+            if (!driver_cell)
+                continue;
+            auto driver_loc = cell_to_loc.at(driver_cell);
+            for (auto load : net.second->users) {
+                if (load.cell == nullptr)
+                    continue;
+                if (load.budget < 0 || load.budget >= period)
+                    continue;
+                CellInfo *load_cell = load.cell;
+                if (load_cell->type != id_ICESTORM_LC)
+                    continue;
+                /*if (ctx->timing_driven)*/ {
+                    auto sink_loc = cell_to_loc.at(load_cell);
+
+                    auto neg_y = s.NewBoolVar();
+                    s.AddGreaterThan(sink_loc.y, driver_loc.y).OnlyEnforceIf(neg_y.Not());
+                    s.AddLessOrEqual(sink_loc.y, driver_loc.y).OnlyEnforceIf(neg_y);
+                    //if (driver.port == id_COUT) {
+                    //    continue; // FIXME
+                    //    auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
+                    //    s.add(delay >= 0 && delay <= load.budget);
+                    //}
+                    //else 
+                    {
+                        assert(load_cell->type == id_ICESTORM_LC);
+                        auto neg_x = s.NewBoolVar();
+                        s.AddGreaterThan(sink_loc.x, driver_loc.x).OnlyEnforceIf(neg_x.Not());
+                        s.AddLessOrEqual(sink_loc.x, driver_loc.x).OnlyEnforceIf(neg_x);
+
+                        auto adx = s.NewIntVar(x_domain);
+                        s.AddEquality(adx, LinearExpr::ScalProd({sink_loc.x, driver_loc.x}, {1, -1})).OnlyEnforceIf(neg_x.Not());
+                        s.AddEquality(adx, LinearExpr::ScalProd({sink_loc.x, driver_loc.x}, {-1, 1})).OnlyEnforceIf(neg_x);
+                        auto ady = s.NewIntVar(y_domain);
+                        s.AddEquality(ady, LinearExpr::ScalProd({sink_loc.y, driver_loc.y}, {1, -1})).OnlyEnforceIf(neg_y.Not());
+                        s.AddEquality(ady, LinearExpr::ScalProd({sink_loc.y, driver_loc.y}, {-1, 1})).OnlyEnforceIf(neg_y);
+
+                        auto neighbourhood = s.NewBoolVar();
+                        s.AddLessOrEqual(adx, 1).OnlyEnforceIf(neighbourhood);
+                        s.AddLessOrEqual(ady, 1).OnlyEnforceIf(neighbourhood);
+                        s.AddGreaterThan(adx, 1).OnlyEnforceIf(neighbourhood.Not());
+                        s.AddGreaterThan(ady, 1).OnlyEnforceIf(neighbourhood.Not());
+
+                        auto delay = s.NewIntVar(natural_domain);
+                        s.AddEquality(delay, p.neighbourhood * 128).OnlyEnforceIf(neighbourhood);
+                        auto adx_plus_ady = s.NewIntVar(xy_domain);
+                        s.AddEquality(adx_plus_ady, LinearExpr::Sum({adx, ady}));
+                        s.AddEquality(delay, LinearExpr::ScalProd({adx_plus_ady}, {p.model0_norm1}).AddConstant(p.model0_offset)).OnlyEnforceIf(neighbourhood.Not());
+                        auto slack = s.NewIntVar(integer_domain);
+                        s.AddEquality(slack, LinearExpr::ScalProd({delay}, {-1}).AddConstant(load.budget * 128));
+                        s.AddLessOrEqual(min_slack, slack);
+                    }
+                }
+            }
+        }
+
+        s.AddGreaterOrEqual(min_slack, 0);
+
 //        for (auto cell : autoplaced) {
 //            auto parent = cell->constr_parent;
 //            if (!parent) continue;
@@ -364,6 +405,9 @@ class SAPlacer
 //
 
         Model m;
+        SatParameters params;
+        m.Add(NewSatParameters(params));
+
         boost::timer::cpu_timer timer;
         auto r = SolveWithModel(s, &m);
         std::cout << timer.format() << std::endl;
