@@ -430,7 +430,14 @@ class SAPlacer
             }
         }
 
+#if 1
         s.add(min_slack >= 0);
+#else
+        s.maximize(min_slack);
+        params sp(z3);
+        //sp.set("timeout", 120000u);
+        s.set(sp);
+#endif
 
         for (auto cell : autoplaced) {
             auto parent = cell->constr_parent;
@@ -445,11 +452,6 @@ class SAPlacer
             else
                 s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
-
-        //s.maximize(min_slack);
-        //params sp(z3);
-        //sp.set("timeout", 120000u);
-        //s.set(sp);
 
         if (getenv("Z3_VERBOSITY"))
             set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
