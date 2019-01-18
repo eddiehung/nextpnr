@@ -44,7 +44,8 @@
 #include <boost/timer/timer.hpp>
 #include <fstream>
 
-#include <yices.h>
+#include "z3++.h"
+using namespace z3;
 
 NEXTPNR_NAMESPACE_BEGIN
 
@@ -160,34 +161,40 @@ class SAPlacer
         //   c0...cM (unconstrained) cells
         //   s0...sN (available) sites/bels
 
-        yices_init();
-        context_t *s = yices_new_context(NULL);
-        std::unordered_map<CellInfo*, term_t> placement_by_cell;
-        struct LocVar {
-            term_t x, y, z;
+        context z3;
+        if (getenv("Z3_PARALLEL"))
+            set_param("parallel.enable", true);
+        if (getenv("Z3_RANDOM_SEED"))
+            set_param("smt.random_seed", boost::lexical_cast<int>(getenv("Z3_RANDOM_SEED")));
+        auto z3_logic = getenv("Z3_LOGIC");
+        solver s = z3_logic ? solver{z3, z3_logic} : solver{z3};
+        //optimize s(z3);
+        std::unordered_map<CellInfo*, expr> placement_by_cell;
+        struct Loc_expr {
+            expr x, y, z;
         };
-        std::unordered_map<const CellInfo*, LocVar> cell_to_loc;
+        std::unordered_map<const CellInfo*, Loc_expr> cell_to_loc;
         std::unordered_map<Loc, expr> clk_by_tile, cen_by_tile, sr_by_tile;
         std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
 
-        const unsigned x_bits = std::max<unsigned>(ceil(log2(ctx->getGridDimX())), 4); // FIXME: Unsat if less than 4 bits!?!
-        const unsigned y_bits = std::max<unsigned>(ceil(log2(ctx->getGridDimY())), 4);;
-        const unsigned z_bits = std::max<unsigned>(ceil(log2(ctx->getTileBelDimZ(0,0))), 4);
+        const unsigned x_bits = ceil(log2(ctx->getGridDimX()));
+        const unsigned y_bits = ceil(log2(ctx->getGridDimY()));
+        const unsigned z_bits = ceil(log2(ctx->getTileBelDimZ(0,0)));
 
         std::stringstream ss;
         for (auto &cell : ctx->cells) {
             CellInfo *ci = cell.second.get();
             if (ci->bel != BelId()) {
                 auto loc = ctx->getBelLocation(ci->bel);
-                cell_to_loc.emplace(ci, LocVar{yices_bvconst_uint32(x_bits, loc.x), yices_bvconst_uint32(y_bits, loc.y), yices_bvconst_uint32(z_bits, loc.y)});
+                cell_to_loc.emplace(ci, Loc_expr{z3.bv_val(loc.x,  x_bits), z3.bv_val(loc.y, y_bits), z3.bv_val(loc.z, z_bits)});
             }
         }
 
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
             if (!cell->lcInfo.dffEnable) {
-                cen2index.emplace(nullptr, cen2index.size());
-                sr2index.emplace(nullptr, sr2index.size());
+                cen2index.emplace(nullptr, 0);
+                sr2index.emplace(nullptr, 0);
                 continue;
             }
 
@@ -208,29 +215,34 @@ class SAPlacer
         // each bool (x_{i,j}) representing the placement
         // of cell_i into site_j
         auto all_bels = ctx->getBels();
-        std::vector<term_t> placement;
+        expr_vector placement{z3};
         for (auto cell : autoplaced) {
-            auto x = yices_bvtype_size(x_bits);
-            auto y = yices_bvtype_size(y_bits);
-            auto z = yices_bvtype_size(z_bits);
-            cell_to_loc.emplace(cell, LocVar{x,y,z});
+            ss.str("");
+            ss << cell->name.str(ctx) << ".x";
+            auto x = z3.bv_const(ss.str().c_str(), x_bits);
+            ss.str("");
+            ss << cell->name.str(ctx) << ".y";
+            auto y = z3.bv_const(ss.str().c_str(), y_bits);
+            ss.str("");
+            ss << cell->name.str(ctx) << ".z";
+            auto z = z3.bv_const(ss.str().c_str(), z_bits);
+            cell_to_loc.emplace(cell, Loc_expr{x,y,z});
 
-            s.add(ult(x, ctx->getGridDimX()));
-            s.add(ult(y, ctx->getGridDimY()));
-            s.add(ult(z, ctx->getTileBelDimZ(0,0)));
+            // FIXME: Why does adding these make it go unsat?
+            //s.add(uge(x, 0) && ult(x, ctx->getGridDimX()));
+            //s.add(uge(y, 0) && ult(y, ctx->getGridDimY()));
+            //s.add(uge(z, 0) && ult(z, ctx->getTileBelDimZ(0,0)));
 
             // Create an int variable named cell
             ss.str("");
             ss << cell->name.str(ctx);
             auto p = z3.bv_const(ss.str().c_str(), ceil(log2(all_bels.e.cursor - all_bels.b.cursor)));
-            assert(all_bels.b.cursor == 0);
-            s.add(ult(p, all_bels.e.cursor));
+            s.add(uge(x, all_bels.b.cursor) && ult(x, all_bels.e.cursor));
             placement_by_cell.emplace(cell, p);
             placement.push_back(p);
 
             for (auto bel : all_bels) {
                 auto e = (p == bel.index);
-
                 // Eliminate any invalid cell-bel pairs
                 if (ctx->getBelType(bel) != cell->type) {
                     s.add(!e);
@@ -260,7 +272,7 @@ class SAPlacer
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".clk";
                             auto c = z3.bv_const(ss.str().c_str(), ceil(log2(clk2index.size()+nclk2index.size())));
-                            s.add(ult(c, (clk2index.size()+nclk2index.size())));
+                            s.add(c >= 0 && c < (clk2index.size()+nclk2index.size()));
                             jt = clk_by_tile.emplace(loc, c).first;
                         }
                         assert(cell->lcInfo.clk);
@@ -277,7 +289,7 @@ class SAPlacer
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".cen";
                             auto c = z3.bv_const(ss.str().c_str(), ceil(log2(cen2index.size())));
-                            s.add(ult(c, cen2index.size()));
+                            s.add(c >= 0 && c < cen2index.size());
                             jt = cen_by_tile.emplace(loc, c).first;
                         }
                         s.add(implies(e, jt->second == cen2index.at(cell->lcInfo.cen)));
@@ -290,7 +302,7 @@ class SAPlacer
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".sr";
                             auto c = z3.bv_const(ss.str().c_str(), ceil(log2(sr2index.size())));
-                            s.add(ult(c, sr2index.size()));
+                            s.add(c >= 0 && c < sr2index.size());
                             jt = sr_by_tile.emplace(loc, c).first;
                         }
                         s.add(implies(e, jt->second == sr2index.at(cell->lcInfo.sr)));
@@ -300,7 +312,6 @@ class SAPlacer
         }
         s.add(distinct(placement));
 
-#if 1
         // TODO: Enforce constraint that each tile can have at most 32 inputs
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
@@ -378,7 +389,7 @@ class SAPlacer
                         assert(load_cell->type == id_ICESTORM_LC);
                         auto adx = zext(ite(uge(sink_loc.x, driver_loc.x), sink_loc.x - driver_loc.x, driver_loc.x - sink_loc.x), 32-x_bits);
                         auto ady = zext(ite(uge(sink_loc.y, driver_loc.y), sink_loc.y - driver_loc.y, driver_loc.y - sink_loc.y), 32-y_bits);
-                        auto delay = ite(ule(adx, 1) && ule(ady, 1), z3.bv_val(p.neighbourhood * 128, 32), p.model0_offset + p.model0_norm1 * (adx+ady));
+                        auto delay = ite(adx <= 1 && ady <= 1, z3.bv_val(p.neighbourhood * 128, 32), p.model0_offset + p.model0_norm1 * (adx+ady));
                         auto slack = load.budget * 128 - delay;
                         s.add(min_slack <= slack);
                     }
@@ -408,7 +419,7 @@ class SAPlacer
             else
                 s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
-#endif
+
 
         if (getenv("Z3_OUTPUT_SMT2")) {
             std::ofstream f(getenv("Z3_OUTPUT_SMT2"));
@@ -429,13 +440,10 @@ class SAPlacer
         BelId bel;
         for (auto i : placement_by_cell) {
             auto cell = i.first;
-            bel.index = m.eval(i.second).get_numeral_uint();
+            bel.index = m[i.second];
             assert(ctx->isValidBelForCell(cell, bel));
             ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
-
-        yices_free_context(ctx);
-        yices_exit();
 
         for (auto bel : ctx->getBels()) {
             CellInfo *cell = ctx->getBoundBelCell(bel);
