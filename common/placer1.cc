@@ -228,16 +228,15 @@ class SAPlacer
             auto z = z3.bv_const(ss.str().c_str(), z_bits);
             cell_to_loc.emplace(cell, Loc_expr{x,y,z});
 
-            // FIXME: Why does adding these make it go unsat?
-            //s.add(uge(x, 0) && ult(x, ctx->getGridDimX()));
-            //s.add(uge(y, 0) && ult(y, ctx->getGridDimY()));
-            //s.add(uge(z, 0) && ult(z, ctx->getTileBelDimZ(0,0)));
+            //s.add(/*uge(x, 0) &&*/ ult(x, ctx->getGridDimX()));
+            //s.add(/*uge(y, 0) &&*/ ult(y, ctx->getGridDimY()));
+            //s.add(/*uge(z, 0) &&*/ ult(z, ctx->getTileBelDimZ(0,0)));
 
             // Create an int variable named cell
             ss.str("");
             ss << cell->name.str(ctx);
             auto p = z3.bv_const(ss.str().c_str(), ceil(log2(all_bels.e.cursor - all_bels.b.cursor)));
-            s.add(uge(x, all_bels.b.cursor) && ult(x, all_bels.e.cursor));
+            s.add(/*uge(p, all_bels.b.cursor) &&*/ ult(p, all_bels.e.cursor));
             placement_by_cell.emplace(cell, p);
             placement.push_back(p);
 
@@ -272,7 +271,7 @@ class SAPlacer
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".clk";
                             auto c = z3.bv_const(ss.str().c_str(), ceil(log2(clk2index.size()+nclk2index.size())));
-                            s.add(c >= 0 && c < (clk2index.size()+nclk2index.size()));
+                            s.add(/*c >= 0 &&*/ ult(c, clk2index.size()+nclk2index.size()));
                             jt = clk_by_tile.emplace(loc, c).first;
                         }
                         assert(cell->lcInfo.clk);
@@ -289,7 +288,7 @@ class SAPlacer
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".cen";
                             auto c = z3.bv_const(ss.str().c_str(), ceil(log2(cen2index.size())));
-                            s.add(c >= 0 && c < cen2index.size());
+                            s.add(/*c >= 0 &&*/ ult(c, cen2index.size()));
                             jt = cen_by_tile.emplace(loc, c).first;
                         }
                         s.add(implies(e, jt->second == cen2index.at(cell->lcInfo.cen)));
@@ -302,7 +301,7 @@ class SAPlacer
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".sr";
                             auto c = z3.bv_const(ss.str().c_str(), ceil(log2(sr2index.size())));
-                            s.add(c >= 0 && c < sr2index.size());
+                            s.add(/*c >= 0 &&*/ ult(c, sr2index.size()));
                             jt = sr_by_tile.emplace(loc, c).first;
                         }
                         s.add(implies(e, jt->second == sr2index.at(cell->lcInfo.sr)));
@@ -316,95 +315,97 @@ class SAPlacer
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
         
-        struct model_params_t
-        {
-            int neighbourhood;
-        
-            int model0_offset;
-            int model0_norm1;
-        
-            int model1_offset;
-            int model1_norm1;
-            int model1_norm2;
-            int model1_norm3;
-        
-            int model2_offset;
-            int model2_linear;
-            int model2_sqrt;
-        
-            int delta_local;
-            int delta_lutffin;
-            int delta_sp4;
-            int delta_sp12;
-        
-            static const model_params_t &get(const ArchArgs &args)
+        if (ctx->timing_driven) {
+            struct model_params_t
             {
-                static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
-                                                          -86797, 89,     3706, -316,   -575,  -158,   -296};
-        
-                static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
-                                                          -309793, 30,     11056, -474,   -856,  -363,   -536};
-        
-                static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
-                                                          -162662, 94,     4705,  -1099,  -1761, -418,   -838};
-        
-                if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
-                    return model_hx8k;
-        
-                if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
-                    return model_lp8k;
-        
-                if (args.type == ArchArgs::UP5K)
-                    return model_up5k;
-        
-                NPNR_ASSERT(0);
-            }
-        };
-        const model_params_t &p = model_params_t::get(ctx->args);
-        auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
-        auto min_slack = z3.bv_const("min_slack", 32);
-        for (auto &net : ctx->nets) {
-            auto driver = net.second->driver;
-            CellInfo *driver_cell = driver.cell;
-            if (!driver_cell)
-                continue;
-            auto driver_loc = cell_to_loc.at(driver_cell);
-            for (auto load : net.second->users) {
-                CellInfo *load_cell = load.cell;
-                if (load_cell == nullptr || load_cell == driver_cell)
+                int neighbourhood;
+            
+                int model0_offset;
+                int model0_norm1;
+            
+                int model1_offset;
+                int model1_norm1;
+                int model1_norm2;
+                int model1_norm3;
+            
+                int model2_offset;
+                int model2_linear;
+                int model2_sqrt;
+            
+                int delta_local;
+                int delta_lutffin;
+                int delta_sp4;
+                int delta_sp12;
+            
+                static const model_params_t &get(const ArchArgs &args)
+                {
+                    static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
+                                                              -86797, 89,     3706, -316,   -575,  -158,   -296};
+            
+                    static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
+                                                              -309793, 30,     11056, -474,   -856,  -363,   -536};
+            
+                    static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
+                                                              -162662, 94,     4705,  -1099,  -1761, -418,   -838};
+            
+                    if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
+                        return model_hx8k;
+            
+                    if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
+                        return model_lp8k;
+            
+                    if (args.type == ArchArgs::UP5K)
+                        return model_up5k;
+            
+                    NPNR_ASSERT(0);
+                }
+            };
+            const model_params_t &p = model_params_t::get(ctx->args);
+            auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
+            auto min_slack = z3.bv_const("min_slack", 32);
+            for (auto &net : ctx->nets) {
+                auto driver = net.second->driver;
+                CellInfo *driver_cell = driver.cell;
+                if (!driver_cell)
                     continue;
-                if (load.budget < 0 || load.budget >= period)
-                    continue;
-                if (load_cell->type != id_ICESTORM_LC)
-                    continue;
-                /*if (ctx->timing_driven)*/ {
-                    auto sink_loc = cell_to_loc.at(load_cell);
+                auto driver_loc = cell_to_loc.at(driver_cell);
+                for (auto load : net.second->users) {
+                    CellInfo *load_cell = load.cell;
+                    if (load_cell == nullptr || load_cell == driver_cell)
+                        continue;
+                    if (load.budget < 0 || load.budget >= period)
+                        continue;
+                    if (load_cell->type != id_ICESTORM_LC)
+                        continue;
+                    /*if (ctx->timing_driven)*/ {
+                        auto sink_loc = cell_to_loc.at(load_cell);
 
-                    if (driver.port == id_COUT) {
-                        continue; // FIXME
-                        //auto delay = ite(dy == 0, z3.bv_val(0,32), z3.bv_val(190,32));
-                        //s.add(delay >= 0 && delay <= load.budget);
-                    }
-                    else {
-                        assert(load_cell->type == id_ICESTORM_LC);
-                        auto adx = zext(ite(uge(sink_loc.x, driver_loc.x), sink_loc.x - driver_loc.x, driver_loc.x - sink_loc.x), 32-x_bits);
-                        auto ady = zext(ite(uge(sink_loc.y, driver_loc.y), sink_loc.y - driver_loc.y, driver_loc.y - sink_loc.y), 32-y_bits);
-                        auto delay = ite(adx <= 1 && ady <= 1, z3.bv_val(p.neighbourhood * 128, 32), p.model0_offset + p.model0_norm1 * (adx+ady));
-                        auto slack = load.budget * 128 - delay;
-                        s.add(min_slack <= slack);
+                        if (driver.port == id_COUT) {
+                            continue; // FIXME
+                            //auto delay = ite(dy == 0, z3.bv_val(0,32), z3.bv_val(190,32));
+                            //s.add(delay >= 0 && delay <= load.budget);
+                        }
+                        else {
+                            assert(load_cell->type == id_ICESTORM_LC);
+                            auto adx = zext(ite(uge(sink_loc.x, driver_loc.x), sink_loc.x - driver_loc.x, driver_loc.x - sink_loc.x), 32-x_bits);
+                            auto ady = zext(ite(uge(sink_loc.y, driver_loc.y), sink_loc.y - driver_loc.y, driver_loc.y - sink_loc.y), 32-y_bits);
+                            auto delay = ite(adx <= 1 && ady <= 1, z3.bv_val(p.neighbourhood * 128, 32), p.model0_offset + p.model0_norm1 * (adx+ady));
+                            auto slack = load.budget * 128 - delay;
+                            s.add(min_slack <= slack);
+                        }
                     }
                 }
             }
-        }
 
 #if 1
-        s.add(min_slack >= 0);
+            s.add(min_slack >= 0);
 #else
-        //s.maximize(min_slack);
-        params sp(z3);
-        //sp.set("timeout", 120000u);
-        s.set(sp);
+            //s.maximize(min_slack);
+            params sp(z3);
+            //sp.set("timeout", 120000u);
+            s.set(sp);
 #endif
+        }
 
         for (auto cell : autoplaced) {
             auto parent = cell->constr_parent;
@@ -440,7 +441,7 @@ class SAPlacer
         BelId bel;
         for (auto i : placement_by_cell) {
             auto cell = i.first;
-            bel.index = m[i.second];
+            bel.index = m.eval(i.second).get_numeral_int();
             assert(ctx->isValidBelForCell(cell, bel));
             ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
