@@ -389,7 +389,7 @@ class SAPlacer
                             assert(load_cell->type == id_ICESTORM_LC);
                             auto adx = zext(ite(uge(sink_loc.x, driver_loc.x), sink_loc.x - driver_loc.x, driver_loc.x - sink_loc.x), 32-x_bits);
                             auto ady = zext(ite(uge(sink_loc.y, driver_loc.y), sink_loc.y - driver_loc.y, driver_loc.y - sink_loc.y), 32-y_bits);
-                            auto delay = ite(adx <= 1 && ady <= 1, z3.bv_val(p.neighbourhood * 128, 32), p.model0_offset + p.model0_norm1 * (adx+ady));
+                            auto delay = ite(ule(adx, 1) && ule(ady, 1), z3.bv_val(p.neighbourhood * 128, 32), p.model0_offset + p.model0_norm1 * (adx+ady));
                             auto slack = load.budget * 128 - delay;
                             s.add(min_slack <= slack);
                         }
