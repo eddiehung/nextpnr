@@ -167,12 +167,14 @@ class SAPlacer
             term_t x, y, z;
         };
         std::unordered_map<const CellInfo*, LocVar> cell_to_loc;
-        std::unordered_map<Loc, expr> clk_by_tile, cen_by_tile, sr_by_tile;
+        std::unordered_map<Loc, term_t> clk_by_tile, cen_by_tile, sr_by_tile;
         std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
 
         const unsigned x_bits = std::max<unsigned>(ceil(log2(ctx->getGridDimX())), 4); // FIXME: Unsat if less than 4 bits!?!
         const unsigned y_bits = std::max<unsigned>(ceil(log2(ctx->getGridDimY())), 4);;
         const unsigned z_bits = std::max<unsigned>(ceil(log2(ctx->getTileBelDimZ(0,0))), 4);
+        auto all_bels = ctx->getBels();
+        const unsigned bel_bits = std::max<unsigned>(ceil(log2(all_bels.e.cursor - all_bels.b.cursor)), 4);
 
         std::stringstream ss;
         for (auto &cell : ctx->cells) {
@@ -207,48 +209,45 @@ class SAPlacer
         // I build a matrix of bools sized cM * sN,
         // each bool (x_{i,j}) representing the placement
         // of cell_i into site_j
-        auto all_bels = ctx->getBels();
         std::vector<term_t> placement;
         for (auto cell : autoplaced) {
-            auto x = yices_bvtype_size(x_bits);
-            auto y = yices_bvtype_size(y_bits);
-            auto z = yices_bvtype_size(z_bits);
+            auto x = yices_new_uninterpreted_term(yices_bv_type(x_bits));
+            auto y = yices_new_uninterpreted_term(yices_bv_type(y_bits));
+            auto z = yices_new_uninterpreted_term(yices_bv_type(z_bits));
             cell_to_loc.emplace(cell, LocVar{x,y,z});
 
-            s.add(ult(x, ctx->getGridDimX()));
-            s.add(ult(y, ctx->getGridDimY()));
-            s.add(ult(z, ctx->getTileBelDimZ(0,0)));
+            yices_assert_formula(s, yices_bvlt_atom(x, yices_bvconst_uint32(yices_term_bitsize(x), ctx->getGridDimX())));
+            yices_assert_formula(s, yices_bvlt_atom(y, yices_bvconst_uint32(yices_term_bitsize(y), ctx->getGridDimY())));
+            yices_assert_formula(s, yices_bvlt_atom(z, yices_bvconst_uint32(yices_term_bitsize(z), ctx->getTileBelDimZ(0,0))));
 
-            // Create an int variable named cell
-            ss.str("");
-            ss << cell->name.str(ctx);
-            auto p = z3.bv_const(ss.str().c_str(), ceil(log2(all_bels.e.cursor - all_bels.b.cursor)));
+            auto p = yices_new_uninterpreted_term(yices_bv_type(bel_bits));
+
             assert(all_bels.b.cursor == 0);
-            s.add(ult(p, all_bels.e.cursor));
+            yices_assert_formula(s, yices_bvlt_atom(p, yices_bvconst_uint32(yices_term_bitsize(p), all_bels.e.cursor)));
             placement_by_cell.emplace(cell, p);
             placement.push_back(p);
 
             for (auto bel : all_bels) {
-                auto e = (p == bel.index);
+                auto e = yices_bveq_atom(p, yices_bvconst_uint32(yices_term_bitsize(p), bel.index));
 
                 // Eliminate any invalid cell-bel pairs
                 if (ctx->getBelType(bel) != cell->type) {
-                    s.add(!e);
+                    yices_assert_formula(s, yices_not(e));
                     continue;
                 }
                 if (!ctx->isValidBelForCell(cell, bel)) {
-                    s.add(!e);
+                    yices_assert_formula(s, yices_not(e));
                     continue;
                 }
                 // Add it to a vector that will later enforce the
                 // constraint that each cell must be placed onto
                 // one and only one bel
                 auto loc = ctx->getBelLocation(bel);
-                s.add(implies(e, x == loc.x));
-                s.add(implies(e, y == loc.y));
+                yices_assert_formula(s, yices_implies(e, yices_bveq_atom(x, yices_bvconst_uint32(yices_term_bitsize(x), loc.x))));
+                yices_assert_formula(s, yices_implies(e, yices_bveq_atom(y, yices_bvconst_uint32(yices_term_bitsize(y), loc.y))));
 //                if (cell->type == id_ICESTORM_LC)
 //                    s.add(implies(e, z == loc.z));
-                // Now encode the tile constraints,
+                // Now encode the tile constrainty,
                 // which are only relevant if DFFs are used
                 if (cell->lcInfo.dffEnable) {
                     loc.z = 0;
@@ -257,50 +256,46 @@ class SAPlacer
                     if ((clk2index.size() + nclk2index.size()) > 1) {
                         auto jt = clk_by_tile.find(loc);
                         if (jt == clk_by_tile.end()) {
-                            ss.str("");
-                            ss << "x" << loc.x << "y" << loc.y << ".clk";
-                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(clk2index.size()+nclk2index.size())));
-                            s.add(ult(c, (clk2index.size()+nclk2index.size())));
+                            auto c = yices_new_uninterpreted_term(yices_bv_type(ceil(log2(clk2index.size()+nclk2index.size()))));
+                            yices_assert_formula(s, yices_bvlt_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), clk2index.size()+nclk2index.size())));
                             jt = clk_by_tile.emplace(loc, c).first;
                         }
                         assert(cell->lcInfo.clk);
+                        unsigned i = 0;
                         if (cell->lcInfo.negClk)
-                            s.add(implies(e, jt->second == nclk2index.at(cell->lcInfo.clk)));
+                            i = nclk2index.at(cell->lcInfo.clk);
                         else
-                            s.add(implies(e, jt->second == clk2index.at(cell->lcInfo.clk)));
+                            i = clk2index.at(cell->lcInfo.clk);
+                        yices_assert_formula(s, yices_implies(e, yices_bveq_atom(jt->second, yices_bvconst_uint32(yices_term_bitsize(jt->second), i))));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock-enable net (or none at all)
                     if (cen2index.size() > 1) {
                         auto jt = cen_by_tile.find(loc);
                         if (jt == cen_by_tile.end()) {
-                            ss.str("");
-                            ss << "x" << loc.x << "y" << loc.y << ".cen";
-                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(cen2index.size())));
-                            s.add(ult(c, cen2index.size()));
+                            auto c = yices_new_uninterpreted_term(yices_bv_type(ceil(log2(cen2index.size()))));
+                            yices_assert_formula(s, yices_bvlt_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), cen2index.size())));
                             jt = cen_by_tile.emplace(loc, c).first;
                         }
-                        s.add(implies(e, jt->second == cen2index.at(cell->lcInfo.cen)));
+                        yices_assert_formula(s, yices_implies(e, yices_bveq_atom(jt->second, yices_bvconst_uint32(yices_term_bitsize(jt->second), cen2index.at(cell->lcInfo.cen)))));
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
                     if (sr2index.size() > 1) {
                         auto jt = sr_by_tile.find(loc);
                         if (jt == sr_by_tile.end()) {
-                            ss.str("");
-                            ss << "x" << loc.x << "y" << loc.y << ".sr";
-                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(sr2index.size())));
-                            s.add(ult(c, sr2index.size()));
+                            auto c = yices_new_uninterpreted_term(yices_bv_type(ceil(log2(sr2index.size()))));
+                            yices_assert_formula(s, yices_bvlt_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), sr2index.size())));
                             jt = sr_by_tile.emplace(loc, c).first;
                         }
-                        s.add(implies(e, jt->second == sr2index.at(cell->lcInfo.sr)));
+                        yices_assert_formula(s, yices_implies(e, yices_bveq_atom(jt->second, yices_bvconst_uint32(yices_term_bitsize(jt->second), sr2index.at(cell->lcInfo.sr)))));
                     }
                 }
             }
         }
-        s.add(distinct(placement));
+        yices_assert_formula(s, yices_distinct(placement.size(), placement.data()));
 
-#if 1
+#if 0
         // TODO: Enforce constraint that each tile can have at most 32 inputs
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
@@ -410,50 +405,47 @@ class SAPlacer
         }
 #endif
 
-        if (getenv("Z3_OUTPUT_SMT2")) {
-            std::ofstream f(getenv("Z3_OUTPUT_SMT2"));
-            f << s.to_smt2();
-            f.close();
-        }
-
-        if (getenv("Z3_VERBOSITY"))
-            set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
+        //if (getenv("Z3_VERBOSITY"))
+        //    set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
         boost::timer::cpu_timer timer;
-        std::cout << s.check() << "\n";
+        assert(yices_check_context(s, NULL) == STATUS_SAT);
         std::cout << timer.format() << std::endl;
-        std::cout << s.statistics() << "\n";
+        //std::cout << s.statistics() << "\n";
 
-        model m = s.get_model();
-        //std::cout << m << "\n";
-        // traversing the model
+        auto m = yices_get_model(s, true);
         BelId bel;
+        int32_t *bel_value = new int32_t [bel_bits];
         for (auto i : placement_by_cell) {
             auto cell = i.first;
-            bel.index = m.eval(i.second).get_numeral_uint();
+            bel.index = 0;
+            yices_get_bv_value(m, i.second, bel_value);
+            for (auto j = 0; j < bel_bits; ++j)
+                bel.index |= (bel_value[j] << j);
             assert(ctx->isValidBelForCell(cell, bel));
             ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
+        delete bel_value;
 
-        yices_free_context(ctx);
-        yices_exit();
+        //yices_free_context(ctx);
+        //yices_exit();
 
-        for (auto bel : ctx->getBels()) {
-            CellInfo *cell = ctx->getBoundBelCell(bel);
-            if (!ctx->isBelLocationValid(bel)) {
-                std::string cell_text = "no cell";
-                if (cell != nullptr)
-                    cell_text = std::string("cell '") + ctx->nameOf(cell) + "'";
-                if (ctx->force) {
-                    log_warning("post-placement validity check failed for Bel '%s' "
-                                "(%s)\n",
-                                ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
-                } else {
-                    log_error("post-placement validity check failed for Bel '%s' "
-                              "(%s)\n",
-                              ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
-                }
-            }
-        }
+        //for (auto bel : ctx->getBels()) {
+        //    CellInfo *cell = ctx->getBoundBelCell(bel);
+        //    if (!ctx->isBelLocationValid(bel)) {
+        //        std::string cell_text = "no cell";
+        //        if (cell != nullptr)
+        //            cell_text = std::string("cell '") + ctx->nameOf(cell) + "'";
+        //        if (ctx->force) {
+        //            log_warning("post-placement validity check failed for Bel '%s' "
+        //                        "(%s)\n",
+        //                        ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
+        //        } else {
+        //            log_error("post-placement validity check failed for Bel '%s' "
+        //                      "(%s)\n",
+        //                      ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
+        //        }
+        //    }
+        //}
 
 #if 0
         for (auto cell : autoplaced) {

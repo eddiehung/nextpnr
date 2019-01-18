@@ -249,7 +249,7 @@ foreach (family ${ARCH})
             target_link_libraries(${target} LINK_PUBLIC ${PYTHON_LIBRARIES})
         endif()
 
-        target_link_libraries(${target} LINK_PUBLIC z3)
+        target_link_libraries(${target} LINK_PUBLIC yices)
     endforeach (target)
 endforeach (family)
 
