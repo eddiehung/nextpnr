@@ -426,8 +426,8 @@ class SAPlacer
         }
         delete bel_value;
 
-        //yices_free_context(ctx);
-        //yices_exit();
+        yices_free_context(s);
+        yices_exit();
 
         //for (auto bel : ctx->getBels()) {
         //    CellInfo *cell = ctx->getBoundBelCell(bel);
