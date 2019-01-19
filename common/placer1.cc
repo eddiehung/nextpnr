@@ -176,8 +176,6 @@ class SAPlacer
         std::unordered_map<const CellInfo*, Loc_expr> cell_to_loc;
         std::unordered_map<Loc, expr> clk_by_tile, cen_by_tile, sr_by_tile;
         std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
-        cen2index.emplace(nullptr, 0);
-        sr2index.emplace(nullptr, 0);
 
         std::stringstream ss;
         for (auto &cell : ctx->cells) {
@@ -190,7 +188,11 @@ class SAPlacer
 
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
-            if (!cell->lcInfo.dffEnable) continue;
+            if (!cell->lcInfo.dffEnable) {
+                cen2index.emplace(nullptr, 0);
+                sr2index.emplace(nullptr, 0);
+                continue;
+            }
 
             assert(cell->lcInfo.clk);
             if (cell->lcInfo.negClk)
@@ -260,7 +262,7 @@ class SAPlacer
                     loc.z = 0;
                     // Constraint that all DFF cells in the same tile must
                     // have the same clock net and polarity
-                    if (clk2index.size() > 1) {
+                    if ((clk2index.size() + nclk2index.size()) > 1) {
                         auto jt = clk_by_tile.find(loc);
                         if (jt == clk_by_tile.end()) {
                             ss.str("");
@@ -290,7 +292,7 @@ class SAPlacer
                     }
                     // Constraint that all DFF cells in the same tile must
                     // have the same set-reset net (or none at all)
-                    if (!sr2index.empty()) {
+                    if (sr2index.size() > 1) {
                         auto jt = sr_by_tile.find(loc);
                         if (jt == sr_by_tile.end()) {
                             ss.str("");
@@ -310,108 +312,112 @@ class SAPlacer
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
         
-        struct model_params_t
-        {
-            int neighbourhood;
-        
-            int model0_offset;
-            int model0_norm1;
-        
-            int model1_offset;
-            int model1_norm1;
-            int model1_norm2;
-            int model1_norm3;
-        
-            int model2_offset;
-            int model2_linear;
-            int model2_sqrt;
-        
-            int delta_local;
-            int delta_lutffin;
-            int delta_sp4;
-            int delta_sp12;
-        
-            static const model_params_t &get(const ArchArgs &args)
-            {
-                static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
-                                                          -86797, 89,     3706, -316,   -575,  -158,   -296};
-        
-                static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
-                                                          -309793, 30,     11056, -474,   -856,  -363,   -536};
-        
-                static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
-                                                          -162662, 94,     4705,  -1099,  -1761, -418,   -838};
-        
-                if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
-                    return model_hx8k;
-        
-                if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
-                    return model_lp8k;
-        
-                if (args.type == ArchArgs::UP5K)
-                    return model_up5k;
-        
-                NPNR_ASSERT(0);
-            }
-        };
-        unsigned i = 0;
-        const model_params_t &p = model_params_t::get(ctx->args);
-        auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
         auto min_slack = z3.int_const("min_slack");
-        for (auto &net : ctx->nets) {
-            auto driver = net.second->driver;
-            CellInfo *driver_cell = driver.cell;
-            if (!driver_cell)
-                continue;
-            auto driver_loc = cell_to_loc.at(driver_cell);
-            for (auto load : net.second->users) {
-                if (load.cell == nullptr)
+        if (ctx->timing_driven) {
+            struct model_params_t
+            {
+                int neighbourhood;
+            
+                int model0_offset;
+                int model0_norm1;
+            
+                int model1_offset;
+                int model1_norm1;
+                int model1_norm2;
+                int model1_norm3;
+            
+                int model2_offset;
+                int model2_linear;
+                int model2_sqrt;
+            
+                int delta_local;
+                int delta_lutffin;
+                int delta_sp4;
+                int delta_sp12;
+            
+                static const model_params_t &get(const ArchArgs &args)
+                {
+                    static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
+                                                              -86797, 89,     3706, -316,   -575,  -158,   -296};
+            
+                    static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
+                                                              -309793, 30,     11056, -474,   -856,  -363,   -536};
+            
+                    static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
+                                                              -162662, 94,     4705,  -1099,  -1761, -418,   -838};
+            
+                    if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
+                        return model_hx8k;
+            
+                    if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
+                        return model_lp8k;
+            
+                    if (args.type == ArchArgs::UP5K)
+                        return model_up5k;
+            
+                    NPNR_ASSERT(0);
+                }
+            };
+            const model_params_t &p = model_params_t::get(ctx->args);
+            auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
+            unsigned i = 0;
+            for (auto &net : ctx->nets) {
+                auto driver = net.second->driver;
+                CellInfo *driver_cell = driver.cell;
+                if (!driver_cell)
                     continue;
-                if (load.budget < 0 || load.budget >= period)
-                    continue;
-                CellInfo *load_cell = load.cell;
-                if (load_cell->type != id_ICESTORM_LC)
-                    continue;
-                /*if (ctx->timing_driven)*/ {
-                    auto sink_loc = cell_to_loc.at(load_cell);
-
-                    auto dy = sink_loc.y - driver_loc.y;
-                    if (driver.port == id_COUT) {
-                        continue; // FIXME
-                        auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
-                        s.add(delay >= 0 && delay <= load.budget);
-                    }
-                    else {
-                        assert(load_cell->type == id_ICESTORM_LC);
-                        auto dx = sink_loc.x - driver_loc.x;
-                        auto adx = abs(dx);
-                        auto ady = abs(dy);
-#if 0
-                        auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood*128), p.model0_offset + p.model0_norm1 * (adx + ady));
+                auto driver_loc = cell_to_loc.at(driver_cell);
+                for (auto load : net.second->users) {
+                    CellInfo *load_cell = load.cell;
+                    if (load_cell == nullptr || load_cell == driver_cell)
+                        continue;
+                    if (load.budget < 0 || load.budget >= period)
+                        continue;
+                    if (load_cell->type != id_ICESTORM_LC)
+                        continue;
+                    /*if (ctx->timing_driven)*/ {
+                        auto sink_loc = cell_to_loc.at(load_cell);
+    
+                        auto dy = sink_loc.y - driver_loc.y;
+                        if (driver.port == id_COUT) {
+                            continue; // FIXME
+                            auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
+                            s.add(delay >= 0 && delay <= load.budget);
+                        }
+                        else {
+                            assert(load_cell->type == id_ICESTORM_LC);
+                            auto dx = sink_loc.x - driver_loc.x;
+                            auto adx = abs(dx);
+                            auto ady = abs(dy);
+                            //auto adx = ite(dx < 0, -dx, dx);
+                            //auto ady = ite(dy < 0, -dy, dy);
+#if 1
+                            auto delay = ite(adx <= 1 && ady <= 1, z3.int_val(p.neighbourhood*128), p.model0_offset + p.model0_norm1 * (adx + ady));
 #else
-                        ss.str("");
-                        ss << "d" << i++;
-                        auto delay = z3.int_const(ss.str().c_str());
-                        auto neighbourhood = adx <= 1 && ady <= 1;
-                        s.add((neighbourhood && delay == (p.neighbourhood * 128))
-                              || (!neighbourhood && delay == (p.model0_offset + p.model0_norm1 * (adx + ady))));
+                            ss.str("");
+                            ss << "d" << i++;
+                            auto delay = z3.int_const(ss.str().c_str());
+
+                            auto neighbourhood = adx <= 1 && ady <= 1;
+                            s.add(implies(neighbourhood, delay == (p.neighbourhood * 128)));
+                            s.add(implies(!neighbourhood, delay == (p.model0_offset + p.model0_norm1 * (adx + ady))));
 #endif
-                        auto slack = load.budget * 128 - delay;
-                        s.add(min_slack <= slack);
-                        //s.add(slack >= 0);
+                            auto slack = load.budget * 128 - delay;
+                            s.add(min_slack <= slack);
+                        }
                     }
                 }
             }
-        }
 
 #if 1
-        s.add(min_slack >= 0);
+            s.add(min_slack >= 0);
 #else
-        s.maximize(min_slack);
-        params sp(z3);
-        //sp.set("timeout", 120000u);
-        s.set(sp);
+            s.maximize(min_slack);
+            params sp(z3);
+            //sp.set("timeout", 120000u);
+            s.set(sp);
 #endif
+        }
 
         for (auto cell : autoplaced) {
             auto parent = cell->constr_parent;
@@ -427,7 +433,6 @@ class SAPlacer
                 s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
 
-
         if (getenv("Z3_OUTPUT_SMT2")) {
             std::ofstream f(getenv("Z3_OUTPUT_SMT2"));
             f << s.to_smt2();
@@ -442,6 +447,7 @@ class SAPlacer
         std::cout << s.statistics() << "\n";
 
         model m = s.get_model();
+        std::cout << m.eval(min_slack) << std::endl;
         //std::cout << m << "\n";
         // traversing the model
         for (unsigned i = 0; i < m.size(); i++) {
