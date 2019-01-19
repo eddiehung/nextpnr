@@ -169,7 +169,7 @@ class SAPlacer
         auto z3_logic = getenv("Z3_LOGIC");
         solver s = z3_logic ? solver{z3, z3_logic} : solver{z3};
         //optimize s(z3);
-        std::unordered_map<CellInfo*, expr_vector> placement_by_cell;
+        std::unordered_map<CellInfo*, expr> placement_by_cell;
         struct Loc_expr {
             expr x, y, z;
         };
@@ -211,42 +211,11 @@ class SAPlacer
                 sr2index.emplace(cell->lcInfo.sr, sr2index.size());
         }
 
-        auto exactly1 = [&z3](const expr_vector &v) {
-            /*static*/ std::function<std::pair<expr,expr>(const expr_vector&,unsigned,unsigned)> f = [&z3,&f](const expr_vector &v, unsigned b, unsigned e) {
-                int dist = e - b;
-                assert(dist > 0);
-                if (dist == 1) return std::make_pair(v[b], z3.bv_val(0,1));
-                if (dist == 2) return std::make_pair(v[b] ^ v[b+1], v[b] & v[b+1]);
-                auto h = b + dist / 2;
-                assert(h > b);
-                auto l = f(v, b, h);
-                auto r = f(v, h, e);
-                return std::make_pair(l.first ^ r.first, l.second | r.second | (l.first & r.first));
-            };
-            auto r = f(v, 0, v.size());
-            return r.second == z3.bv_val(0,1) && r.first == z3.bv_val(1,1);
-        };
-
-        auto exactly0 = [&z3](const expr_vector &v) {
-            /*static*/ std::function<expr(const expr_vector&,unsigned,unsigned)> f = [&f](const expr_vector &v, unsigned b, unsigned e) {
-                int dist = e - b;
-                assert(dist > 0);
-                if (dist == 1) return v[b];
-                if (dist == 2) return v[b] | v[b+1];
-                auto h = b + dist / 2;
-                assert(h > b);
-                return f(v, b, h) | f(v, h, e);
-            };
-            return f(v, 0, v.size()) == z3.bv_val(0,1);
-        };
-
-        const std::string delim{".->."};
-
         // I build a matrix of bools sized cM * sN,
         // each bool (x_{i,j}) representing the placement
         // of cell_i into site_j
         auto all_bels = ctx->getBels();
-        std::unordered_map<BelId, expr_vector> placement_by_bel;
+        expr_vector placement{z3};
         for (auto cell : autoplaced) {
             ss.str("");
             ss << cell->name.str(ctx) << ".x";
@@ -263,23 +232,25 @@ class SAPlacer
             //s.add(/*uge(y, 0) &&*/ ult(y, ctx->getGridDimY()));
             //s.add(/*uge(z, 0) &&*/ ult(z, ctx->getTileBelDimZ(0,0)));
 
+            // Create an int variable named cell
+            ss.str("");
+            ss << cell->name.str(ctx);
+            auto p = z3.bv_const(ss.str().c_str(), ceil(log2(all_bels.e.cursor - all_bels.b.cursor)));
+            s.add(/*uge(p, all_bels.b.cursor) &&*/ ult(p, all_bels.e.cursor));
+            placement_by_cell.emplace(cell, p);
+            placement.push_back(p);
+
             for (auto bel : all_bels) {
+                auto e = (p == bel.index);
                 // Eliminate any invalid cell-bel pairs
-                if (ctx->getBelType(bel) != cell->type)
+                if (ctx->getBelType(bel) != cell->type) {
+                    s.add(!e);
                     continue;
-                if (!ctx->isValidBelForCell(cell, bel))
+                }
+                if (!ctx->isValidBelForCell(cell, bel)) {
+                    s.add(!e);
                     continue;
-                // Create an int variable named cell
-                ss.str("");
-                ss << cell->name.str(ctx);
-                ss << delim;
-                ss << ctx->getBelName(bel).str(ctx);
-                auto p = z3.bv_const(ss.str().c_str(), 1);
-                auto e = p == z3.bv_val(1,1);
-                auto it = placement_by_cell.emplace(cell, expr_vector{z3}).first;
-                it->second.push_back(p);
-                auto jt = placement_by_bel.emplace(bel, expr_vector{z3}).first;
-                jt->second.push_back(p);
+                }
                 // Add it to a vector that will later enforce the
                 // constraint that each cell must be placed onto
                 // one and only one bel
@@ -299,8 +270,8 @@ class SAPlacer
                         if (jt == clk_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".clk";
-                            auto c = z3.bv_const(ss.str().c_str(), std::max<int>(4,ceil(log2(clk2index.size()+nclk2index.size()))));
-                            s.add(/*c >= 0 &&*/ ult(c,  clk2index.size()+nclk2index.size()));
+                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(clk2index.size()+nclk2index.size())));
+                            s.add(/*c >= 0 &&*/ ult(c, clk2index.size()+nclk2index.size()));
                             jt = clk_by_tile.emplace(loc, c).first;
                         }
                         assert(cell->lcInfo.clk);
@@ -316,7 +287,7 @@ class SAPlacer
                         if (jt == cen_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".cen";
-                            auto c = z3.bv_const(ss.str().c_str(), std::max<int>(4,ceil(log2(cen2index.size()))));
+                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(cen2index.size())));
                             s.add(/*c >= 0 &&*/ ult(c, cen2index.size()));
                             jt = cen_by_tile.emplace(loc, c).first;
                         }
@@ -329,20 +300,16 @@ class SAPlacer
                         if (jt == sr_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".sr";
-                            auto c = z3.bv_const(ss.str().c_str(), std::max<int>(4, ceil(log2(sr2index.size()))));
-                            //s.add(/*c >= 0 &&*/ ult(c, sr2index.size()));
-                            s.add(/*c >= 0 &&*/ c < sr2index.size());
+                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(sr2index.size())));
+                            s.add(/*c >= 0 &&*/ ult(c, sr2index.size()));
                             jt = sr_by_tile.emplace(loc, c).first;
                         }
                         s.add(implies(e, jt->second == sr2index.at(cell->lcInfo.sr)));
                     }
                 }
             }
-            s.add(exactly1(placement_by_cell.at(cell)));
         }
-
-        for (auto i : placement_by_bel)
-            s.add(exactly0(i.second) || exactly1(i.second));
+        s.add(distinct(placement));
 
         // TODO: Enforce constraint that each tile can have at most 32 inputs
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
@@ -454,6 +421,7 @@ class SAPlacer
                 s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
 
+
         if (getenv("Z3_OUTPUT_SMT2")) {
             std::ofstream f(getenv("Z3_OUTPUT_SMT2"));
             f << s.to_smt2();
@@ -470,22 +438,12 @@ class SAPlacer
         model m = s.get_model();
         //std::cout << m << "\n";
         // traversing the model
-        for (const auto &i : placement_by_cell) {
+        BelId bel;
+        for (auto i : placement_by_cell) {
             auto cell = i.first;
-            const auto &bels = i.second;
-            for (auto j = 0u; j < bels.size(); ++j) {
-                if (m.eval(bels[j] == z3.bv_val(1,1)).is_false()) continue;
-                auto n = bels[j].decl().name().str();
-                auto it = n.find(delim);
-                assert(it != std::string::npos);
-                auto bel = ctx->getBelByName(ctx->id(n.substr(it+delim.size(), std::string::npos)));
-                assert(bel != BelId());
-                if (ctx->debug)
-                    std::cout << bels[j].decl().name() << std::endl;
-                assert(ctx->isValidBelForCell(cell, bel));
-                ctx->bindBel(bel, cell, STRENGTH_WEAK);
-                break;
-            }
+            bel.index = m.eval(i.second).get_numeral_int();
+            assert(ctx->isValidBelForCell(cell, bel));
+            ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
 
         for (auto bel : ctx->getBels()) {
