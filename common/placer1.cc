@@ -255,10 +255,15 @@ class SAPlacer
                 // constraint that each cell must be placed onto
                 // one and only one bel
                 auto loc = ctx->getBelLocation(bel);
+                if (cell->constr_abs_z) {
+                    if (cell->constr_z != loc.z) {
+                        s.add(!e);
+                        continue;
+                    }
+                }
                 s.add(implies(e, x == loc.x));
                 s.add(implies(e, y == loc.y));
-//                if (cell->type == id_ICESTORM_LC)
-//                    s.add(implies(e, z == loc.z));
+                s.add(implies(e, z == loc.z));
                 // Now encode the tile constraints,
                 // which are only relevant if DFFs are used
                 if (cell->lcInfo.dffEnable) {
@@ -270,7 +275,7 @@ class SAPlacer
                         if (jt == clk_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".clk";
-                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(clk2index.size()+nclk2index.size())));
+                            auto c = z3.bv_const(ss.str().c_str(), std::max<int>(4,ceil(log2(clk2index.size()+nclk2index.size()))));
                             s.add(/*c >= 0 &&*/ ult(c, clk2index.size()+nclk2index.size()));
                             jt = clk_by_tile.emplace(loc, c).first;
                         }
@@ -287,7 +292,7 @@ class SAPlacer
                         if (jt == cen_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".cen";
-                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(cen2index.size())));
+                            auto c = z3.bv_const(ss.str().c_str(), std::max<int>(4,ceil(log2(cen2index.size()))));
                             s.add(/*c >= 0 &&*/ ult(c, cen2index.size()));
                             jt = cen_by_tile.emplace(loc, c).first;
                         }
@@ -300,7 +305,7 @@ class SAPlacer
                         if (jt == sr_by_tile.end()) {
                             ss.str("");
                             ss << "x" << loc.x << "y" << loc.y << ".sr";
-                            auto c = z3.bv_const(ss.str().c_str(), ceil(log2(sr2index.size())));
+                            auto c = z3.bv_const(ss.str().c_str(), std::max<int>(4,ceil(log2(sr2index.size()))));
                             s.add(/*c >= 0 &&*/ ult(c, sr2index.size()));
                             jt = sr_by_tile.emplace(loc, c).first;
                         }
@@ -368,6 +373,8 @@ class SAPlacer
                 CellInfo *driver_cell = driver.cell;
                 if (!driver_cell)
                     continue;
+                if (driver.port == id_COUT)
+                    continue; // FIXME
                 auto driver_loc = cell_to_loc.at(driver_cell);
                 for (auto load : net.second->users) {
                     CellInfo *load_cell = load.cell;
@@ -379,8 +386,7 @@ class SAPlacer
                         continue;
                     /*if (ctx->timing_driven)*/ {
                         auto sink_loc = cell_to_loc.at(load_cell);
-
-                        if (driver.port == id_COUT) {
+                        if (load.port == id_CIN) {
                             continue; // FIXME
                             //auto delay = ite(dy == 0, z3.bv_val(0,32), z3.bv_val(190,32));
                             //s.add(delay >= 0 && delay <= load.budget);
@@ -415,12 +421,9 @@ class SAPlacer
             auto this_loc = cell_to_loc.at(cell);
             s.add(this_loc.x == parent_loc.x + cell->constr_x);
             s.add(this_loc.y == parent_loc.y + cell->constr_y);
-            if (cell->constr_abs_z)
-                s.add(this_loc.z == cell->constr_z);
-            else
+            if (!cell->constr_abs_z)
                 s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
-
 
         if (getenv("Z3_OUTPUT_SMT2")) {
             std::ofstream f(getenv("Z3_OUTPUT_SMT2"));
