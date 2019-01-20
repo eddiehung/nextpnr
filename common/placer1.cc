@@ -392,7 +392,7 @@ class SAPlacer
                             auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(yices_term_bitsize(min_slack), p.neighbourhood),
                                                                   yices_zero_extend(yices_bvextract(yices_bvadd(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_offset), yices_bvmul(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_norm1), yices_bvadd(adx, ady))),
                                                                                                     log2(128), yices_term_bitsize(min_slack)-1),
-                                                                                    yices_term_bitsize(min_slack)-log2(128)));
+                                                                                    log2(128)));
                             auto slack = yices_bvsub(yices_bvconst_uint32(yices_term_bitsize(delay), load.budget), delay);
 #endif
                             yices_assert_formula(s, yices_bvsle_atom(min_slack, slack));
