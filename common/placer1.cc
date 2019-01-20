@@ -159,37 +159,39 @@ class SAPlacer
         // Assume there are 
         //   c0...cM (unconstrained) cells
         //   s0...sN (available) sites/bels
-
         yices_init();
         context_t *s = yices_new_context(NULL);
         std::unordered_map<CellInfo*, term_t> placement_by_cell;
         struct LocVar {
             term_t x, y, z;
         };
+
         std::unordered_map<const CellInfo*, LocVar> cell_to_loc;
         std::unordered_map<Loc, term_t> clk_by_tile, cen_by_tile, sr_by_tile;
         std::unordered_map<const NetInfo*, int> clk2index, nclk2index, cen2index, sr2index;
 
-        const unsigned x_bits = std::max<unsigned>(ceil(log2(ctx->getGridDimX())), 4); // FIXME: Unsat if less than 4 bits!?!
-        const unsigned y_bits = std::max<unsigned>(ceil(log2(ctx->getGridDimY())), 4);;
-        const unsigned z_bits = std::max<unsigned>(ceil(log2(ctx->getTileBelDimZ(0,0))), 4);
+        const unsigned x_bits = ceil(log2(ctx->getGridDimX()));
+        const unsigned y_bits = ceil(log2(ctx->getGridDimY()));
+        const unsigned z_bits = ceil(log2(ctx->getTileBelDimZ(0,0)));
         auto all_bels = ctx->getBels();
-        const unsigned bel_bits = std::max<unsigned>(ceil(log2(all_bels.e.cursor - all_bels.b.cursor)), 4);
+        const unsigned bel_bits = ceil(log2(all_bels.e.cursor - all_bels.b.cursor));
 
         std::stringstream ss;
         for (auto &cell : ctx->cells) {
             CellInfo *ci = cell.second.get();
             if (ci->bel != BelId()) {
                 auto loc = ctx->getBelLocation(ci->bel);
-                cell_to_loc.emplace(ci, LocVar{yices_bvconst_uint32(x_bits, loc.x), yices_bvconst_uint32(y_bits, loc.y), yices_bvconst_uint32(z_bits, loc.y)});
+                cell_to_loc.emplace(ci, LocVar{yices_bvconst_uint32(x_bits, loc.x), 
+                                               yices_bvconst_uint32(y_bits, loc.y),
+                                               yices_bvconst_uint32(z_bits, loc.z)});
             }
         }
 
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
             if (!cell->lcInfo.dffEnable) {
-                cen2index.emplace(nullptr, cen2index.size());
-                sr2index.emplace(nullptr, sr2index.size());
+                cen2index.emplace(nullptr, 0);
+                sr2index.emplace(nullptr, 0);
                 continue;
             }
 
@@ -216,9 +218,9 @@ class SAPlacer
             auto z = yices_new_uninterpreted_term(yices_bv_type(z_bits));
             cell_to_loc.emplace(cell, LocVar{x,y,z});
 
-            yices_assert_formula(s, yices_bvlt_atom(x, yices_bvconst_uint32(yices_term_bitsize(x), ctx->getGridDimX())));
-            yices_assert_formula(s, yices_bvlt_atom(y, yices_bvconst_uint32(yices_term_bitsize(y), ctx->getGridDimY())));
-            yices_assert_formula(s, yices_bvlt_atom(z, yices_bvconst_uint32(yices_term_bitsize(z), ctx->getTileBelDimZ(0,0))));
+            //yices_assert_formula(s, yices_bvlt_atom(x, yices_bvconst_uint32(yices_term_bitsize(x), ctx->getGridDimX())));
+            //yices_assert_formula(s, yices_bvlt_atom(y, yices_bvconst_uint32(yices_term_bitsize(y), ctx->getGridDimY())));
+            //yices_assert_formula(s, yices_bvlt_atom(z, yices_bvconst_uint32(yices_term_bitsize(z), ctx->getTileBelDimZ(0,0))));
 
             auto p = yices_new_uninterpreted_term(yices_bv_type(bel_bits));
 
@@ -245,8 +247,7 @@ class SAPlacer
                 auto loc = ctx->getBelLocation(bel);
                 yices_assert_formula(s, yices_implies(e, yices_bveq_atom(x, yices_bvconst_uint32(yices_term_bitsize(x), loc.x))));
                 yices_assert_formula(s, yices_implies(e, yices_bveq_atom(y, yices_bvconst_uint32(yices_term_bitsize(y), loc.y))));
-//                if (cell->type == id_ICESTORM_LC)
-//                    s.add(implies(e, z == loc.z));
+                yices_assert_formula(s, yices_implies(e, yices_bveq_atom(z, yices_bvconst_uint32(yices_term_bitsize(z), loc.z))));
                 // Now encode the tile constrainty,
                 // which are only relevant if DFFs are used
                 if (cell->lcInfo.dffEnable) {
@@ -257,7 +258,7 @@ class SAPlacer
                         auto jt = clk_by_tile.find(loc);
                         if (jt == clk_by_tile.end()) {
                             auto c = yices_new_uninterpreted_term(yices_bv_type(ceil(log2(clk2index.size()+nclk2index.size()))));
-                            yices_assert_formula(s, yices_bvlt_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), clk2index.size()+nclk2index.size())));
+                            yices_assert_formula(s, yices_bvle_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), clk2index.size()+nclk2index.size()-1)));
                             jt = clk_by_tile.emplace(loc, c).first;
                         }
                         assert(cell->lcInfo.clk);
@@ -274,7 +275,7 @@ class SAPlacer
                         auto jt = cen_by_tile.find(loc);
                         if (jt == cen_by_tile.end()) {
                             auto c = yices_new_uninterpreted_term(yices_bv_type(ceil(log2(cen2index.size()))));
-                            yices_assert_formula(s, yices_bvlt_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), cen2index.size())));
+                            yices_assert_formula(s, yices_bvle_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), cen2index.size()-1)));
                             jt = cen_by_tile.emplace(loc, c).first;
                         }
                         yices_assert_formula(s, yices_implies(e, yices_bveq_atom(jt->second, yices_bvconst_uint32(yices_term_bitsize(jt->second), cen2index.at(cell->lcInfo.cen)))));
@@ -285,7 +286,7 @@ class SAPlacer
                         auto jt = sr_by_tile.find(loc);
                         if (jt == sr_by_tile.end()) {
                             auto c = yices_new_uninterpreted_term(yices_bv_type(ceil(log2(sr2index.size()))));
-                            yices_assert_formula(s, yices_bvlt_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), sr2index.size())));
+                            yices_assert_formula(s, yices_bvle_atom(c, yices_bvconst_uint32(yices_term_bitsize(c), sr2index.size()-1)));
                             jt = sr_by_tile.emplace(loc, c).first;
                         }
                         yices_assert_formula(s, yices_implies(e, yices_bveq_atom(jt->second, yices_bvconst_uint32(yices_term_bitsize(jt->second), sr2index.at(cell->lcInfo.sr)))));
@@ -295,115 +296,117 @@ class SAPlacer
         }
         yices_assert_formula(s, yices_distinct(placement.size(), placement.data()));
 
-#if 0
         // TODO: Enforce constraint that each tile can have at most 32 inputs
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
         
-        struct model_params_t
-        {
-            int neighbourhood;
-        
-            int model0_offset;
-            int model0_norm1;
-        
-            int model1_offset;
-            int model1_norm1;
-            int model1_norm2;
-            int model1_norm3;
-        
-            int model2_offset;
-            int model2_linear;
-            int model2_sqrt;
-        
-            int delta_local;
-            int delta_lutffin;
-            int delta_sp4;
-            int delta_sp12;
-        
-            static const model_params_t &get(const ArchArgs &args)
+        if (ctx->timing_driven) {
+            struct model_params_t
             {
-                static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
-                                                          -86797, 89,     3706, -316,   -575,  -158,   -296};
-        
-                static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
-                                                          -309793, 30,     11056, -474,   -856,  -363,   -536};
-        
-                static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
-                                                          -162662, 94,     4705,  -1099,  -1761, -418,   -838};
-        
-                if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
-                    return model_hx8k;
-        
-                if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
-                    return model_lp8k;
-        
-                if (args.type == ArchArgs::UP5K)
-                    return model_up5k;
-        
-                NPNR_ASSERT(0);
-            }
-        };
-        const model_params_t &p = model_params_t::get(ctx->args);
-        auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
-        auto min_slack = z3.bv_const("min_slack", 32);
-        for (auto &net : ctx->nets) {
-            auto driver = net.second->driver;
-            CellInfo *driver_cell = driver.cell;
-            if (!driver_cell)
-                continue;
-            auto driver_loc = cell_to_loc.at(driver_cell);
-            for (auto load : net.second->users) {
-                CellInfo *load_cell = load.cell;
-                if (load_cell == nullptr || load_cell == driver_cell)
+                int neighbourhood;
+            
+                int model0_offset;
+                int model0_norm1;
+            
+                int model1_offset;
+                int model1_norm1;
+                int model1_norm2;
+                int model1_norm3;
+            
+                int model2_offset;
+                int model2_linear;
+                int model2_sqrt;
+            
+                int delta_local;
+                int delta_lutffin;
+                int delta_sp4;
+                int delta_sp12;
+            
+                static const model_params_t &get(const ArchArgs &args)
+                {
+                    static const model_params_t model_hx8k = {588,    129253, 8658, 118333, 23915, -73105, 57696,
+                                                              -86797, 89,     3706, -316,   -575,  -158,   -296};
+            
+                    static const model_params_t model_lp8k = {867,     206236, 11043, 191910, 31074, -95972, 75739,
+                                                              -309793, 30,     11056, -474,   -856,  -363,   -536};
+            
+                    static const model_params_t model_up5k = {1761,    305798, 16705, 296830, 24430, -40369, 33038,
+                                                              -162662, 94,     4705,  -1099,  -1761, -418,   -838};
+            
+                    if (args.type == ArchArgs::HX1K || args.type == ArchArgs::HX8K)
+                        return model_hx8k;
+            
+                    if (args.type == ArchArgs::LP384 || args.type == ArchArgs::LP1K || args.type == ArchArgs::LP8K)
+                        return model_lp8k;
+            
+                    if (args.type == ArchArgs::UP5K)
+                        return model_up5k;
+            
+                    NPNR_ASSERT(0);
+                }
+            };
+            const model_params_t &p = model_params_t::get(ctx->args);
+            auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
+            auto min_slack = yices_new_uninterpreted_term(yices_bv_type(32));
+            for (auto &net : ctx->nets) {
+                auto driver = net.second->driver;
+                CellInfo *driver_cell = driver.cell;
+                if (!driver_cell)
                     continue;
-                if (load.budget < 0 || load.budget >= period)
-                    continue;
-                if (load_cell->type != id_ICESTORM_LC)
-                    continue;
-                /*if (ctx->timing_driven)*/ {
-                    auto sink_loc = cell_to_loc.at(load_cell);
-
-                    if (driver.port == id_COUT) {
-                        continue; // FIXME
-                        //auto delay = ite(dy == 0, z3.bv_val(0,32), z3.bv_val(190,32));
-                        //s.add(delay >= 0 && delay <= load.budget);
-                    }
-                    else {
-                        assert(load_cell->type == id_ICESTORM_LC);
-                        auto adx = zext(ite(uge(sink_loc.x, driver_loc.x), sink_loc.x - driver_loc.x, driver_loc.x - sink_loc.x), 32-x_bits);
-                        auto ady = zext(ite(uge(sink_loc.y, driver_loc.y), sink_loc.y - driver_loc.y, driver_loc.y - sink_loc.y), 32-y_bits);
-                        auto delay = ite(ule(adx, 1) && ule(ady, 1), z3.bv_val(p.neighbourhood * 128, 32), p.model0_offset + p.model0_norm1 * (adx+ady));
-                        auto slack = load.budget * 128 - delay;
-                        s.add(min_slack <= slack);
+                if (driver.port == id_COUT)
+                    continue; // FIXME
+                auto driver_loc = cell_to_loc.at(driver_cell);
+                for (auto load : net.second->users) {
+                    CellInfo *load_cell = load.cell;
+                    if (load_cell == nullptr || load_cell == driver_cell)
+                        continue;
+                    if (load.budget < 0 || load.budget >= period)
+                        continue;
+                    if (load_cell->type != id_ICESTORM_LC)
+                        continue;
+                    /*if (ctx->timing_driven)*/ {
+                        auto sink_loc = cell_to_loc.at(load_cell);
+                        if (load.port == id_CIN) {
+                            continue; // FIXME
+                            //auto delay = ite(dy == 0, z3.bv_val(0,32), z3.bv_val(190,32));
+                            //s.add(delay >= 0 && delay <= load.budget);
+                        }
+                        else {
+                            assert(load_cell->type == id_ICESTORM_LC);
+                            auto adx = yices_zero_extend(yices_abs(sink_loc.x - driver_loc.x), 32-x_bits);
+                            auto ady = yices_zero_extend(yices_abs(sink_loc.y - driver_loc.y), 32-y_bits);
+                            auto neighbourhood = yices_and2(yices_bvle_atom(adx, yices_bvconst_uint32(yices_term_bitsize(adx), 1)),
+                                                            yices_bvle_atom(ady, yices_bvconst_uint32(yices_term_bitsize(ady), 1)));
+                            auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(32, p.neighbourhood * 128), 
+                                                                  yices_add(yices_bvconst_uint32(32, p.model0_offset), yices_mul(yices_bvconst_uint32(32, p.model0_norm1), yices_add(adx, ady))));
+                            auto slack = yices_sub(yices_bvconst_uint32(32, load.budget * 128), delay);
+                            yices_assert_formula(s, yices_bvle_atom(min_slack, yices_bvconst_uint32(32, slack)));
+                        }
                     }
                 }
             }
-        }
 
 #if 1
-        s.add(min_slack >= 0);
+            yices_assert_formula(s, yices_bvge_atom(min_slack, yices_bvconst_uint32(32, 0)));
 #else
-        //s.maximize(min_slack);
-        params sp(z3);
-        //sp.set("timeout", 120000u);
-        s.set(sp);
+            //s.maximize(min_slack);
+            params sp(z3);
+            //sp.set("timeout", 120000u);
+            s.set(sp);
 #endif
-
-        for (auto cell : autoplaced) {
-            auto parent = cell->constr_parent;
-            if (!parent) continue;
-
-            auto parent_loc = cell_to_loc.at(parent);
-            auto this_loc = cell_to_loc.at(cell);
-            s.add(this_loc.x == parent_loc.x + cell->constr_x);
-            s.add(this_loc.y == parent_loc.y + cell->constr_y);
-            if (cell->constr_abs_z)
-                s.add(this_loc.z == cell->constr_z);
-            else
-                s.add(this_loc.z == parent_loc.z + cell->constr_z);
         }
-#endif
+
+        //for (auto cell : autoplaced) {
+        //    auto parent = cell->constr_parent;
+        //    if (!parent) continue;
+
+        //    auto parent_loc = cell_to_loc.at(parent);
+        //    auto this_loc = cell_to_loc.at(cell);
+        //    s.add(this_loc.x == parent_loc.x + cell->constr_x);
+        //    s.add(this_loc.y == parent_loc.y + cell->constr_y);
+        //    if (!cell->constr_abs_z)
+        //        s.add(this_loc.z == parent_loc.z + cell->constr_z);
+        //}
 
         //if (getenv("Z3_VERBOSITY"))
         //    set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
