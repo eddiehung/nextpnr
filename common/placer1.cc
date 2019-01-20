@@ -190,8 +190,8 @@ class SAPlacer
         // Assign indices to all possible clocks+polarity/clock-enable/set-reset
         for (auto cell : autoplaced) {
             if (!cell->lcInfo.dffEnable) {
-                cen2index.emplace(nullptr, 0);
-                sr2index.emplace(nullptr, 0);
+                cen2index.emplace(nullptr, cen2index.size());
+                sr2index.emplace(nullptr, sr2index.size());
                 continue;
             }
 
@@ -384,8 +384,8 @@ class SAPlacer
                             auto neighbourhood = yices_and2(yices_bvle_atom(adx, yices_bvconst_uint32(yices_term_bitsize(adx), 1)),
                                                             yices_bvle_atom(ady, yices_bvconst_uint32(yices_term_bitsize(ady), 1)));
                             auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(32, p.neighbourhood * 128), 
-                                                                  yices_add(yices_bvconst_uint32(32, p.model0_offset), yices_mul(yices_bvconst_uint32(32, p.model0_norm1), yices_bvadd(adx, ady))));
-                            auto slack = yices_sub(yices_bvconst_uint32(32, load.budget * 128), delay);
+                                                                  yices_bvadd(yices_bvconst_uint32(32, p.model0_offset), yices_bvmul(yices_bvconst_uint32(32, p.model0_norm1), yices_bvadd(adx, ady))));
+                            auto slack = yices_bvsub(yices_bvconst_uint32(32, load.budget * 128), delay);
                             yices_assert_formula(s, yices_bvle_atom(min_slack, yices_bvconst_uint32(32, slack)));
                         }
                     }
@@ -423,7 +423,7 @@ class SAPlacer
         std::cout << timer.format() << std::endl;
         //std::cout << s.statistics() << "\n";
         
-        auto yices_get_bv_int = [](model_t *m, term_t t) {
+        auto yices_get_bv_int32 = [](model_t *m, term_t t) {
             int i = 0;
             int v[32];
             yices_get_bv_value(m, t, v);
@@ -434,14 +434,12 @@ class SAPlacer
 
         auto m = yices_get_model(s, true);
         BelId bel;
-        int32_t *bel_value = new int32_t [bel_bits];
         for (auto i : placement_by_cell) {
             auto cell = i.first;
-            bel.index = yices_get_bv_int(m, i.second);
+            bel.index = yices_get_bv_int32(m, i.second);
             assert(ctx->isValidBelForCell(cell, bel));
             ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
-        delete bel_value;
 
         yices_free_context(s);
         yices_exit();
