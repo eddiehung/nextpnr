@@ -372,8 +372,6 @@ class SAPlacer
                         continue;
                     if (load.budget <= 0 || load.budget >= period)
                         continue;
-                    if (load_cell->type != id_ICESTORM_LC)
-                        continue;
                     /*if (ctx->timing_driven)*/ {
                         auto sink_loc = cell_to_loc.at(load_cell);
                         if (load.port == id_CIN) {
@@ -382,19 +380,19 @@ class SAPlacer
                             //s.add(delay >= 0 && delay <= load.budget);
                         }
                         else {
-                            assert(load_cell->type == id_ICESTORM_LC);
                             auto adx = yices_zero_extend(yices_ite(yices_bvge_atom(sink_loc.x, driver_loc.x), yices_bvsub(sink_loc.x, driver_loc.x), yices_bvsub(driver_loc.x, sink_loc.x)), yices_term_bitsize(min_slack)-x_bits);
                             auto ady = yices_zero_extend(yices_ite(yices_bvge_atom(sink_loc.y, driver_loc.y), yices_bvsub(sink_loc.y, driver_loc.y), yices_bvsub(driver_loc.y, sink_loc.y)), yices_term_bitsize(min_slack)-y_bits);
                             auto neighbourhood = yices_and2(yices_bvle_atom(adx, yices_bvconst_uint32(yices_term_bitsize(adx), 1)),
                                                             yices_bvle_atom(ady, yices_bvconst_uint32(yices_term_bitsize(ady), 1)));
-#if 1
+#if 0
                             auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(yices_term_bitsize(min_slack), p.neighbourhood * 128),
                                                                   yices_bvadd(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_offset), yices_bvmul(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_norm1), yices_bvadd(adx, ady))));
                             auto slack = yices_bvsub(yices_bvconst_uint32(yices_term_bitsize(delay), load.budget * 128), delay);
 #else
                             auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(yices_term_bitsize(min_slack), p.neighbourhood),
-                                                                  yices_bvlshr(yices_bvadd(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_offset), yices_bvmul(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_norm1), yices_bvadd(adx, ady))),
-                                                                               yices_bvconst_uint32(yices_term_bitsize(min_slack), log2(128))));
+                                                                  yices_zero_extend(yices_bvextract(yices_bvadd(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_offset), yices_bvmul(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_norm1), yices_bvadd(adx, ady))),
+                                                                                                    log2(128), yices_term_bitsize(min_slack)-1),
+                                                                                    yices_term_bitsize(min_slack)-log2(128)));
                             auto slack = yices_bvsub(yices_bvconst_uint32(yices_term_bitsize(delay), load.budget), delay);
 #endif
                             yices_assert_formula(s, yices_bvsle_atom(min_slack, slack));
