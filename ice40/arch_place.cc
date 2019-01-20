@@ -53,22 +53,14 @@ bool Arch::logicCellsCompatible(const CellInfo **it, const size_t size) const
                     dffs_neg = true;
                 }
             } else {
-                if (cen != cell->lcInfo.cen) {
-                    printf("CEN\n");
+                if (cen != cell->lcInfo.cen)
                     return false;
-                }
-                if (clk != cell->lcInfo.clk) {
-                    printf("CLK\n");
+                if (clk != cell->lcInfo.clk)
                     return false;
-                }
-                if (sr != cell->lcInfo.sr) {
-                    printf("SR\n");
+                if (sr != cell->lcInfo.sr)
                     return false;
-                }
-                if (dffs_neg != cell->lcInfo.negClk) {
-                    printf("NEG\n");
+                if (dffs_neg != cell->lcInfo.negClk)
                     return false;
-                }
             }
         }
 
