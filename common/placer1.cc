@@ -181,7 +181,7 @@ class SAPlacer
             CellInfo *ci = cell.second.get();
             if (ci->bel != BelId()) {
                 auto loc = ctx->getBelLocation(ci->bel);
-                cell_to_loc.emplace(ci, LocVar{yices_bvconst_uint32(x_bits, loc.x), 
+                cell_to_loc.emplace(ci, LocVar{yices_bvconst_uint32(x_bits, loc.x),
                                                yices_bvconst_uint32(y_bits, loc.y),
                                                yices_bvconst_uint32(z_bits, loc.z)});
             }
@@ -218,14 +218,14 @@ class SAPlacer
             auto z = yices_new_uninterpreted_term(yices_bv_type(z_bits));
             cell_to_loc.emplace(cell, LocVar{x,y,z});
 
-            //yices_assert_formula(s, yices_bvlt_atom(x, yices_bvconst_uint32(yices_term_bitsize(x), ctx->getGridDimX())));
-            //yices_assert_formula(s, yices_bvlt_atom(y, yices_bvconst_uint32(yices_term_bitsize(y), ctx->getGridDimY())));
-            //yices_assert_formula(s, yices_bvlt_atom(z, yices_bvconst_uint32(yices_term_bitsize(z), ctx->getTileBelDimZ(0,0))));
+            //yices_assert_formula(s, yices_bvle_atom(x, yices_bvconst_uint32(yices_term_bitsize(x), ctx->getGridDimX()-1)));
+            //yices_assert_formula(s, yices_bvle_atom(y, yices_bvconst_uint32(yices_term_bitsize(y), ctx->getGridDimY()-1)));
+            //yices_assert_formula(s, yices_bvle_atom(z, yices_bvconst_uint32(yices_term_bitsize(z), ctx->getTileBelDimZ(0,0)-1)));
 
             auto p = yices_new_uninterpreted_term(yices_bv_type(bel_bits));
 
             assert(all_bels.b.cursor == 0);
-            yices_assert_formula(s, yices_bvlt_atom(p, yices_bvconst_uint32(yices_term_bitsize(p), all_bels.e.cursor)));
+            yices_assert_formula(s, yices_bvle_atom(p, yices_bvconst_uint32(yices_term_bitsize(p), all_bels.e.cursor-1)));
             placement_by_cell.emplace(cell, p);
             placement.push_back(p);
 
@@ -245,10 +245,16 @@ class SAPlacer
                 // constraint that each cell must be placed onto
                 // one and only one bel
                 auto loc = ctx->getBelLocation(bel);
+                if (cell->constr_abs_z) {
+                    if (cell->constr_z != loc.z) {
+                        yices_assert_formula(s, yices_not(e));
+                        continue;
+                    }
+                }
                 yices_assert_formula(s, yices_implies(e, yices_bveq_atom(x, yices_bvconst_uint32(yices_term_bitsize(x), loc.x))));
                 yices_assert_formula(s, yices_implies(e, yices_bveq_atom(y, yices_bvconst_uint32(yices_term_bitsize(y), loc.y))));
                 yices_assert_formula(s, yices_implies(e, yices_bveq_atom(z, yices_bvconst_uint32(yices_term_bitsize(z), loc.z))));
-                // Now encode the tile constrainty,
+                // Now encode the tile constraints,
                 // which are only relevant if DFFs are used
                 if (cell->lcInfo.dffEnable) {
                     loc.z = 0;
@@ -378,7 +384,7 @@ class SAPlacer
                             auto neighbourhood = yices_and2(yices_bvle_atom(adx, yices_bvconst_uint32(yices_term_bitsize(adx), 1)),
                                                             yices_bvle_atom(ady, yices_bvconst_uint32(yices_term_bitsize(ady), 1)));
                             auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(32, p.neighbourhood * 128), 
-                                                                  yices_add(yices_bvconst_uint32(32, p.model0_offset), yices_mul(yices_bvconst_uint32(32, p.model0_norm1), yices_add(adx, ady))));
+                                                                  yices_add(yices_bvconst_uint32(32, p.model0_offset), yices_mul(yices_bvconst_uint32(32, p.model0_norm1), yices_bvadd(adx, ady))));
                             auto slack = yices_sub(yices_bvconst_uint32(32, load.budget * 128), delay);
                             yices_assert_formula(s, yices_bvle_atom(min_slack, yices_bvconst_uint32(32, slack)));
                         }
@@ -396,17 +402,19 @@ class SAPlacer
 #endif
         }
 
-        //for (auto cell : autoplaced) {
-        //    auto parent = cell->constr_parent;
-        //    if (!parent) continue;
+        for (auto cell : autoplaced) {
+            auto parent = cell->constr_parent;
+            if (!parent) continue;
 
-        //    auto parent_loc = cell_to_loc.at(parent);
-        //    auto this_loc = cell_to_loc.at(cell);
-        //    s.add(this_loc.x == parent_loc.x + cell->constr_x);
-        //    s.add(this_loc.y == parent_loc.y + cell->constr_y);
-        //    if (!cell->constr_abs_z)
-        //        s.add(this_loc.z == parent_loc.z + cell->constr_z);
-        //}
+            auto parent_loc = cell_to_loc.at(parent);
+            auto this_loc = cell_to_loc.at(cell);
+            assert(cell->constr_x >= 0); // FIXME
+            assert(cell->constr_y >= 0); // FIXME
+            yices_assert_formula(s, yices_bveq_atom(this_loc.x, yices_bvadd(parent_loc.x, yices_bvconst_uint32(yices_term_bitsize(parent_loc.x), cell->constr_x))));
+            yices_assert_formula(s, yices_bveq_atom(this_loc.y, yices_bvadd(parent_loc.y, yices_bvconst_uint32(yices_term_bitsize(this_loc.y), cell->constr_y))));
+            if (!cell->constr_abs_z)
+                yices_assert_formula(s, yices_bveq_atom(this_loc.z, yices_bvadd(parent_loc.z, yices_bvconst_uint32(yices_term_bitsize(this_loc.z), cell->constr_z))));
+        }
 
         //if (getenv("Z3_VERBOSITY"))
         //    set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
@@ -414,16 +422,22 @@ class SAPlacer
         assert(yices_check_context(s, NULL) == STATUS_SAT);
         std::cout << timer.format() << std::endl;
         //std::cout << s.statistics() << "\n";
+        
+        auto yices_get_bv_int = [](model_t *m, term_t t) {
+            int i = 0;
+            int v[32];
+            yices_get_bv_value(m, t, v);
+            for (auto j = 0u; j < yices_term_bitsize(t); ++j)
+                i |= v[j] << j;
+            return i;
+        };
 
         auto m = yices_get_model(s, true);
         BelId bel;
         int32_t *bel_value = new int32_t [bel_bits];
         for (auto i : placement_by_cell) {
             auto cell = i.first;
-            bel.index = 0;
-            yices_get_bv_value(m, i.second, bel_value);
-            for (auto j = 0; j < bel_bits; ++j)
-                bel.index |= (bel_value[j] << j);
+            bel.index = yices_get_bv_int(m, i.second);
             assert(ctx->isValidBelForCell(cell, bel));
             ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
@@ -432,23 +446,23 @@ class SAPlacer
         yices_free_context(s);
         yices_exit();
 
-        //for (auto bel : ctx->getBels()) {
-        //    CellInfo *cell = ctx->getBoundBelCell(bel);
-        //    if (!ctx->isBelLocationValid(bel)) {
-        //        std::string cell_text = "no cell";
-        //        if (cell != nullptr)
-        //            cell_text = std::string("cell '") + ctx->nameOf(cell) + "'";
-        //        if (ctx->force) {
-        //            log_warning("post-placement validity check failed for Bel '%s' "
-        //                        "(%s)\n",
-        //                        ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
-        //        } else {
-        //            log_error("post-placement validity check failed for Bel '%s' "
-        //                      "(%s)\n",
-        //                      ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
-        //        }
-        //    }
-        //}
+        for (auto bel : ctx->getBels()) {
+            CellInfo *cell = ctx->getBoundBelCell(bel);
+            if (!ctx->isBelLocationValid(bel)) {
+                std::string cell_text = "no cell";
+                if (cell != nullptr)
+                    cell_text = std::string("cell '") + ctx->nameOf(cell) + "'";
+                if (ctx->force) {
+                    log_warning("post-placement validity check failed for Bel '%s' "
+                                "(%s)\n",
+                                ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
+                } else {
+                    log_error("post-placement validity check failed for Bel '%s' "
+                              "(%s)\n",
+                              ctx->getBelName(bel).c_str(ctx), cell_text.c_str());
+                }
+            }
+        }
 
 #if 0
         for (auto cell : autoplaced) {
