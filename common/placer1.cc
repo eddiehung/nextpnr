@@ -160,7 +160,10 @@ class SAPlacer
         //   c0...cM (unconstrained) cells
         //   s0...sN (available) sites/bels
         yices_init();
-        context_t *s = yices_new_context(NULL);
+        auto cfg = yices_new_config();
+        yices_default_config_for_logic(cfg, "QF_BV");
+        auto s = yices_new_context(cfg);
+
         std::unordered_map<CellInfo*, term_t> placement_by_cell;
         struct LocVar {
             term_t x, y, z;
@@ -306,6 +309,7 @@ class SAPlacer
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
         
+        auto min_slack = yices_new_uninterpreted_term(yices_bv_type(32));
         if (ctx->timing_driven) {
             struct model_params_t
             {
@@ -353,7 +357,6 @@ class SAPlacer
             };
             const model_params_t &p = model_params_t::get(ctx->args);
             auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
-            auto min_slack = yices_new_uninterpreted_term(yices_bv_type(32));
             for (auto &net : ctx->nets) {
                 auto driver = net.second->driver;
                 CellInfo *driver_cell = driver.cell;
@@ -366,7 +369,7 @@ class SAPlacer
                     CellInfo *load_cell = load.cell;
                     if (load_cell == nullptr || load_cell == driver_cell)
                         continue;
-                    if (load.budget < 0 || load.budget >= period)
+                    if (load.budget <= 0 || load.budget >= period)
                         continue;
                     if (load_cell->type != id_ICESTORM_LC)
                         continue;
@@ -379,21 +382,21 @@ class SAPlacer
                         }
                         else {
                             assert(load_cell->type == id_ICESTORM_LC);
-                            auto adx = yices_zero_extend(yices_abs(sink_loc.x - driver_loc.x), 32-x_bits);
-                            auto ady = yices_zero_extend(yices_abs(sink_loc.y - driver_loc.y), 32-y_bits);
+                            auto adx = yices_zero_extend(yices_ite(yices_bvge_atom(sink_loc.x, driver_loc.x), yices_bvsub(sink_loc.x, driver_loc.x), yices_bvsub(driver_loc.x, sink_loc.x)), yices_term_bitsize(min_slack)-x_bits);
+                            auto ady = yices_zero_extend(yices_ite(yices_bvge_atom(sink_loc.y, driver_loc.y), yices_bvsub(sink_loc.y, driver_loc.y), yices_bvsub(driver_loc.y, sink_loc.y)), yices_term_bitsize(min_slack)-y_bits);
                             auto neighbourhood = yices_and2(yices_bvle_atom(adx, yices_bvconst_uint32(yices_term_bitsize(adx), 1)),
                                                             yices_bvle_atom(ady, yices_bvconst_uint32(yices_term_bitsize(ady), 1)));
-                            auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(32, p.neighbourhood * 128), 
-                                                                  yices_bvadd(yices_bvconst_uint32(32, p.model0_offset), yices_bvmul(yices_bvconst_uint32(32, p.model0_norm1), yices_bvadd(adx, ady))));
-                            auto slack = yices_bvsub(yices_bvconst_uint32(32, load.budget * 128), delay);
-                            yices_assert_formula(s, yices_bvle_atom(min_slack, yices_bvconst_uint32(32, slack)));
+                            auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(yices_term_bitsize(min_slack), p.neighbourhood * 128),
+                                                                  yices_bvadd(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_offset), yices_bvmul(yices_bvconst_uint32(32, p.model0_norm1), yices_bvadd(adx, ady))));
+                            auto slack = yices_bvsub(yices_bvconst_uint32(yices_term_bitsize(delay), load.budget * 128), delay);
+                            yices_assert_formula(s, yices_bvsle_atom(min_slack, slack));
                         }
                     }
                 }
             }
 
 #if 1
-            yices_assert_formula(s, yices_bvge_atom(min_slack, yices_bvconst_uint32(32, 0)));
+            yices_assert_formula(s, yices_bvsge_atom(min_slack, yices_bvconst_uint32(32, 0)));
 #else
             //s.maximize(min_slack);
             params sp(z3);
@@ -419,10 +422,10 @@ class SAPlacer
         //if (getenv("Z3_VERBOSITY"))
         //    set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
         boost::timer::cpu_timer timer;
-        assert(yices_check_context(s, NULL) == STATUS_SAT);
+        auto status = yices_check_context(s, NULL);
         std::cout << timer.format() << std::endl;
         //std::cout << s.statistics() << "\n";
-        
+
         auto yices_get_bv_int32 = [](model_t *m, term_t t) {
             int i = 0;
             int v[32];
@@ -440,8 +443,12 @@ class SAPlacer
             assert(ctx->isValidBelForCell(cell, bel));
             ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
+        //yices_print_model(stdout, m);
+        assert(status == STATUS_SAT);
 
+        yices_free_model(m);
         yices_free_context(s);
+        yices_free_config(cfg);
         yices_exit();
 
         for (auto bel : ctx->getBels()) {
