@@ -366,6 +366,8 @@ class SAPlacer
                 CellInfo *driver_cell = driver.cell;
                 if (!driver_cell)
                     continue;
+                if (driver.port == id_COUT)
+                    continue; // FIXME
                 auto driver_loc = cell_to_loc.at(driver_cell);
                 for (auto load : net.second->users) {
                     CellInfo *load_cell = load.cell;
@@ -379,7 +381,7 @@ class SAPlacer
                         auto sink_loc = cell_to_loc.at(load_cell);
     
                         auto dy = sink_loc.y - driver_loc.y;
-                        if (driver.port == id_COUT) {
+                        if (load.port == id_COUT) {
                             continue; // FIXME
                             auto delay = ite(dy == 0, z3.int_val(0), z3.int_val(190));
                             s.add(delay >= 0 && delay <= load.budget);
