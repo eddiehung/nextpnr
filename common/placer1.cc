@@ -309,7 +309,6 @@ class SAPlacer
         // non-global inputs -- this can only be an issue when non-global clk/cen/sr
         // nets are used
         
-        auto min_slack = yices_new_uninterpreted_term(yices_bv_type(32));
         if (ctx->timing_driven) {
             struct model_params_t
             {
@@ -357,6 +356,8 @@ class SAPlacer
             };
             const model_params_t &p = model_params_t::get(ctx->args);
             auto period = ctx->getDelayFromNS(1.0e9 / ctx->target_freq).maxDelay();
+            auto min_slack = yices_new_uninterpreted_term(yices_bv_type(32));
+            yices_set_term_name(min_slack, "min_slack");
             for (auto &net : ctx->nets) {
                 auto driver = net.second->driver;
                 CellInfo *driver_cell = driver.cell;
@@ -386,9 +387,16 @@ class SAPlacer
                             auto ady = yices_zero_extend(yices_ite(yices_bvge_atom(sink_loc.y, driver_loc.y), yices_bvsub(sink_loc.y, driver_loc.y), yices_bvsub(driver_loc.y, sink_loc.y)), yices_term_bitsize(min_slack)-y_bits);
                             auto neighbourhood = yices_and2(yices_bvle_atom(adx, yices_bvconst_uint32(yices_term_bitsize(adx), 1)),
                                                             yices_bvle_atom(ady, yices_bvconst_uint32(yices_term_bitsize(ady), 1)));
+#if 1
                             auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(yices_term_bitsize(min_slack), p.neighbourhood * 128),
-                                                                  yices_bvadd(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_offset), yices_bvmul(yices_bvconst_uint32(32, p.model0_norm1), yices_bvadd(adx, ady))));
+                                                                  yices_bvadd(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_offset), yices_bvmul(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_norm1), yices_bvadd(adx, ady))));
                             auto slack = yices_bvsub(yices_bvconst_uint32(yices_term_bitsize(delay), load.budget * 128), delay);
+#else
+                            auto delay = yices_ite(neighbourhood, yices_bvconst_uint32(yices_term_bitsize(min_slack), p.neighbourhood),
+                                                                  yices_bvlshr(yices_bvadd(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_offset), yices_bvmul(yices_bvconst_uint32(yices_term_bitsize(min_slack), p.model0_norm1), yices_bvadd(adx, ady))),
+                                                                               yices_bvconst_uint32(yices_term_bitsize(min_slack), log2(128))));
+                            auto slack = yices_bvsub(yices_bvconst_uint32(yices_term_bitsize(delay), load.budget), delay);
+#endif
                             yices_assert_formula(s, yices_bvsle_atom(min_slack, slack));
                         }
                     }
@@ -396,7 +404,7 @@ class SAPlacer
             }
 
 #if 1
-            yices_assert_formula(s, yices_bvsge_atom(min_slack, yices_bvconst_uint32(32, 0)));
+            yices_assert_formula(s, yices_bvsge_atom(min_slack, yices_bvconst_uint32(yices_term_bitsize(min_slack), 0)));
 #else
             //s.maximize(min_slack);
             params sp(z3);
@@ -425,6 +433,7 @@ class SAPlacer
         auto status = yices_check_context(s, NULL);
         std::cout << timer.format() << std::endl;
         //std::cout << s.statistics() << "\n";
+        assert(status == STATUS_SAT);
 
         auto yices_get_bv_int32 = [](model_t *m, term_t t) {
             int i = 0;
@@ -444,7 +453,6 @@ class SAPlacer
             ctx->bindBel(bel, cell, STRENGTH_WEAK);
         }
         //yices_print_model(stdout, m);
-        assert(status == STATUS_SAT);
 
         yices_free_model(m);
         yices_free_context(s);
