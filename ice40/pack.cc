@@ -265,6 +265,8 @@ static void pack_ram(Context *ctx)
             std::unique_ptr<CellInfo> packed =
                     create_ice_cell(ctx, ctx->id("ICESTORM_RAM"), ci->name.str(ctx) + "_RAM");
             packed_cells.insert(ci->name);
+            for (auto attr : ci->attrs)
+                packed->attrs[attr.first] = attr.second;
             for (auto param : ci->params)
                 packed->params[param.first] = param.second;
             packed->params[ctx->id("NEG_CLK_W")] =
@@ -388,6 +390,10 @@ static std::unique_ptr<CellInfo> create_padin_gbuf(Context *ctx, CellInfo *cell,
     BelId gb_bel;
     BelId bel = ctx->getBelByName(ctx->id(cell->attrs[ctx->id("BEL")]));
     auto wire = ctx->getBelPinWire(bel, port_name);
+
+    if (wire == WireId())
+        log_error("BEL '%s' has no global buffer connection available\n", ctx->getBelName(bel).c_str(ctx));
+
     for (auto src_bel : ctx->getWireBelPins(wire)) {
         if (ctx->getBelType(src_bel.bel) == id_SB_GB && src_bel.pin == id_GLOBAL_BUFFER_OUTPUT) {
             gb_bel = src_bel.bel;
@@ -991,6 +997,8 @@ static void pack_special(Context *ctx)
             std::unique_ptr<CellInfo> packed =
                     create_ice_cell(ctx, ctx->id("ICESTORM_SPRAM"), ci->name.str(ctx) + "_RAM");
             packed_cells.insert(ci->name);
+            for (auto attr : ci->attrs)
+                packed->attrs[attr.first] = attr.second;
             for (auto port : ci->ports) {
                 PortInfo &pi = port.second;
                 std::string newname = pi.name.str(ctx);
