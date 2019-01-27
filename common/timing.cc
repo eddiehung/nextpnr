@@ -638,16 +638,19 @@ struct Timing
 #endif
         }
 
-        if (ctx->debug) {
-            std::ofstream f("timing.dot");
+        /*if (ctx->debug)*/ {
+            static int i = 0;
+            log_info("Writing timing%d.dot\n", i);
+            std::ofstream f("timing" + std::to_string(i++) + ".dot");
             f << "digraph T {" << std::endl;
             f << "\tlabel=\"clk_period=" << clk_period << "\";" << std::endl;
             f << "\tlabelloc=t;" << std::endl;
             for (auto &net : ctx->nets) {
-                if (ctx->getBelGlobalBuf(net.second->driver.cell->bel))
+                if (ctx->isGlobalNet(net.second.get()))
                     continue;
                 for (auto &usr : net.second->users) {
-                    f << "\t\"" << net.second->driver.cell->name.str(ctx) << "." << net.second->driver.port.str(ctx) << "\" -> \"" << usr.cell->name.str(ctx) << "." << usr.port.str(ctx) << "\" [label=\"" << net.second->name.c_str(ctx) << "\"; headlabel=" << usr.budget << "];" << std::endl;
+                    f << "\t\"" << net.second->driver.cell->name.str(ctx) << "." << net.second->driver.port.str(ctx) << "\" -> \"" << usr.cell->name.str(ctx) << "." << usr.port.str(ctx) << "\" [label=\"" << net.second->name.c_str(ctx) << "\"; headlabel=\"" << ctx->getNetinfoRouteDelay(net.second.get(), usr) << "/" << usr.budget << "\"];" << std::endl;
+
                 }
             }
 
@@ -670,11 +673,23 @@ struct Timing
                         input_ports.push_back(port.first);
                         if (portClass == TMG_REGISTER_INPUT || portClass == TMG_ENDPOINT)
                             endpoints.emplace_back(cell.second->name.str(ctx) + "." + port.first.str(ctx));
-                        f << "\t\t" << "\"" << cell.second->name.str(ctx) << "." << port.first.str(ctx) << "\" [label = \"" << port.first.str(ctx) << "\"];" << std::endl;
+                        f << "\t\t" << "\"" << cell.second->name.str(ctx) << "." << port.first.str(ctx) << "\" [label = \"" << port.first.str(ctx);
+                        for (const auto &usr : port.second.net->users) {
+                            if (usr.cell != cell.second.get() || usr.port != port.first)
+                                continue;
+                            for (const auto &i : net_data.at(port.second.net))
+                                f << "\\n" << (i.first.edge == RISING_EDGE ? "posedge" : "negedge") << " " << i.first.clock.str(ctx) << " @ " << i.second.max_arrival + ctx->getNetinfoRouteDelay(port.second.net, usr);
+                            break;
+                        }
+                        f << "\"]" << std::endl;
                     }
                     else {
                         output_ports.push_back(port.first);
-                        f << "\t\t" << "\"" << cell.second->name.str(ctx) << "." << port.first.str(ctx) << "\" [label = \"" << port.first.str(ctx) << "\"";
+                        f << "\t\t" << "\"" << cell.second->name.str(ctx) << "." << port.first.str(ctx) << "\" [label = \"" << port.first.str(ctx);
+                        for (const auto &i : net_data.at(port.second.net)) {
+                            f << "\\n" << (i.first.edge == RISING_EDGE ? "posedge" : "negedge") << " " << i.first.clock.str(ctx) << " @ " << i.second.max_arrival;
+                        }
+                        f << "\"";
                         if (portClass == TMG_REGISTER_OUTPUT || portClass == TMG_STARTPOINT) {
                             startpoints.emplace_back(cell.second->name.str(ctx) + "." + port.first.str(ctx));
                             f << "; shape=parallelogram; style=filled";
@@ -697,8 +712,20 @@ struct Timing
                     for (auto o : output_ports) {
                         DelayInfo comb_delay;
                         bool is_path = ctx->getCellDelay(cell.second.get(), i, o, comb_delay);
-                        if (!is_path) continue;
-                        f << "\t\t" << "\"" << cell.second->name.str(ctx) << "." << i.str(ctx) << "\" -> \"" << cell.second->name.str(ctx) << "." << o.str(ctx) << "\" [style=dotted; label=" << comb_delay.maxDelay() << "];" << std::endl; 
+                        if (!is_path) {
+                            int port_clocks;
+                            auto portClass = ctx->getPortTimingClass(cell.second.get(), i, port_clocks);
+                            if (portClass == TMG_REGISTER_INPUT) {
+                                for (int j = 0; j < port_clocks; j++) {
+                                    TimingClockingInfo clkInfo = ctx->getPortClockingInfo(cell.second.get(), i, j);
+                                    f << "\t\t" << "\"" << cell.second->name.str(ctx) << "." << i.str(ctx) << "\" -> \"" << cell.second->name.str(ctx) << "." << o.str(ctx) << "\" [style=dotted; label=" << clkInfo.setup.maxDelay() << "];" << std::endl; 
+                                }
+                            }
+
+                        }
+                        else {
+                            f << "\t\t" << "\"" << cell.second->name.str(ctx) << "." << i.str(ctx) << "\" -> \"" << cell.second->name.str(ctx) << "." << o.str(ctx) << "\" [style=dotted; label=" << comb_delay.maxDelay() << "];" << std::endl; 
+                        }
                     }
                 }
                 f << "\t}" << std::endl;
@@ -731,14 +758,14 @@ struct Timing
     }
 };
 
-void assign_budget(Context *ctx, bool quiet)
+void assign_budget(Context *ctx, bool quiet, bool redist_slack)
 {
     if (!quiet) {
         log_break();
         log_info("Annotating ports with timing budgets for target frequency %.2f MHz\n", ctx->target_freq / 1e6);
     }
 
-    Timing timing(ctx, ctx->slack_redist_iter > 0 /* net_delays */, true /* update */);
+    Timing timing(ctx, redist_slack /* net_delays */, true /* update */);
     timing.assign_budget();
 
     if (!quiet || ctx->verbose) {
@@ -761,9 +788,9 @@ void assign_budget(Context *ctx, bool quiet)
 
     // For slack redistribution, if user has not specified a frequency dynamically adjust the target frequency to be the
     // currently achieved maximum
-    if (ctx->auto_freq && ctx->slack_redist_iter > 0) {
+    if (ctx->auto_freq && redist_slack) {
         delay_t default_slack = delay_t((1.0e9 / ctx->getDelayNS(1)) / ctx->target_freq);
-        ctx->target_freq = 1.0e9 / ctx->getDelayNS(default_slack - timing.min_slack);
+        ctx->target_freq = 1.0e9 / ctx->getDelayNS(default_slack - std::max(timing.min_slack * 0.95, default_slack * 0.01));
         if (ctx->verbose)
             log_info("minimum slack for this assign = %.2f ns, target Fmax for next "
                      "update = %.2f MHz\n",

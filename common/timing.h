@@ -25,7 +25,7 @@
 NEXTPNR_NAMESPACE_BEGIN
 
 // Evenly redistribute the total path slack amongst all sinks on each path
-void assign_budget(Context *ctx, bool quiet = false);
+void assign_budget(Context *ctx, bool quiet = false, bool redist_slack = false);
 
 // Perform timing analysis and print out the fmax, and optionally the
 //    critical path
