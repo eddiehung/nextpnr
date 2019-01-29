@@ -409,6 +409,7 @@ class SAPlacer
             s.set(sp);
 #endif
         }
+#endif
 
         for (auto cell : autoplaced) {
             auto parent = cell->constr_parent;
@@ -418,12 +419,11 @@ class SAPlacer
             auto this_loc = cell_to_loc.at(cell);
             assert(cell->constr_x >= 0); // FIXME
             assert(cell->constr_y >= 0); // FIXME
-            yices_assert_formula(s, yices_bveq_atom(this_loc.x, yices_bvadd(parent_loc.x, yices_bvconst_uint32(yices_term_bitsize(parent_loc.x), cell->constr_x))));
-            yices_assert_formula(s, yices_bveq_atom(this_loc.y, yices_bvadd(parent_loc.y, yices_bvconst_uint32(yices_term_bitsize(this_loc.y), cell->constr_y))));
+            boolector_assert(s, boolector_eq(s, this_loc.x, boolector_add(s, parent_loc.x, boolector_int(s, cell->constr_x, x_sort))));
+            boolector_assert(s, boolector_eq(s, this_loc.y, boolector_add(s, parent_loc.y, boolector_int(s, cell->constr_y, y_sort))));
             if (!cell->constr_abs_z)
-                yices_assert_formula(s, yices_bveq_atom(this_loc.z, yices_bvadd(parent_loc.z, yices_bvconst_uint32(yices_term_bitsize(this_loc.z), cell->constr_z))));
+                boolector_assert(s, boolector_eq(s, this_loc.z, boolector_add(s, parent_loc.z, boolector_int(s, cell->constr_z, z_sort))));
         }
-#endif
 
         //if (getenv("Z3_VERBOSITY"))
         //    set_param("verbose", boost::lexical_cast<int>(getenv("Z3_VERBOSITY")));
